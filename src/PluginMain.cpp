@@ -56,7 +56,7 @@ std::string normalizeMelPath(std::filesystem::path path)
     return value;
 }
 
-void sourceOptionScript(const MFnPlugin& plugin)
+std::filesystem::path findScriptPath(const MFnPlugin& plugin, const char* scriptName)
 {
     std::filesystem::path base(plugin.loadPath().asChar());
     if (base.has_filename() && base.extension() == ".mll") {
@@ -64,15 +64,36 @@ void sourceOptionScript(const MFnPlugin& plugin)
     }
 
     for (std::filesystem::path current = base; !current.empty(); current = current.parent_path()) {
-        const std::filesystem::path candidate = current / "scripts" / "mayaObjectBuilderP3DOptions.mel";
+        const std::filesystem::path candidate = current / "scripts" / scriptName;
         if (std::filesystem::exists(candidate)) {
-            MGlobal::executeCommand(MString("source \"") + normalizeMelPath(candidate).c_str() + "\"", false, false);
-            return;
+            return candidate;
         }
         if (current == current.parent_path()) {
             break;
         }
     }
+    return {};
+}
+
+void sourceOptionScript(const MFnPlugin& plugin)
+{
+    const std::filesystem::path script = findScriptPath(plugin, "mayaObjectBuilderP3DOptions.mel");
+    if (!script.empty()) {
+        MGlobal::executeCommand(MString("source \"") + normalizeMelPath(script).c_str() + "\"", false, false);
+    }
+}
+
+void executeObjectBuilderUi(const MFnPlugin& plugin, const char* functionName)
+{
+    const std::filesystem::path script = findScriptPath(plugin, "objectBuilderMenu.py");
+    if (script.empty()) {
+        return;
+    }
+
+    MGlobal::executeCommand(
+        MString("python(\"import runpy; ns = runpy.run_path(r'") + normalizeMelPath(script).c_str() + "'); ns['" + functionName + "']()\")",
+        false,
+        false);
 }
 
 MStatus registerCommand(MFnPlugin& plugin, const char* name, MCreatorFunction creator)
@@ -122,6 +143,7 @@ MStatus initializePlugin(MObject obj)
     if (!(status = plugin.registerCommand(ImportModelCfgCommand::kName, ImportModelCfgCommand::creator, ImportModelCfgCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(ExportModelCfgCommand::kName, ExportModelCfgCommand::creator, ExportModelCfgCommand::syntax))) return status;
 
+    executeObjectBuilderUi(plugin, "show_plugin_ui");
     MGlobal::displayInfo("MayaObjectBuilder loaded");
     return MS::kSuccess;
 }
@@ -130,6 +152,8 @@ MStatus uninitializePlugin(MObject obj)
 {
     MFnPlugin plugin(obj);
     MStatus status = MS::kSuccess;
+
+    executeObjectBuilderUi(plugin, "hide_plugin_ui");
 
     status = deregisterCommand(plugin, ExportModelCfgCommand::kName);
     status = deregisterCommand(plugin, ImportModelCfgCommand::kName);
