@@ -1,0 +1,330 @@
+global proc mayaObjectBuilderP3DHideMayaFileOptions()
+{
+    string $layouts[] = {
+        "genOptionsLayout",
+        "nameClashLayout",
+        "playbackLayout",
+        "namespaceOptionFrame",
+        "playblastOptionsLayout"
+    };
+
+    for ($layout in $layouts) {
+        if (`layout -exists $layout`) {
+            string $target = $layout;
+            if ($layout != "namespaceOptionFrame" && $layout != "playblastOptionsLayout") {
+                $target = `layout -query -parent $layout`;
+            }
+            if (`layout -exists $target`) {
+                layout -edit -visible false $target;
+            }
+        }
+    }
+}
+
+global string $gMayaObjectBuilderP3DFileAction;
+
+global proc mayaObjectBuilderP3DSetFileAction(string $action)
+{
+    global string $gMayaObjectBuilderP3DFileAction;
+    global string $gFileOptionsAction;
+    $gMayaObjectBuilderP3DFileAction = $action;
+    $gFileOptionsAction = $action;
+}
+
+global proc int mayaObjectBuilderP3DIsExportAction(string $action)
+{
+    return ($action == "ExportAll" || $action == "ExportActive" || $action == "Export" || $action == "ExportSelection");
+}
+
+global proc string mayaObjectBuilderP3DCurrentFileAction()
+{
+    global string $gMayaObjectBuilderP3DFileAction;
+    if ($gMayaObjectBuilderP3DFileAction != "") {
+        return $gMayaObjectBuilderP3DFileAction;
+    }
+
+    global string $gFileOptionsAction;
+    if ($gFileOptionsAction != "") {
+        return $gFileOptionsAction;
+    }
+
+    global string $gDefaultFileType;
+    if ($gDefaultFileType == "defaultFileExportAllType") {
+        return "ExportAll";
+    }
+    if ($gDefaultFileType == "defaultFileExportActiveType") {
+        return "ExportActive";
+    }
+    if ($gDefaultFileType == "defaultFileImportType") {
+        return "Import";
+    }
+
+    return "";
+}
+
+global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, string $initialSettings, string $resultCallback)
+{
+    int $result = 0;
+
+    if ($action == "post") {
+        mayaObjectBuilderP3DHideMayaFileOptions();
+        string $fileAction = mayaObjectBuilderP3DCurrentFileAction();
+        int $isExport = mayaObjectBuilderP3DIsExportAction($fileAction);
+
+        setParent $parent;
+        columnLayout -adjustableColumn true -rowSpacing 8 mayaObjectBuilderP3DOptionsRoot;
+
+        if (!$isExport) {
+            frameLayout -label "Import: Main" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "First LOD Only" mayaObjectBuilderFirstLodOnly;
+            checkBox -label "Validate Meshes" mayaObjectBuilderValidateMeshes;
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "Import: Collections" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Enclose In Collection" mayaObjectBuilderEnclose;
+            optionMenu -label "Group By" mayaObjectBuilderGroupBy;
+            menuItem -label "None";
+            menuItem -label "Type";
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "Import: Data" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Absolute Paths" mayaObjectBuilderAbsolutePaths;
+            checkBox -label "Additional Data" mayaObjectBuilderAdditionalData;
+            checkBox -label "Custom Normals" mayaObjectBuilderCustomNormals;
+            checkBox -label "Flags" mayaObjectBuilderFlags;
+            checkBox -label "Named Properties" mayaObjectBuilderNamedProperties;
+            checkBox -label "Vertex Mass" mayaObjectBuilderVertexMass;
+            checkBox -label "Selections" mayaObjectBuilderSelections;
+            checkBox -label "UV Sets" mayaObjectBuilderUvSets;
+            checkBox -label "Materials" mayaObjectBuilderMaterials;
+            optionMenu -label "Sections" mayaObjectBuilderSections;
+            menuItem -label "Preserve";
+            menuItem -label "Merge";
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "Import: Postprocess" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Translate Selections" mayaObjectBuilderTranslateSelections;
+            checkBox -label "Cleanup Selections" mayaObjectBuilderCleanupSelections;
+            optionMenu -label "Proxy Action" mayaObjectBuilderProxyAction;
+            menuItem -label "Nothing";
+            menuItem -label "Separate";
+            menuItem -label "Purge";
+            setParent "..";
+            setParent "..";
+        } else {
+            checkBox -label "Relative Paths" mayaObjectBuilderRelativePaths;
+
+            frameLayout -label "Include" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Selected Only" mayaObjectBuilderSelectedOnly;
+            checkBox -label "Visible" -enable false mayaObjectBuilderVisibleOnly;
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "Mesh Data" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Validate Meshes" mayaObjectBuilderExportValidateMeshes;
+            checkBox -label "Apply Modifiers" mayaObjectBuilderApplyModifiers;
+            checkBox -label "Apply Transforms" mayaObjectBuilderApplyTransforms;
+            checkBox -label "Custom Normals" mayaObjectBuilderExportCustomNormals;
+            checkBox -label "Sort Sections" mayaObjectBuilderSortSections;
+            checkBox -label "Generate Components" mayaObjectBuilderGenerateComponents;
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "LODs" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            optionMenu -label "Collisions" mayaObjectBuilderCollisions;
+            menuItem -label "Ignore";
+            menuItem -label "Skip";
+            menuItem -label "Fail";
+            checkBox -label "Validate LODs" mayaObjectBuilderValidateLods;
+            checkBox -label "Warnings Are Errors" mayaObjectBuilderWarningsAreErrors;
+            setParent "..";
+            setParent "..";
+
+            frameLayout -label "Postprocess" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Renumber Components" mayaObjectBuilderRenumberComponents;
+            checkBox -label "Force Lowercase" mayaObjectBuilderForceLowercase;
+            checkBox -label "Translate Selections" mayaObjectBuilderExportTranslateSelections;
+            setParent "..";
+            setParent "..";
+        }
+
+        mayaObjectBuilderP3DSetOptions($initialSettings);
+        $result = 1;
+    } else if ($action == "query") {
+        string $options = mayaObjectBuilderP3DGetOptions();
+        eval($resultCallback + " \"" + $options + "\"");
+        $result = 1;
+    }
+
+    return $result;
+}
+
+global proc mayaObjectBuilderP3DSetBool(string $control, string $value)
+{
+    if (`control -exists $control`) {
+        checkBox -edit -value ($value == "1") $control;
+    }
+}
+
+global proc string mayaObjectBuilderP3DBoolOptionDefault(string $key, string $control, string $defaultValue)
+{
+    if (`control -exists $control`) {
+        return $key + "=" + ((`checkBox -query -value $control`) ? "1" : "0");
+    }
+    return $key + "=" + $defaultValue;
+}
+
+global proc string mayaObjectBuilderP3DMenuOptionDefault(string $key, string $control, string $defaultValue)
+{
+    if (`control -exists $control`) {
+        return $key + "=" + mayaObjectBuilderP3DMenuData($control);
+    }
+    return $key + "=" + $defaultValue;
+}
+
+global proc string mayaObjectBuilderP3DMenuLabelToValue(string $label)
+{
+    if ($label == "None") return "none";
+    if ($label == "Type") return "type";
+    if ($label == "Preserve") return "preserve";
+    if ($label == "Merge") return "merge";
+    if ($label == "Nothing") return "nothing";
+    if ($label == "Separate") return "separate";
+    if ($label == "Purge") return "purge";
+    if ($label == "Ignore") return "ignore";
+    if ($label == "Skip") return "skip";
+    if ($label == "Fail") return "fail";
+    return "";
+}
+
+global proc string mayaObjectBuilderP3DMenuValueToLabel(string $value)
+{
+    if ($value == "none") return "None";
+    if ($value == "type") return "Type";
+    if ($value == "preserve") return "Preserve";
+    if ($value == "merge") return "Merge";
+    if ($value == "nothing") return "Nothing";
+    if ($value == "separate") return "Separate";
+    if ($value == "purge") return "Purge";
+    if ($value == "ignore") return "Ignore";
+    if ($value == "skip") return "Skip";
+    if ($value == "fail") return "Fail";
+    return "";
+}
+
+global proc mayaObjectBuilderP3DSetMenu(string $control, string $value)
+{
+    if (!`control -exists $control`) {
+        return;
+    }
+    string $label = mayaObjectBuilderP3DMenuValueToLabel($value);
+    if ($label != "") {
+        optionMenu -edit -value $label $control;
+    }
+}
+
+global proc string mayaObjectBuilderP3DMenuData(string $control)
+{
+    return mayaObjectBuilderP3DMenuLabelToValue(`optionMenu -query -value $control`);
+}
+
+global proc mayaObjectBuilderP3DSetOptions(string $settings)
+{
+    string $optionList[];
+    string $optionBreakDown[];
+    tokenize($settings, ";", $optionList);
+    for ($option in $optionList) {
+        tokenize($option, "=", $optionBreakDown);
+        if (size($optionBreakDown) < 2) {
+            continue;
+        }
+        string $key = $optionBreakDown[0];
+        string $value = $optionBreakDown[1];
+
+        if ($key == "firstLodOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderFirstLodOnly", $value);
+        else if ($key == "validateMeshes") mayaObjectBuilderP3DSetBool("mayaObjectBuilderValidateMeshes", $value);
+        else if ($key == "enclose") mayaObjectBuilderP3DSetBool("mayaObjectBuilderEnclose", $value);
+        else if ($key == "groupBy") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderGroupBy", $value);
+        else if ($key == "absolutePaths") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAbsolutePaths", $value);
+        else if ($key == "additionalData") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAdditionalData", $value);
+        else if ($key == "customNormals") mayaObjectBuilderP3DSetBool("mayaObjectBuilderCustomNormals", $value);
+        else if ($key == "flags") mayaObjectBuilderP3DSetBool("mayaObjectBuilderFlags", $value);
+        else if ($key == "namedProperties") mayaObjectBuilderP3DSetBool("mayaObjectBuilderNamedProperties", $value);
+        else if ($key == "vertexMass") mayaObjectBuilderP3DSetBool("mayaObjectBuilderVertexMass", $value);
+        else if ($key == "selections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSelections", $value);
+        else if ($key == "uvSets") mayaObjectBuilderP3DSetBool("mayaObjectBuilderUvSets", $value);
+        else if ($key == "materials") mayaObjectBuilderP3DSetBool("mayaObjectBuilderMaterials", $value);
+        else if ($key == "sections") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderSections", $value);
+        else if ($key == "translateSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderTranslateSelections", $value);
+        else if ($key == "cleanupSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderCleanupSelections", $value);
+        else if ($key == "proxyAction") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderProxyAction", $value);
+        else if ($key == "relativePaths") mayaObjectBuilderP3DSetBool("mayaObjectBuilderRelativePaths", $value);
+        else if ($key == "selectedOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSelectedOnly", $value);
+        else if ($key == "visibleOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderVisibleOnly", $value);
+        else if ($key == "exportValidateMeshes") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportValidateMeshes", $value);
+        else if ($key == "applyModifiers") mayaObjectBuilderP3DSetBool("mayaObjectBuilderApplyModifiers", $value);
+        else if ($key == "applyTransforms") mayaObjectBuilderP3DSetBool("mayaObjectBuilderApplyTransforms", $value);
+        else if ($key == "preserveNormals") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportCustomNormals", $value);
+        else if ($key == "sortSections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSortSections", $value);
+        else if ($key == "generateComponents") mayaObjectBuilderP3DSetBool("mayaObjectBuilderGenerateComponents", $value);
+        else if ($key == "collisions") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderCollisions", $value);
+        else if ($key == "validateLods") mayaObjectBuilderP3DSetBool("mayaObjectBuilderValidateLods", $value);
+        else if ($key == "warningsAreErrors") mayaObjectBuilderP3DSetBool("mayaObjectBuilderWarningsAreErrors", $value);
+        else if ($key == "renumberComponents") mayaObjectBuilderP3DSetBool("mayaObjectBuilderRenumberComponents", $value);
+        else if ($key == "forceLowercase") mayaObjectBuilderP3DSetBool("mayaObjectBuilderForceLowercase", $value);
+        else if ($key == "exportTranslateSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportTranslateSelections", $value);
+    }
+}
+
+global proc string mayaObjectBuilderP3DBoolOption(string $key, string $control)
+{
+    return $key + "=" + ((`checkBox -query -value $control`) ? "1" : "0");
+}
+
+global proc string mayaObjectBuilderP3DGetOptions()
+{
+    string $options = mayaObjectBuilderP3DBoolOptionDefault("firstLodOnly", "mayaObjectBuilderFirstLodOnly", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("validateMeshes", "mayaObjectBuilderValidateMeshes", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("enclose", "mayaObjectBuilderEnclose", "1");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("groupBy", "mayaObjectBuilderGroupBy", "type");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("absolutePaths", "mayaObjectBuilderAbsolutePaths", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("additionalData", "mayaObjectBuilderAdditionalData", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("customNormals", "mayaObjectBuilderCustomNormals", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("flags", "mayaObjectBuilderFlags", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("namedProperties", "mayaObjectBuilderNamedProperties", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("vertexMass", "mayaObjectBuilderVertexMass", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("selections", "mayaObjectBuilderSelections", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("uvSets", "mayaObjectBuilderUvSets", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("materials", "mayaObjectBuilderMaterials", "1");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("sections", "mayaObjectBuilderSections", "preserve");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("translateSelections", "mayaObjectBuilderTranslateSelections", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("cleanupSelections", "mayaObjectBuilderCleanupSelections", "0");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("proxyAction", "mayaObjectBuilderProxyAction", "separate");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("relativePaths", "mayaObjectBuilderRelativePaths", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("selectedOnly", "mayaObjectBuilderSelectedOnly", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("visibleOnly", "mayaObjectBuilderVisibleOnly", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("exportValidateMeshes", "mayaObjectBuilderExportValidateMeshes", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("applyModifiers", "mayaObjectBuilderApplyModifiers", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("applyTransforms", "mayaObjectBuilderApplyTransforms", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("preserveNormals", "mayaObjectBuilderExportCustomNormals", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("sortSections", "mayaObjectBuilderSortSections", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("generateComponents", "mayaObjectBuilderGenerateComponents", "1");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("collisions", "mayaObjectBuilderCollisions", "fail");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("validateLods", "mayaObjectBuilderValidateLods", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("warningsAreErrors", "mayaObjectBuilderWarningsAreErrors", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("renumberComponents", "mayaObjectBuilderRenumberComponents", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("forceLowercase", "mayaObjectBuilderForceLowercase", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("exportTranslateSelections", "mayaObjectBuilderExportTranslateSelections", "0");
+    return $options;
+}

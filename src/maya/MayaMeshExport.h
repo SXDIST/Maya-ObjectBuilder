@@ -10,6 +10,6 @@ namespace a3ob::maya
 class MayaMeshExport
 {
 public:
-    MStatus exportMLOD(const MString& path) const;
+    MStatus exportMLOD(const MString& path, bool selectedOnly = false) const;
 };
 }
