@@ -145,7 +145,14 @@ def _plugin_path():
     return SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll"
 
 
+def _ensure_script_path():
+    scripts_dir = str(SCRIPT_PATH.parent).replace("\\", "/")
+    mel.eval('if (!stringArrayContains("' + scripts_dir + '", stringToStringArray(`getenv MAYA_SCRIPT_PATH`, ";"))) putenv MAYA_SCRIPT_PATH (`getenv MAYA_SCRIPT_PATH` + ";' + scripts_dir + '")')
+    mel.eval('source "' + scripts_dir + '/mayaObjectBuilderP3DOptions.mel"')
+
+
 def load_plugin():
+    _ensure_script_path()
     if cmds.pluginInfo(PLUGIN_NAME, query=True, loaded=True):
         _set_status("Plugin already loaded.")
         return
@@ -162,6 +169,7 @@ def load_plugin():
 
 def import_p3d():
     load_plugin()
+    mel.eval('mayaObjectBuilderP3DSetFileAction("Import")')
     selected = cmds.fileDialog2(fileMode=1, caption="Import P3D", fileFilter="P3D (*.p3d)")
     if selected:
         cmds.file(selected[0], i=True, type=TRANSLATOR_NAME, ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
@@ -171,6 +179,7 @@ def import_p3d():
 
 def export_p3d():
     load_plugin()
+    mel.eval('mayaObjectBuilderP3DSetFileAction("ExportAll")')
     selected = cmds.fileDialog2(fileMode=0, caption="Export P3D", fileFilter="P3D (*.p3d)")
     if selected:
         cmds.file(rename=selected[0])

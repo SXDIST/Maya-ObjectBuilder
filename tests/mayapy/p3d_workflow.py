@@ -55,6 +55,22 @@ def selection_names():
     return sorted(names)
 
 
+def selection_component_counts():
+    counts = []
+    for node in cmds.ls(type="objectSet") or []:
+        if not cmds.attributeQuery("a3obSelectionName", node=node, exists=True):
+            continue
+        name = cmds.getAttr(node + ".a3obSelectionName")
+        vertex_count = 0
+        face_count = 0
+        for member in cmds.sets(node, query=True) or []:
+            expanded = cmds.ls(member, flatten=True) or []
+            vertex_count += sum(".vtx[" in item for item in expanded)
+            face_count += sum(".f[" in item for item in expanded)
+        counts.append((name, vertex_count, face_count))
+    return sorted(counts)
+
+
 def material_pairs():
     pairs = []
     for node in (cmds.ls(type="shadingEngine") or []) + (cmds.ls(materials=True) or []):
@@ -146,11 +162,43 @@ def assert_import_hierarchy(path):
         raise RuntimeError(f"Missing Geometries group for {path.name}")
 
 
+def assert_selected_export(selection, outdir, name):
+    out = outdir / f"selected_{name}.p3d"
+    cmds.select(selection, replace=True)
+    cmds.file(rename=str(out))
+    cmds.file(exportSelected=True, force=True, type="Arma P3D")
+    cmds.file(new=True, force=True)
+    cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace=f"sel_{name}")
+    exported = lod_counts()
+    if len(exported) != 1:
+        raise RuntimeError(f"Selected export {name} wrote {len(exported)} LODs: {exported}")
+
+
+def assert_selected_export_modes(outdir):
+    cases = [
+        ("{lod}", "lod_transform"),
+        ("{mesh}", "mesh_transform"),
+        ("{mesh}.f[0]", "face_component"),
+        ("{mesh}.vtx[0]", "vertex_component"),
+    ]
+    for selection, name in cases:
+        cmds.file(new=True, force=True)
+        first_lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_first_lod")
+        first_mesh = cmds.polyPlane(name=f"{name}_first_mesh", subdivisionsX=1, subdivisionsY=1)[0]
+        cmds.parent(first_mesh, first_lod)
+        second_lod = cmds.a3obCreateLOD(lodType=1, resolution=1, name=f"{name}_second_lod")
+        second_mesh = cmds.polyPlane(name=f"{name}_second_mesh", subdivisionsX=1, subdivisionsY=1)[0]
+        cmds.parent(second_mesh, second_lod)
+        selection = selection.format(lod=first_lod, mesh=first_mesh)
+        assert_selected_export(selection, outdir, name)
+
+
 def roundtrip_file(path, outdir):
     cmds.file(new=True, force=True)
     cmds.file(str(path), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
     assert_import_hierarchy(path)
     before = lod_counts()
+    before_selections = selection_component_counts()
     cmds.a3obValidate()
     out = outdir / path.name
     cmds.file(rename=str(out))
@@ -158,8 +206,11 @@ def roundtrip_file(path, outdir):
     cmds.file(new=True, force=True)
     cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="rt")
     after = lod_counts()
+    after_selections = selection_component_counts()
     if before != after:
         raise RuntimeError(f"LOD counts changed for {path.name}: {before} != {after}")
+    if before_selections != after_selections:
+        raise RuntimeError(f"Selection counts changed for {path.name}: {before_selections} != {after_selections}")
     print(f"OK {path.name} lods={len(after)}")
 
 
@@ -186,6 +237,7 @@ def main():
     cmds.a3obValidate()
 
     create_generated_fixture(OUTDIR / "generated_dayz_metadata.p3d")
+    assert_selected_export_modes(OUTDIR)
 
     for path in INPUTS:
         roundtrip_file(path, OUTDIR)
