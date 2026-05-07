@@ -90,7 +90,15 @@ LOD_DEFINITIONS_BY_LABEL = {definition["label"]: definition for definition in LO
 
 
 def _plugin_path():
-    return SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll"
+    candidates = [
+        SCRIPT_PATH.parent.parent / "plug-ins" / "MayaObjectBuilder.mll",
+        SCRIPT_PATH.parents[1] / "build" / "Release" / "MayaObjectBuilder.mll",
+        SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _ensure_script_path():
@@ -309,15 +317,51 @@ def _set_kind(is_proxy, flag_component):
     return "Selection"
 
 
+def _node_exists(node):
+    return bool(node) and cmds.objExists(node)
+
+
+def _attr_exists(node, attr):
+    return _node_exists(node) and cmds.attributeQuery(attr, node=node, exists=True)
+
+
+def _safe_get_attr(node, attr, default=None):
+    if not _attr_exists(node, attr):
+        return default
+    value = cmds.getAttr(f"{node}.{attr}")
+    return default if value is None else value
+
+
+def _valid_nodes(nodes):
+    return [node for node in nodes if _node_exists(node)]
+
+
+def _live_set_members(set_node):
+    if not _node_exists(set_node):
+        return []
+    members = cmds.sets(set_node, query=True) or []
+    live_members = []
+    for member in members:
+        expanded = cmds.ls(member, flatten=True) or []
+        live_members.extend(item for item in expanded if _node_exists(item.split(".", 1)[0]))
+    return live_members
+
+
+def _clear_selection_manager_state(message="Select a row to see details."):
+    if cmds.text(SELECTION_MANAGER_DETAILS, exists=True):
+        cmds.text(SELECTION_MANAGER_DETAILS, edit=True, label=message)
+
+
 def _selection_sets():
     sets = []
     for node in cmds.ls(type="objectSet") or []:
-        if cmds.attributeQuery("a3obSelectionName", node=node, exists=True):
-            name = cmds.getAttr(node + ".a3obSelectionName") or ""
-            is_proxy = cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True) and cmds.getAttr(node + ".a3obIsProxySelection")
-            flag_component = cmds.getAttr(node + ".a3obFlagComponent") if cmds.attributeQuery("a3obFlagComponent", node=node, exists=True) else ""
-            lod = _set_lod_label(node)
-            sets.append({"node": node, "name": name, "kind": _set_kind(is_proxy, flag_component), "lod": lod})
+        if not _attr_exists(node, "a3obSelectionName"):
+            continue
+        name = _safe_get_attr(node, "a3obSelectionName", "") or ""
+        is_proxy = bool(_safe_get_attr(node, "a3obIsProxySelection", False))
+        flag_component = _safe_get_attr(node, "a3obFlagComponent", "") or ""
+        lod = _set_lod_label(node)
+        sets.append({"node": node, "name": name, "kind": _set_kind(is_proxy, flag_component), "lod": lod, "members": len(_live_set_members(node))})
     return sorted(sets, key=lambda item: (item["lod"].lower(), item["kind"], item["name"].lower(), item["node"].lower()))
 
 
@@ -326,7 +370,12 @@ def _selected_selection_set():
     if not selected:
         return None
     item = _selection_manager_items.get(selected[0])
-    return item["node"] if item else None
+    set_node = item["node"] if item else None
+    if not _node_exists(set_node):
+        if selected[0] in _selection_manager_items:
+            del _selection_manager_items[selected[0]]
+        return None
+    return set_node
 
 
 def _update_selection_details():
@@ -334,12 +383,12 @@ def _update_selection_details():
         return
     set_node = _selected_selection_set()
     if not set_node:
-        cmds.text(SELECTION_MANAGER_DETAILS, edit=True, label="Select a row to see details.")
+        _clear_selection_manager_state()
         return
-    members = cmds.sets(set_node, query=True) or []
-    name = cmds.getAttr(set_node + ".a3obSelectionName") or ""
-    flag_component = cmds.getAttr(set_node + ".a3obFlagComponent") if cmds.attributeQuery("a3obFlagComponent", node=set_node, exists=True) else ""
-    is_proxy = cmds.attributeQuery("a3obIsProxySelection", node=set_node, exists=True) and cmds.getAttr(set_node + ".a3obIsProxySelection")
+    members = _live_set_members(set_node)
+    name = _safe_get_attr(set_node, "a3obSelectionName", "") or ""
+    flag_component = _safe_get_attr(set_node, "a3obFlagComponent", "") or ""
+    is_proxy = bool(_safe_get_attr(set_node, "a3obIsProxySelection", False))
     details = f"LOD: {_set_lod_label(set_node)}    Type: {_set_kind(is_proxy, flag_component)}    OB name: {name}    Members: {len(members)}\nMaya set: {set_node}"
     cmds.text(SELECTION_MANAGER_DETAILS, edit=True, label=details)
 
@@ -367,6 +416,8 @@ def _refresh_selection_manager(rebuild_lods=True):
     lod_filter = cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, query=True, value=True) if cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, exists=True) else "All LODs"
     type_filter = cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, query=True, value=True) if cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, exists=True) else "All Types"
     search = (cmds.textField(SELECTION_MANAGER_SEARCH, query=True, text=True) if cmds.textField(SELECTION_MANAGER_SEARCH, exists=True) else "").lower()
+    selected = cmds.textScrollList(SELECTION_MANAGER_LIST, query=True, selectItem=True) or []
+    selected_label = selected[0] if selected else ""
     cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, removeAll=True)
     _selection_manager_items = {}
     for item in items:
@@ -380,26 +431,40 @@ def _refresh_selection_manager(rebuild_lods=True):
         label = f"{item['lod']} | {item['kind']} | {item['name']} | {item['node']}"
         _selection_manager_items[label] = item
         cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, append=label)
+    if selected_label in _selection_manager_items:
+        cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, selectItem=selected_label)
+    else:
+        _clear_selection_manager_state()
     _update_selection_details()
 
 
 def _select_set_members():
     set_node = _selected_selection_set()
     if not set_node:
-        cmds.warning("Select a selection set in the MayaObjectBuilder Selection Manager")
+        cmds.warning("Select a live selection set in the MayaObjectBuilder Selection Manager")
+        _refresh_selection_manager(False)
         return
-    members = cmds.sets(set_node, query=True) or []
+    members = _live_set_members(set_node)
+    if not members:
+        cmds.warning("Selection set has no live members")
+        _refresh_selection_manager(False)
+        return
     cmds.select(members, replace=True)
 
 
 def _rename_selection_set():
     set_node = _selected_selection_set()
     if not set_node:
-        cmds.warning("Select a selection set in the MayaObjectBuilder Selection Manager")
+        cmds.warning("Select a live selection set in the MayaObjectBuilder Selection Manager")
+        _refresh_selection_manager(False)
         return
-    old_name = cmds.getAttr(set_node + ".a3obSelectionName") or ""
+    old_name = _safe_get_attr(set_node, "a3obSelectionName", "") or ""
     new_name = _prompt("Rename Selection", "Object Builder selection name:", old_name)
     if not new_name:
+        return
+    if not _node_exists(set_node):
+        cmds.warning("Selection set was deleted")
+        _refresh_selection_manager(False)
         return
     cmds.setAttr(set_node + ".a3obSelectionName", new_name, type="string")
     node_name = set_node.split(":")[-1]
@@ -426,7 +491,8 @@ def _add_to_selection_set():
     set_node = _selected_selection_set()
     selection = cmds.ls(selection=True, flatten=True) or []
     if not set_node or not selection:
-        cmds.warning("Select a selection set and mesh components to add")
+        cmds.warning("Select a live selection set and mesh components to add")
+        _refresh_selection_manager(False)
         return
     cmds.sets(selection, add=set_node)
     _refresh_selection_manager()
@@ -436,16 +502,17 @@ def _remove_from_selection_set():
     set_node = _selected_selection_set()
     selection = cmds.ls(selection=True, flatten=True) or []
     if not set_node or not selection:
-        cmds.warning("Select a selection set and mesh components to remove")
+        cmds.warning("Select a live selection set and mesh components to remove")
+        _refresh_selection_manager(False)
         return
     cmds.sets(selection, remove=set_node)
     _refresh_selection_manager()
 
 
 def _lod_label(node):
-    if cmds.attributeQuery("a3obLodType", node=node, exists=True):
-        lod_type = cmds.getAttr(node + ".a3obLodType")
-        resolution = cmds.getAttr(node + ".a3obResolution") if cmds.attributeQuery("a3obResolution", node=node, exists=True) else 0
+    if _attr_exists(node, "a3obLodType"):
+        lod_type = _safe_get_attr(node, "a3obLodType", 0)
+        resolution = _safe_get_attr(node, "a3obResolution", 0)
         name = LOD_TYPE_NAMES.get(lod_type, "LOD")
         suffix = f" {resolution}" if lod_type == 0 else ""
         return f"{name}{suffix}  |  {node}"
@@ -472,8 +539,11 @@ def _selected_lod_transform():
 
 
 def _ensure_string_attr(node, attr, short_name):
-    if not cmds.attributeQuery(attr, node=node, exists=True):
+    if not _node_exists(node):
+        return False
+    if not _attr_exists(node, attr):
         cmds.addAttr(node, longName=attr, shortName=short_name, dataType="string")
+    return True
 
 
 def _split_named_properties(raw):
@@ -504,10 +574,11 @@ def _selected_named_property_lod():
     if selected:
         return selected
     lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
-    if lod:
+    if _node_exists(lod):
         return lod
     _refresh_named_property_lods()
-    return _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    return lod if _node_exists(lod) else None
 
 
 def _refresh_named_property_lods():
@@ -538,17 +609,18 @@ def _refresh_named_properties(rebuild_lods=False):
         return
     cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, removeAll=True)
     _named_property_items = {}
-    lod = _selected_lod_transform() or _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    lod = _selected_named_property_lod()
     if not lod:
-        _refresh_named_property_lods()
-        lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
-    if not lod:
+        if cmds.textField(NAMED_PROPERTIES_NAME, exists=True):
+            cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text="")
+        if cmds.textField(NAMED_PROPERTIES_VALUE, exists=True):
+            cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text="")
         return
     for label, node in _named_property_lods.items():
         if node == lod and _option_menu_value(NAMED_PROPERTIES_LOD) != label:
             cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=label)
             break
-    raw = cmds.getAttr(lod + ".a3obProperties") if cmds.attributeQuery("a3obProperties", node=lod, exists=True) else ""
+    raw = _safe_get_attr(lod, "a3obProperties", "") or ""
     for name, value in _split_named_properties(raw):
         label = f"{name} = {value}"
         _named_property_items[label] = (name, value)
@@ -567,14 +639,18 @@ def _select_named_property():
 def _set_named_property_value(name, value):
     lod = _selected_named_property_lod()
     if not lod:
-        cmds.warning("Import a P3D or select an Object Builder LOD")
+        cmds.warning("Import a P3D or select a live Object Builder LOD")
+        _refresh_named_properties(True)
         return False
     name = name.strip()
     value = value.strip()
     if not name:
         return False
-    _ensure_string_attr(lod, "a3obProperties", "a3prop")
-    existing = _split_named_properties(cmds.getAttr(lod + ".a3obProperties") or "")
+    if not _ensure_string_attr(lod, "a3obProperties", "a3prop"):
+        cmds.warning("Object Builder LOD was deleted")
+        _refresh_named_properties(True)
+        return False
+    existing = _split_named_properties(_safe_get_attr(lod, "a3obProperties", "") or "")
     properties = [(key, val) for key, val in existing if key != name]
     properties.append((name, value))
     cmds.setAttr(lod + ".a3obProperties", _join_named_properties(properties), type="string")
@@ -592,10 +668,14 @@ def _remove_named_property():
     lod = _selected_named_property_lod()
     name = cmds.textField(NAMED_PROPERTIES_NAME, query=True, text=True).strip()
     if not lod or not name:
-        cmds.warning("Select a named property to remove")
+        cmds.warning("Select a named property on a live LOD to remove")
+        _refresh_named_properties(True)
         return
-    _ensure_string_attr(lod, "a3obProperties", "a3prop")
-    properties = [(key, val) for key, val in _split_named_properties(cmds.getAttr(lod + ".a3obProperties") or "") if key != name]
+    if not _ensure_string_attr(lod, "a3obProperties", "a3prop"):
+        cmds.warning("Object Builder LOD was deleted")
+        _refresh_named_properties(True)
+        return
+    properties = [(key, val) for key, val in _split_named_properties(_safe_get_attr(lod, "a3obProperties", "") or "") if key != name]
     cmds.setAttr(lod + ".a3obProperties", _join_named_properties(properties), type="string")
     cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text="")
     cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text="")
@@ -655,20 +735,20 @@ def _material_nodes_for_selection():
     nodes = []
     seen = set()
     for shape in _mesh_shapes_from_selection():
-        shading_groups = cmds.listConnections(shape, type="shadingEngine") or []
+        shading_groups = _valid_nodes(cmds.listConnections(shape, type="shadingEngine") or [])
         for shading_group in shading_groups:
             if shading_group in {"initialShadingGroup", "initialParticleSE"} or shading_group in seen:
                 continue
             seen.add(shading_group)
-            materials = cmds.ls(cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or []
+            materials = _valid_nodes(cmds.ls(cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or [])
             material_node = materials[0] if materials else ""
             texture = ""
             material = ""
-            for candidate in [shading_group, material_node]:
-                if candidate and not texture and cmds.attributeQuery("a3obTexture", node=candidate, exists=True):
-                    texture = cmds.getAttr(candidate + ".a3obTexture") or ""
-                if candidate and not material and cmds.attributeQuery("a3obMaterial", node=candidate, exists=True):
-                    material = cmds.getAttr(candidate + ".a3obMaterial") or ""
+            for candidate in _valid_nodes([shading_group, material_node]):
+                if not texture:
+                    texture = _safe_get_attr(candidate, "a3obTexture", "") or ""
+                if not material:
+                    material = _safe_get_attr(candidate, "a3obMaterial", "") or ""
             nodes.append({"material_node": material_node, "shading_groups": [shading_group], "texture": texture, "material": material})
     return sorted(nodes, key=lambda item: ((item["material_node"] or "").lower(), item["shading_groups"][0].lower()))
 
@@ -693,7 +773,16 @@ def _refresh_material_metadata():
 
 def _selected_material_metadata_item():
     selected = cmds.textScrollList(MATERIAL_METADATA_LIST, query=True, selectItem=True) or []
-    return _material_metadata_items.get(selected[0]) if selected else None
+    if not selected:
+        return None
+    item = _material_metadata_items.get(selected[0])
+    if not item:
+        return None
+    if not _node_exists(item["material_node"]) and not _valid_nodes(item["shading_groups"]):
+        _refresh_material_metadata()
+        return None
+    item["shading_groups"] = _valid_nodes(item["shading_groups"])
+    return item
 
 
 def _select_material_metadata():
@@ -705,10 +794,13 @@ def _select_material_metadata():
 
 
 def _set_material_metadata_on_node(node, texture, material):
-    _ensure_string_attr(node, "a3obTexture", "a3tx")
-    _ensure_string_attr(node, "a3obMaterial", "a3mt")
+    if not _node_exists(node):
+        return False
+    if not _ensure_string_attr(node, "a3obTexture", "a3tx") or not _ensure_string_attr(node, "a3obMaterial", "a3mt"):
+        return False
     cmds.setAttr(node + ".a3obTexture", texture, type="string")
     cmds.setAttr(node + ".a3obMaterial", material, type="string")
+    return True
 
 
 def _commit_selected_material_metadata(*_):
@@ -717,10 +809,13 @@ def _commit_selected_material_metadata(*_):
         return
     texture = cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip()
     material = cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip()
-    if item["material_node"]:
-        _set_material_metadata_on_node(item["material_node"], texture, material)
+    changed = False
+    if _node_exists(item["material_node"]):
+        changed = _set_material_metadata_on_node(item["material_node"], texture, material) or changed
     for shading_group in item["shading_groups"]:
-        _set_material_metadata_on_node(shading_group, texture, material)
+        changed = _set_material_metadata_on_node(shading_group, texture, material) or changed
+    if not changed:
+        cmds.warning("Material metadata target was deleted")
     _refresh_material_metadata()
 
 
@@ -740,13 +835,16 @@ def _clear_selected_material_metadata():
     if not item:
         cmds.warning("Select a Maya material row to clear")
         return
-    for node in [item["material_node"]] + item["shading_groups"]:
-        if not node:
-            continue
-        if cmds.attributeQuery("a3obTexture", node=node, exists=True):
+    changed = False
+    for node in _valid_nodes([item["material_node"]] + item["shading_groups"]):
+        if _attr_exists(node, "a3obTexture"):
             cmds.setAttr(node + ".a3obTexture", "", type="string")
-        if cmds.attributeQuery("a3obMaterial", node=node, exists=True):
+            changed = True
+        if _attr_exists(node, "a3obMaterial"):
             cmds.setAttr(node + ".a3obMaterial", "", type="string")
+            changed = True
+    if not changed:
+        cmds.warning("Material metadata target was deleted")
     _refresh_material_metadata()
 
 
@@ -801,8 +899,9 @@ def _refresh_context_ui():
 def _install_context_refresh_job(parent):
     global _ui_script_jobs
     _ui_script_jobs = [job for job in _ui_script_jobs if cmds.scriptJob(exists=job)]
-    job = cmds.scriptJob(event=["SelectionChanged", _refresh_context_ui], parent=parent, protected=True)
-    _ui_script_jobs.append(job)
+    for event in ("SelectionChanged", "Undo", "Redo", "SceneOpened", "NewSceneOpened"):
+        job = cmds.scriptJob(event=[event, _refresh_context_ui], parent=parent, protected=True)
+        _ui_script_jobs.append(job)
 
 
 
@@ -876,10 +975,7 @@ def _build_lod_assignment_ui():
     _labeled_row("Resolution", lambda: cmds.intField(LOD_RESOLUTION_FIELD, minValue=0, value=1, changeCommand=_refresh_lod_assignment_ui))
     cmds.text(LOD_PREVIEW_TEXT, label="Will assign: Resolution 1", align="left")
     _full_width_button("Assign LOD to Selection", assign_lod_to_selection)
-    _two_column_buttons([
-        ("Create Empty LOD", create_empty_lod),
-        ("Validate Selection", lambda: cmds.a3obValidate(selectionOnly=True)),
-    ])
+    _full_width_button("Create Empty LOD", create_empty_lod)
     _end_section()
     _refresh_lod_assignment_ui()
 

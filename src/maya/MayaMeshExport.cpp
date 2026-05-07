@@ -32,6 +32,16 @@ namespace a3ob::maya
 {
 namespace
 {
+p3d::Vec3 mayaToCorePoint(const MPoint& value)
+{
+    return {static_cast<float>(value.x), static_cast<float>(-value.z), static_cast<float>(value.y)};
+}
+
+p3d::Vec3 mayaToCoreVector(const MVector& value)
+{
+    return {static_cast<float>(value.x), static_cast<float>(-value.z), static_cast<float>(value.y)};
+}
+
 struct ExportLOD
 {
     p3d::LOD lod;
@@ -576,13 +586,13 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
         for (unsigned int i = 0; i < points.length(); ++i) {
             const std::uint32_t sourceIndex = vertexSourceIndices[i];
             if (sourceIndex < output.lod.vertices.size()) {
-                output.lod.vertices[sourceIndex].position = {static_cast<float>(points[i].x), static_cast<float>(points[i].y), static_cast<float>(points[i].z)};
+                output.lod.vertices[sourceIndex].position = mayaToCorePoint(points[i]);
             }
         }
     } else {
         output.lod.vertices.reserve(points.length());
         for (unsigned int i = 0; i < points.length(); ++i) {
-            output.lod.vertices.push_back({{static_cast<float>(points[i].x), static_cast<float>(points[i].y), static_cast<float>(points[i].z)}, 0});
+            output.lod.vertices.push_back({mayaToCorePoint(points[i]), 0});
         }
     }
 
@@ -622,7 +632,7 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
             if (!status) {
                 normal = MVector(0.0, 1.0, 0.0);
             }
-            output.lod.normals.push_back({static_cast<float>(normal.x), static_cast<float>(normal.y), static_cast<float>(normal.z)});
+            output.lod.normals.push_back(mayaToCoreVector(normal));
 
             int uvId = -1;
             if (uArray.length() > 0 && polygonIt.getUVIndex(i, uvId) && uvId >= 0 && static_cast<unsigned int>(uvId) < uArray.length()) {

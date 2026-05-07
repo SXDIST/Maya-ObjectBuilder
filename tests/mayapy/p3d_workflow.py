@@ -1,4 +1,5 @@
 import os
+import runpy
 from pathlib import Path
 
 import maya.cmds as cmds
@@ -13,6 +14,7 @@ INPUTS = [
 ]
 OUTDIR = ROOT / "build" / "mayapy-workflow"
 DAYZ_OUTDIR = ROOT / "build" / "dayz-p3d-workflow"
+UI_SCRIPT = ROOT / "scripts" / "objectBuilderMenu.py"
 
 
 def optional_dayz_inputs():
@@ -89,6 +91,26 @@ def uv_values(mesh):
     return sorted(pairs)
 
 
+def mesh_extents(meshes):
+    points = []
+    for mesh in meshes:
+        raw = cmds.xform(mesh + ".vtx[*]", query=True, translation=True, worldSpace=True) or []
+        points.extend((float(raw[index]), float(raw[index + 1]), float(raw[index + 2])) for index in range(0, len(raw), 3))
+    if not points:
+        raise RuntimeError("No mesh vertices found for axis orientation check")
+    xs, ys, zs = zip(*points)
+    return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+
+
+def assert_y_up_character_orientation(namespace):
+    meshes = cmds.ls(f"{namespace}:*", type="mesh", long=True) or []
+    if not meshes:
+        raise RuntimeError(f"No imported meshes found in namespace {namespace}")
+    x_extent, y_extent, z_extent = mesh_extents(meshes)
+    if y_extent <= z_extent:
+        raise RuntimeError(f"Expected imported character to be Maya Y-up, got extents x={x_extent:.4f} y={y_extent:.4f} z={z_extent:.4f}")
+
+
 def assert_generated_metadata():
     if "proxy:proxy/generated_dayz.p3d.7" not in proxy_selection_sets():
         raise RuntimeError("Generated proxy selection did not roundtrip")
@@ -103,6 +125,28 @@ def assert_generated_metadata():
     masses = cmds.getAttr(lod + ".a3obMassValues").split(";")
     if len(masses) != cmds.getAttr(lod + ".a3obSourceVertexCount"):
         raise RuntimeError("Generated mass count did not roundtrip")
+
+
+def assert_stale_selection_ui_refresh():
+    cmds.file(new=True, force=True)
+    lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="stale_ui_lod")
+    mesh = cmds.polyPlane(name="stale_ui_mesh", subdivisionsX=1, subdivisionsY=1)[0]
+    cmds.parent(mesh, lod)
+    cmds.select(mesh + ".f[0]")
+    set_node = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_stale")
+    cmds.addAttr(set_node, longName="a3obSelectionName", dataType="string")
+    cmds.setAttr(set_node + ".a3obSelectionName", "stale", type="string")
+
+    ui = runpy.run_path(str(UI_SCRIPT))
+    if not any(item["node"] == set_node for item in ui["_selection_sets"]()):
+        raise RuntimeError("Stale test selection set was not found before deletion")
+    cmds.delete(set_node)
+    if ui["_live_set_members"](set_node):
+        raise RuntimeError("Deleted selection set still returned live members")
+    if any(item["node"] == set_node for item in ui["_selection_sets"]()):
+        raise RuntimeError("Deleted selection set remained in live Selection Manager data")
+    cmds.a3obValidate()
+    print("OK stale Selection Manager data is pruned after deletion")
 
 
 def create_generated_fixture(path):
@@ -197,6 +241,8 @@ def roundtrip_file(path, outdir):
     cmds.file(new=True, force=True)
     cmds.file(str(path), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
     assert_import_hierarchy(path)
+    if path.name == "sample_1_character.p3d":
+        assert_y_up_character_orientation("p3d")
     before = lod_counts()
     before_selections = selection_component_counts()
     cmds.a3obValidate()
@@ -205,6 +251,8 @@ def roundtrip_file(path, outdir):
     cmds.file(exportAll=True, force=True, type="Arma P3D")
     cmds.file(new=True, force=True)
     cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="rt")
+    if path.name == "sample_1_character.p3d":
+        assert_y_up_character_orientation("rt")
     after = lod_counts()
     after_selections = selection_component_counts()
     if before != after:
@@ -236,6 +284,7 @@ def main():
     cmds.select(lod)
     cmds.a3obValidate()
 
+    assert_stale_selection_ui_refresh()
     create_generated_fixture(OUTDIR / "generated_dayz_metadata.p3d")
     assert_selected_export_modes(OUTDIR)
 
