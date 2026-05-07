@@ -8,7 +8,7 @@ This repository contains the original Arma 3 Object Builder Blender add-on under
 
 The Blender add-on is a Python extension for importing, exporting, and editing Arma 3 content formats such as P3D, ASC, RTM, PAA, `model.cfg`, and Terrain Builder object lists. It targets Blender through `bpy`; legacy `bl_info` metadata lists Blender 2.90+, while `blender_manifest.toml` declares the Blender 4.2+ extension manifest for version 2.5.1.
 
-The Maya plugin is being developed as a C++ core format layer plus a thin Maya API integration layer. It currently builds `MayaObjectBuilder.mll`, registers the `Arma P3D` file translator and initial `a3ob*` commands, parses/writes P3D MLOD files in pure C++, and imports P3D LOD meshes into Maya transforms with basic LOD metadata.
+The Maya plugin is being developed as a C++ core format layer plus a thin Maya API integration layer for DayZ/Object Builder-style workflows. It builds `MayaObjectBuilder.mll`, registers the `Arma P3D` file translator and `a3ob*` commands, parses/writes P3D MLOD files in pure C++, and imports/exports P3D LOD meshes with Object Builder metadata preservation.
 
 ## Common commands
 
@@ -36,6 +36,9 @@ build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg 
 # Run the Maya P3D import/export workflow regression
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 
+# Optionally include private/local DayZ P3D fixtures in the same workflow
+DAYZ_P3D_FIXTURES=/path/to/dayz/p3d "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
+
 # Run the Maya model.cfg joint import/export workflow regression
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 
@@ -59,16 +62,28 @@ blender -b -noaudio --python tests/mcfg.py
 
 There is no `pyproject.toml`, `requirements.txt`, package manager config, or dedicated lint/type-check command for the Blender add-on. Blender tests are plain `unittest` scripts executed inside Blender so that `bpy` and registered `a3ob` operators are available.
 
+Full Maya verification checklist:
+
+```bash
+cmake --build build --config Debug
+build/Debug/p3d_roundtrip.exe Arma3ObjectBuilder-master/tests/inputs/p3d build/p3d-roundtrip
+build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg build/model-cfg-output.cfg
+python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py tests/mayapy/model_cfg_workflow.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
+cmake --build build --config Release
+```
+
 ## Maya plugin architecture
 
 - `CMakeLists.txt` follows the local Maya devkit pattern from `collider-tools`: it uses `C:/maya_devkits/2027/devkitBase` as the fallback `DEVKIT_LOCATION`, includes `cmake/pluginEntry.cmake`, and calls `build_plugin()`.
-- `src/PluginMain.cpp` registers the plugin entry points, the `Arma P3D` file translator, and the commands: `a3obValidate`, `a3obSetMass`, `a3obCreateLOD`, `a3obProxy`, `a3obImportModelCfg`, and `a3obExportModelCfg`.
-- `src/commands/StubCommands.*` currently contains the command implementations for LOD creation/marking, mass metadata, proxy placeholders/selections, and scene validation.
+- `src/PluginMain.cpp` registers the plugin entry points, the `Arma P3D` file translator, and the commands: `a3obValidate`, `a3obSetMass`, `a3obSetMaterial`, `a3obSetFlag`, `a3obCreateLOD`, `a3obProxy`, `a3obImportModelCfg`, and `a3obExportModelCfg`.
+- `src/commands/StubCommands.*` contains the command implementations for LOD creation/marking, mass metadata including selected vertex mass edits, material metadata assignment, flag objectSets, proxy placeholders/selections, and scene validation.
 - `src/commands/ModelCfgCommands.*` imports `model.cfg` skeletons into Maya joint hierarchies and exports selected/root skeleton joints back to `model.cfg`.
 - `src/formats/` is the DCC-independent C++ format core. `BinaryIO.*` provides little-endian binary helpers; `P3D.*` parses and writes P3D MLOD/P3DM data; `ModelCfg.*` parses/writes the current model.cfg skeleton MVP.
 - `src/translators/P3DTranslator.*` is the Maya `MPxFileTranslator` bridge. `reader()` parses P3D with the core format layer and hands it to the Maya import layer; `writer()` exports Maya LOD transforms back to P3D.
 - `src/maya/MayaMeshImport.*` and `src/maya/MayaMeshExport.*` convert between parsed P3D LODs and Maya transforms/meshes, including LOD metadata, UVs, normals, material metadata, selections/proxies, mass/flags, TAGGs, and source vertex preservation.
-- `scripts/objectBuilderMenu.py` installs a minimal interactive Maya menu that calls the C++ commands and P3D import/export translator.
+- `scripts/objectBuilderMenu.py` installs a minimal interactive Maya menu that calls the C++ commands, P3D import/export translator, and a Selections Manager for selecting, renaming, creating, adding to, and removing from Object Builder named selection sets.
 - `tests/cpp/p3d_roundtrip.cpp` and `tests/cpp/model_cfg_test.cpp` are pure C++ regression executables; `tests/mayapy/p3d_workflow.py` validates plugin commands and P3D import/export/reimport in Maya; `tests/mayapy/model_cfg_workflow.py` validates model.cfg joint import/export.
 
 ## Current Maya plugin status
@@ -76,8 +91,8 @@ There is no `pyproject.toml`, `requirements.txt`, package manager config, or ded
 - Visual Studio 2026 generator is known to work: `Visual Studio 18 2026` with `-A x64`.
 - `MayaObjectBuilder.mll` builds and loads in Maya 2027 via `mayapy`.
 - The pure C++ roundtrip test passes on `sample_1_character.p3d` and `sample_2_crate.p3d` with structural and TAGG summary checks.
-- Maya import/export/reimport workflow passes on the P3D fixtures through `tests/mayapy/p3d_workflow.py`.
-- P3D support includes LOD metadata, UVs, normals, material metadata, selections/proxies, mass, vertex/face flags, core TAGGs, and source vertex preservation.
+- Maya import/export/reimport workflow passes on the P3D fixtures through `tests/mayapy/p3d_workflow.py`; the same workflow optionally includes local DayZ `.p3d` fixtures from `DAYZ_P3D_FIXTURES`, `tests/inputs/dayz_p3d`, or `local/dayz_p3d` when present.
+- P3D support includes LOD metadata, UVs, normals, material metadata, selections/proxies, mass, vertex/face flags, core TAGGs, source vertex preservation, generated DayZ-style metadata regression coverage, and DayZ-safe validation checks.
 - `model_cfg_test` and `tests/mayapy/model_cfg_workflow.py` validate the current model.cfg skeleton MVP against `Arma3ObjectBuilder-master/tests/inputs/model.cfg`.
 - RTM, ASC, and TBCSV are intentionally out of scope for the current Maya plugin plan.
 
@@ -97,6 +112,7 @@ There is no `pyproject.toml`, `requirements.txt`, package manager config, or ded
 ## Development notes
 
 - Keep new Maya plugin files at the repository root under `src/`, `tests/`, and similar top-level folders; do not recreate a nested `MayaObjectBuilder/` project directory.
+- Prioritize DayZ P3D/Object Builder compatibility. Use the Arma 3 Blender add-on as a format/workflow reference, but avoid Arma-3-only assumptions in validation or metadata normalization.
 - For Maya plugin changes, build with CMake/Visual Studio 2026 and validate load/unload with Maya 2027 `mayapy` before reporting success.
 - For P3D format changes, run `p3d_roundtrip` against `Arma3ObjectBuilder-master/tests/inputs/p3d`.
 - Many Blender add-on modules import `bpy`; avoid assuming files can be executed with system Python outside Blender.

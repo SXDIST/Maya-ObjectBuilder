@@ -23,6 +23,7 @@
 #include <maya/MVectorArray.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <regex>
@@ -52,13 +53,97 @@ MString sanitizedName(MString value)
     return result;
 }
 
+const char* lodBaseName(int lod)
+{
+    switch (lod) {
+    case 0: return "Resolution";
+    case 1: return "View - Gunner";
+    case 2: return "View - Pilot";
+    case 3: return "View - Cargo";
+    case 4: return "Shadow Volume";
+    case 5: return "Edit";
+    case 6: return "Geometry";
+    case 7: return "Geometry Buoyancy";
+    case 8: return "Geometry PhysX";
+    case 9: return "Memory";
+    case 10: return "Land Contact";
+    case 11: return "Roadway";
+    case 12: return "Paths";
+    case 13: return "Hit-points";
+    case 14: return "View Geometry";
+    case 15: return "Fire Geometry";
+    case 16: return "View - Cargo Geometry";
+    case 17: return "View - Cargo Fire Geometry";
+    case 18: return "View - Commander";
+    case 19: return "View - Commander Geometry";
+    case 20: return "View - Commander Fire Geometry";
+    case 21: return "View - Pilot Geometry";
+    case 22: return "View - Pilot Fire Geometry";
+    case 23: return "View - Gunner Geometry";
+    case 24: return "View - Gunner Fire Geometry";
+    case 25: return "Sub Parts";
+    case 26: return "Shadow Volume - Cargo View";
+    case 27: return "Shadow Volume - Pilot View";
+    case 28: return "Shadow Volume - Gunner View";
+    case 29: return "Wreckage";
+    case 30: return "Underground";
+    case 31: return "Groundlayer";
+    case 32: return "Navigation";
+    default: return "Unknown";
+    }
+}
+
+bool lodHasResolution(int lod)
+{
+    return lod == 0 || lod == 3 || lod == 4 || lod == 5 || lod == 16 || lod == 26;
+}
+
 MString lodName(const p3d::LodResolution& resolution)
 {
-    MString name = "LOD_";
-    name += resolution.lod;
-    name += "_";
-    name += resolution.resolution;
+    MString name = lodBaseName(resolution.lod);
+    if (lodHasResolution(resolution.lod)) {
+        name += " ";
+        name += resolution.resolution;
+    }
     return name;
+}
+
+MString lodGroupName(int lod)
+{
+    switch (lod) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 18:
+        return "Visuals";
+    case 4:
+    case 26:
+    case 27:
+    case 28:
+        return "Shadows";
+    case 6:
+    case 7:
+    case 8:
+    case 14:
+    case 15:
+    case 16:
+    case 17:
+    case 19:
+    case 20:
+    case 21:
+    case 22:
+    case 23:
+    case 24:
+    case 30:
+        return "Geometries";
+    case 9:
+    case 10:
+    case 13:
+        return "Point clouds";
+    default:
+        return "Misc";
+    }
 }
 
 MString selectionSetName(const MString& transformName, const std::string& selectionName)
@@ -813,8 +898,38 @@ MStatus MayaMeshImport::assignMaterials(const MObject& mesh, const p3d::LOD& lod
 MStatus MayaMeshImport::importMLOD(const p3d::MLOD& mlod, const MString& sourceName, MObjectArray& createdTransforms)
 {
     MStatus status;
-    for (unsigned int i = 0; i < mlod.lods.size(); ++i) {
-        status = importLOD(mlod.lods[i], i, sourceName, createdTransforms);
+    MFnTransform rootFn;
+    const std::filesystem::path sourcePath(sourceName.asChar());
+    MObject root = rootFn.create(MObject::kNullObj, &status);
+    if (!status) {
+        return status;
+    }
+    rootFn.setName(sanitizedName(sourcePath.stem().string().c_str()), false, &status);
+    if (!status) {
+        return status;
+    }
+
+    std::map<std::string, MObject> groups;
+    for (const p3d::LOD& lod : mlod.lods) {
+        const MString groupName = lodGroupName(lod.resolution.lod);
+        MObject group = MObject::kNullObj;
+        const auto existing = groups.find(groupName.asChar());
+        if (existing != groups.end()) {
+            group = existing->second;
+        } else {
+            MFnTransform groupFn;
+            group = groupFn.create(root, &status);
+            if (!status) {
+                return status;
+            }
+            groupFn.setName(groupName, false, &status);
+            if (!status) {
+                return status;
+            }
+            groups[groupName.asChar()] = group;
+        }
+
+        status = importLOD(lod, group, createdTransforms);
         if (!status) {
             return status;
         }
@@ -822,21 +937,17 @@ MStatus MayaMeshImport::importMLOD(const p3d::MLOD& mlod, const MString& sourceN
     return MStatus::kSuccess;
 }
 
-MStatus MayaMeshImport::importLOD(const p3d::LOD& lod, unsigned int index, const MString& sourceName, MObjectArray& createdTransforms)
+MStatus MayaMeshImport::importLOD(const p3d::LOD& lod, MObject parent, MObjectArray& createdTransforms)
 {
     MStatus status;
 
     MFnTransform transformFn;
-    MObject transform = transformFn.create(MObject::kNullObj, &status);
+    MObject transform = transformFn.create(parent, &status);
     if (!status) {
         return status;
     }
 
-    MString transformName = sanitizedName(sourceName);
-    transformName += "_";
-    transformName += lodName(lod.resolution);
-    transformName += "#";
-    transformFn.setName(transformName, false, &status);
+    transformFn.setName(lodName(lod.resolution), false, &status);
     if (!status) {
         return status;
     }
@@ -858,13 +969,14 @@ MStatus MayaMeshImport::importLOD(const p3d::LOD& lod, unsigned int index, const
         }
 
         MPointArray points;
+        points.setLength(static_cast<unsigned int>(vertexRemap.size()));
         for (const auto& [sourceIndex, importedIndex] : vertexRemap) {
             if (sourceIndex >= lod.vertices.size()) {
                 MGlobal::displayError("P3D face references a vertex outside the LOD vertex table");
                 return MS::kFailure;
             }
             const p3d::Vertex& vertex = lod.vertices[sourceIndex];
-            points.append(MPoint(vertex.position.x, vertex.position.y, vertex.position.z));
+            points.set(MPoint(vertex.position.x, vertex.position.y, vertex.position.z), static_cast<unsigned int>(importedIndex));
         }
 
         MIntArray faceCounts;

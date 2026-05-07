@@ -102,32 +102,19 @@ def create_generated_fixture(path):
     cmds.polyEditUV(mesh + ".map[2]", u=0.875, v=0.375, relative=False)
     cmds.polyEditUV(mesh + ".map[3]", u=0.375, v=0.125, relative=False)
 
-    shader = cmds.shadingNode("lambert", asShader=True, name="generated_dayz_material")
-    shading_group = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name="generated_dayz_materialSG")
-    cmds.connectAttr(shader + ".outColor", shading_group + ".surfaceShader", force=True)
-    for node in (shader, shading_group):
-        cmds.addAttr(node, longName="a3obTexture", dataType="string")
-        cmds.addAttr(node, longName="a3obMaterial", dataType="string")
-        cmds.setAttr(node + ".a3obTexture", "dz\\weapons\\generated_ca.paa", type="string")
-        cmds.setAttr(node + ".a3obMaterial", "dz\\weapons\\generated.rvmat", type="string")
-    cmds.sets(mesh, edit=True, forceElement=shading_group)
+    cmds.select(mesh + ".f[0]")
+    cmds.a3obSetMaterial(texture="dz\\weapons\\generated_ca.paa", material="dz\\weapons\\generated.rvmat")
 
     cmds.select(lod)
     cmds.a3obSetMass(value=2.5)
+    cmds.select(mesh + ".vtx[0]")
+    cmds.a3obSetMass(value=7.5, selectedComponents=True)
     cmds.select(mesh + ".f[0]")
     cmds.a3obProxy(path="proxy/generated_dayz.p3d", index=7, fromSelection=True)
-    for set_name, component, flag_component, value in [
-        ("generated_vertex_flag", mesh + ".vtx[0:1]", "vertex", 123),
-        ("generated_face_flag", mesh + ".f[0]", "face", 456),
-    ]:
-        cmds.select(component)
-        created = cmds.sets(name=set_name)
-        cmds.addAttr(created, longName="a3obSelectionName", dataType="string")
-        cmds.addAttr(created, longName="a3obFlagComponent", dataType="string")
-        cmds.addAttr(created, longName="a3obFlagValue", attributeType="long")
-        cmds.setAttr(created + ".a3obSelectionName", set_name, type="string")
-        cmds.setAttr(created + ".a3obFlagComponent", flag_component, type="string")
-        cmds.setAttr(created + ".a3obFlagValue", value)
+    cmds.select(mesh + ".vtx[0:1]")
+    cmds.a3obSetFlag(component="vertex", value=123, name="generated_vertex_flag")
+    cmds.select(mesh + ".f[0]")
+    cmds.a3obSetFlag(component="face", value=456, name="generated_face_flag")
 
     before_uvs = uv_values(mesh)
     cmds.select(lod)
@@ -143,9 +130,26 @@ def create_generated_fixture(path):
     print("OK generated DayZ-style P3D metadata workflow")
 
 
+def assert_import_hierarchy(path):
+    root = "p3d:" + path.stem.replace(".", "_")
+    if not cmds.objExists(root):
+        raise RuntimeError(f"Missing import root {root}")
+    groups = set(cmds.listRelatives(root, children=True, type="transform") or [])
+    if "p3d:Visuals" not in groups:
+        raise RuntimeError(f"Missing Visuals group for {path.name}")
+    lod_names = set()
+    for group in groups:
+        lod_names.update(cmds.listRelatives(group, children=True, type="transform") or [])
+    if not any("Resolution" in name for name in lod_names):
+        raise RuntimeError(f"Missing human-readable visual LOD names for {path.name}")
+    if any(cmds.getAttr(node + ".a3obLodType") in (6, 14, 15) for node in cmds.ls(type="transform") or [] if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)) and "p3d:Geometries" not in groups:
+        raise RuntimeError(f"Missing Geometries group for {path.name}")
+
+
 def roundtrip_file(path, outdir):
     cmds.file(new=True, force=True)
     cmds.file(str(path), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
+    assert_import_hierarchy(path)
     before = lod_counts()
     cmds.a3obValidate()
     out = outdir / path.name
@@ -165,7 +169,7 @@ def main():
     DAYZ_OUTDIR.mkdir(parents=True, exist_ok=True)
     cmds.loadPlugin(str(PLUGIN), quiet=True)
     commands = set(cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or [])
-    expected = {"a3obValidate", "a3obSetMass", "a3obCreateLOD", "a3obProxy"}
+    expected = {"a3obValidate", "a3obSetMass", "a3obSetMaterial", "a3obSetFlag", "a3obCreateLOD", "a3obProxy"}
     missing = expected - commands
     if missing:
         raise RuntimeError(f"Missing commands: {sorted(missing)}")

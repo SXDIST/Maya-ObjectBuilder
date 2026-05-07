@@ -8,6 +8,7 @@
 #include <maya/MFnDagNode.h>
 #include <maya/MFnDependencyNode.h>
 #include <maya/MFnMesh.h>
+#include <maya/MFnLambertShader.h>
 #include <maya/MFnNumericAttribute.h>
 #include <maya/MFnSet.h>
 #include <maya/MFnSingleIndexedComponent.h>
@@ -20,8 +21,11 @@
 #include <maya/MItMeshPolygon.h>
 #include <maya/MObjectArray.h>
 #include <maya/MPlug.h>
+#include <maya/MPointArray.h>
 #include <maya/MSelectionList.h>
+#include <maya/MVector.h>
 
+#include <algorithm>
 #include <map>
 #include <regex>
 #include <set>
@@ -348,7 +352,7 @@ bool setContainsMesh(const MObject& set, const MObject& mesh)
     return false;
 }
 
-void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, int& warnings, int& errors)
+void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, const std::set<std::string>& proxyPlaceholders, int& warnings, int& errors)
 {
     MStatus status;
     MItDependencyNodes it(MFn::kSet, &status);
@@ -364,9 +368,14 @@ void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, int&
                 MGlobal::displayWarning(MString("a3obValidate: duplicate selection name on ") + lodName);
                 ++warnings;
             }
-            if (boolPlugValue(set, "a3obIsProxySelection") && !isProxySelectionName(selectionName)) {
-                MGlobal::displayError(MString("a3obValidate: invalid proxy selection name on ") + lodName);
-                ++errors;
+            if (boolPlugValue(set, "a3obIsProxySelection")) {
+                if (!isProxySelectionName(selectionName)) {
+                    MGlobal::displayError(MString("a3obValidate: invalid proxy selection name on ") + lodName);
+                    ++errors;
+                } else if (proxyPlaceholders.find(selectionName) == proxyPlaceholders.end()) {
+                    MGlobal::displayWarning(MString("a3obValidate: proxy selection has no matching placeholder on ") + lodName);
+                    ++warnings;
+                }
             }
         }
 
@@ -375,7 +384,62 @@ void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, int&
             MGlobal::displayError(MString("a3obValidate: invalid flag component type on ") + lodName);
             ++errors;
         }
+        if (!flagComponent.empty() && intPlugValue(set, "a3obFlagValue", 0) == 0) {
+            MGlobal::displayError(MString("a3obValidate: invalid zero flag value on ") + lodName);
+            ++errors;
+        }
     }
+}
+
+std::set<std::string> proxyPlaceholderSelections(const MObject& lod, const MString& lodName, int& warnings, int& errors)
+{
+    std::set<std::string> proxySelections;
+    MStatus status;
+    MFnDagNode dag(lod, &status);
+    if (!status) return proxySelections;
+    for (unsigned int i = 0; i < dag.childCount(); ++i) {
+        MObject child = dag.child(i, &status);
+        if (!status || !child.hasFn(MFn::kTransform) || !boolPlugValue(child, "a3obIsProxy")) continue;
+        const std::string path = stringPlugValue(child, "a3obProxyPath");
+        const int index = intPlugValue(child, "a3obProxyIndex", -1);
+        const std::string selection = stringPlugValue(child, "a3obProxySelection");
+        if (path.empty() || index < 0 || !isProxySelectionName(selection)) {
+            MGlobal::displayError(MString("a3obValidate: invalid proxy placeholder under ") + lodName);
+            ++errors;
+            continue;
+        }
+        if (!proxySelections.insert(selection).second) {
+            MGlobal::displayWarning(MString("a3obValidate: duplicate proxy placeholder under ") + lodName);
+            ++warnings;
+        }
+        if (!proxySelectionSetExists(selection)) {
+            MGlobal::displayWarning(MString("a3obValidate: proxy placeholder has no matching selection set under ") + lodName);
+            ++warnings;
+        }
+    }
+    return proxySelections;
+}
+
+bool polygonHasRepeatedVertices(const MIntArray& vertices)
+{
+    std::set<int> seen;
+    for (unsigned int i = 0; i < vertices.length(); ++i) {
+        if (!seen.insert(vertices[i]).second) return true;
+    }
+    return false;
+}
+
+bool polygonHasNearZeroArea(const MPointArray& points)
+{
+    if (points.length() < 3) return true;
+    const MPoint& origin = points[0];
+    double area = 0.0;
+    for (unsigned int i = 1; i + 1 < points.length(); ++i) {
+        const MVector a = points[i] - origin;
+        const MVector b = points[i + 1] - origin;
+        area += (a ^ b).length() * 0.5;
+    }
+    return area < 1.0e-10;
 }
 
 MStatus createProxySelectionSet(const MString& selectionName)
@@ -417,6 +481,113 @@ MString repeatedMassValues(int count, double value)
         result += value;
     }
     return result;
+}
+
+std::vector<double> massValuesForLOD(const MObject& transform, double defaultValue)
+{
+    const int count = vertexCountForLOD(transform);
+    std::vector<double> values(static_cast<std::size_t>(std::max(count, 0)), defaultValue);
+    const std::vector<std::string> existing = splitSemicolon(stringPlugValue(transform, "a3obMassValues"));
+    for (std::size_t i = 0; i < existing.size() && i < values.size(); ++i) {
+        values[i] = std::stod(existing[i]);
+    }
+    return values;
+}
+
+MString massValuesString(const std::vector<double>& values)
+{
+    MString result;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i != 0) result += ";";
+        result += values[i];
+    }
+    return result;
+}
+
+MStatus selectedComponents(MSelectionList& members, MObject& lod)
+{
+    MSelectionList selection;
+    MGlobal::getActiveSelectionList(selection);
+    for (unsigned int i = 0; i < selection.length(); ++i) {
+        MDagPath path;
+        MObject component;
+        if (!selection.getDagPath(i, path, component) || component.isNull()) continue;
+        MObject candidate = lodTransformForPath(path);
+        if (candidate.isNull()) continue;
+        if (lod.isNull()) lod = candidate;
+        members.add(path, component);
+    }
+    return members.length() > 0 ? MS::kSuccess : MS::kFailure;
+}
+
+MStatus setSelectedMassValues(MObject lod, double value)
+{
+    MSelectionList members;
+    MObject selectedLod = MObject::kNullObj;
+    if (!selectedComponents(members, selectedLod)) return MS::kFailure;
+    if (lod.isNull()) lod = selectedLod;
+
+    std::vector<double> masses = massValuesForLOD(lod, 0.0);
+    for (unsigned int i = 0; i < members.length(); ++i) {
+        MDagPath path;
+        MObject component;
+        if (!members.getDagPath(i, path, component) || !component.hasFn(MFn::kMeshVertComponent)) continue;
+        MFnSingleIndexedComponent componentFn(component);
+        MIntArray elements;
+        componentFn.getElements(elements);
+        for (unsigned int j = 0; j < elements.length(); ++j) {
+            const int index = elements[j];
+            if (index >= 0 && static_cast<std::size_t>(index) < masses.size()) masses[static_cast<std::size_t>(index)] = value;
+        }
+    }
+
+    MStatus status = setBoolAttribute(lod, "a3obHasMass", "a3mass", true);
+    if (!status) return status;
+    return setStringAttribute(lod, "a3obMassValues", "a3mv", massValuesString(masses));
+}
+
+MStatus createMetadataSet(const MString& setName, const char* component, int value)
+{
+    MSelectionList members;
+    MObject lod;
+    MStatus status = selectedComponents(members, lod);
+    if (!status) return status;
+    MFnSet setFn;
+    MObject set = setFn.create(members, MFnSet::kNone, &status);
+    if (!status) return status;
+    setFn.setName(setName, false, &status);
+    if (!status) return status;
+    status = setStringAttribute(set, "a3obSelectionName", "a3sn", setName);
+    if (!status) return status;
+    status = setStringAttribute(set, "a3obFlagComponent", "a3fc", component);
+    if (!status) return status;
+    return setIntAttribute(set, "a3obFlagValue", "a3fv", value);
+}
+
+MObject createMaterialNodes(const MString& texture, const MString& material, MStatus& status)
+{
+    MFnLambertShader shaderFn;
+    MObject shader = shaderFn.create(true, &status);
+    if (!status) return MObject::kNullObj;
+    shaderFn.setName("a3ob_material#", false, &status);
+    if (!status) return MObject::kNullObj;
+
+    MFnSet shadingGroupFn;
+    MObject shadingGroup = shadingGroupFn.create(MSelectionList(), MFnSet::kRenderableOnly, &status);
+    if (!status) return MObject::kNullObj;
+    MString shadingGroupName = shaderFn.name();
+    shadingGroupName += "SG";
+    shadingGroupFn.setName(shadingGroupName, false, &status);
+    if (!status) return MObject::kNullObj;
+    status = setStringAttribute(shader, "a3obTexture", "a3tx", texture);
+    if (!status) return MObject::kNullObj;
+    status = setStringAttribute(shader, "a3obMaterial", "a3mt", material);
+    if (!status) return MObject::kNullObj;
+    status = setStringAttribute(shadingGroup, "a3obTexture", "a3sgtx", texture);
+    if (!status) return MObject::kNullObj;
+    status = setStringAttribute(shadingGroup, "a3obMaterial", "a3sgmt", material);
+    if (!status) return MObject::kNullObj;
+    return shadingGroup;
 }
 
 bool parseIntArg(const MArgList& args, const char* flag, int& value)
@@ -523,6 +694,8 @@ MStatus ValidateCommand::doIt(const MArgList& args)
             }
         }
 
+        const std::set<std::string> proxySelections = proxyPlaceholderSelections(lod, name, warnings, errors);
+
         if (!mesh.isNull()) {
             MStatus status;
             MFnMesh meshFn(mesh, &status);
@@ -537,6 +710,20 @@ MStatus ValidateCommand::doIt(const MArgList& args)
                             MGlobal::displayError(MString("a3obValidate: face with fewer than 3 vertices on ") + name);
                             ++errors;
                             break;
+                        }
+                        MIntArray vertexIds;
+                        if (polyIt.getVertices(vertexIds) && polygonHasRepeatedVertices(vertexIds)) {
+                            MGlobal::displayError(MString("a3obValidate: face uses repeated vertices on ") + name);
+                            ++errors;
+                            break;
+                        }
+                        if (sourceFaceCount == 0) {
+                            MPointArray points;
+                            polyIt.getPoints(points, MSpace::kObject);
+                            if (polygonHasNearZeroArea(points)) {
+                                MGlobal::displayWarning(MString("a3obValidate: near-zero-area face on ") + name);
+                                ++warnings;
+                            }
                         }
                     }
                 }
@@ -553,33 +740,7 @@ MStatus ValidateCommand::doIt(const MArgList& args)
                         }
                     }
                 }
-                validateObjectSetsForMesh(mesh, name, warnings, errors);
-            }
-        }
-
-        MStatus status;
-        MFnDagNode dag(lod, &status);
-        if (status) {
-            std::set<std::string> proxySelections;
-            for (unsigned int i = 0; i < dag.childCount(); ++i) {
-                MObject child = dag.child(i, &status);
-                if (!status || !child.hasFn(MFn::kTransform) || !boolPlugValue(child, "a3obIsProxy")) continue;
-                const std::string path = stringPlugValue(child, "a3obProxyPath");
-                const int index = intPlugValue(child, "a3obProxyIndex", -1);
-                const std::string selection = stringPlugValue(child, "a3obProxySelection");
-                if (path.empty() || index < 0 || !isProxySelectionName(selection)) {
-                    MGlobal::displayError(MString("a3obValidate: invalid proxy placeholder under ") + name);
-                    ++errors;
-                    continue;
-                }
-                if (!proxySelections.insert(selection).second) {
-                    MGlobal::displayWarning(MString("a3obValidate: duplicate proxy placeholder under ") + name);
-                    ++warnings;
-                }
-                if (!proxySelectionSetExists(selection)) {
-                    MGlobal::displayWarning(MString("a3obValidate: proxy placeholder has no matching selection set under ") + name);
-                    ++warnings;
-                }
+                validateObjectSetsForMesh(mesh, name, proxySelections, warnings, errors);
             }
         }
     }
@@ -598,6 +759,7 @@ MSyntax SetMassCommand::syntax()
     MSyntax syntax;
     syntax.addFlag("-v", "-value", MSyntax::kDouble);
     syntax.addFlag("-c", "-clear");
+    syntax.addFlag("-sc", "-selectedComponents");
     return syntax;
 }
 
@@ -625,6 +787,16 @@ MStatus SetMassCommand::doIt(const MArgList& args)
     } else if (argData.isFlagSet("-v")) {
         argData.getFlagArgument("-v", 0, value);
     }
+    if (argData.isFlagSet("-selectedComponents") || argData.isFlagSet("-sc")) {
+        MStatus status = setSelectedMassValues(transform, value);
+        if (!status) {
+            MGlobal::displayError("a3obSetMass: select LOD mesh vertex components");
+            return MS::kFailure;
+        }
+        MGlobal::displayInfo("a3obSetMass: set selected vertex mass values");
+        return MS::kSuccess;
+    }
+
     const int count = vertexCountForLOD(transform);
     if (count <= 0) {
         MGlobal::displayError("a3obSetMass: selected LOD has no vertices");
@@ -636,6 +808,106 @@ MStatus SetMassCommand::doIt(const MArgList& args)
     status = setStringAttribute(transform, "a3obMassValues", "a3mv", repeatedMassValues(count, value));
     if (!status) return status;
     MGlobal::displayInfo(MString("a3obSetMass: set mass values count=") + count);
+    return MS::kSuccess;
+}
+
+void* SetMaterialCommand::creator()
+{
+    return new SetMaterialCommand();
+}
+
+MSyntax SetMaterialCommand::syntax()
+{
+    MSyntax syntax;
+    syntax.addFlag("-t", "-texture", MSyntax::kString);
+    syntax.addFlag("-m", "-material", MSyntax::kString);
+    return syntax;
+}
+
+MStatus SetMaterialCommand::doIt(const MArgList& args)
+{
+    MArgDatabase argData(syntax(), args);
+    MString texture;
+    MString material;
+    if (argData.isFlagSet("-texture")) {
+        argData.getFlagArgument("-texture", 0, texture);
+    } else if (argData.isFlagSet("-t")) {
+        argData.getFlagArgument("-t", 0, texture);
+    }
+    if (argData.isFlagSet("-material")) {
+        argData.getFlagArgument("-material", 0, material);
+    } else if (argData.isFlagSet("-m")) {
+        argData.getFlagArgument("-m", 0, material);
+    }
+
+    MSelectionList members;
+    MObject lod;
+    MStatus status = selectedComponents(members, lod);
+    if (!status) {
+        MGlobal::displayError("a3obSetMaterial: select mesh faces");
+        return MS::kFailure;
+    }
+
+    MObject shadingGroup = createMaterialNodes(texture, material, status);
+    if (!status) return status;
+    MFnDependencyNode shadingGroupDep(shadingGroup, &status);
+    if (!status) return status;
+    status = MGlobal::executeCommand(MString("sets -e -forceElement ") + shadingGroupDep.name(), false, false);
+    if (!status) return status;
+    MGlobal::displayInfo("a3obSetMaterial: assigned material metadata");
+    return MS::kSuccess;
+}
+
+void* SetFlagCommand::creator()
+{
+    return new SetFlagCommand();
+}
+
+MSyntax SetFlagCommand::syntax()
+{
+    MSyntax syntax;
+    syntax.addFlag("-c", "-component", MSyntax::kString);
+    syntax.addFlag("-v", "-value", MSyntax::kLong);
+    syntax.addFlag("-n", "-name", MSyntax::kString);
+    return syntax;
+}
+
+MStatus SetFlagCommand::doIt(const MArgList& args)
+{
+    MArgDatabase argData(syntax(), args);
+    MString component = "face";
+    if (argData.isFlagSet("-component")) {
+        argData.getFlagArgument("-component", 0, component);
+    } else if (argData.isFlagSet("-c")) {
+        argData.getFlagArgument("-c", 0, component);
+    }
+    int value = 0;
+    if (argData.isFlagSet("-value")) {
+        argData.getFlagArgument("-value", 0, value);
+    } else if (argData.isFlagSet("-v")) {
+        argData.getFlagArgument("-v", 0, value);
+    }
+    MString name = "a3ob_flag#";
+    if (argData.isFlagSet("-name")) {
+        argData.getFlagArgument("-name", 0, name);
+    } else if (argData.isFlagSet("-n")) {
+        argData.getFlagArgument("-n", 0, name);
+    }
+    if (component != "vertex" && component != "face") {
+        MGlobal::displayError("a3obSetFlag: -component must be vertex or face");
+        return MS::kFailure;
+    }
+    if (value == 0) {
+        MGlobal::displayError("a3obSetFlag: -value must be non-zero");
+        return MS::kFailure;
+    }
+
+    MStatus status = createMetadataSet(name, component.asChar(), value);
+    if (!status) {
+        MGlobal::displayError("a3obSetFlag: select mesh vertex or face components");
+        return MS::kFailure;
+    }
+    MGlobal::displayInfo("a3obSetFlag: created flag set");
     return MS::kSuccess;
 }
 

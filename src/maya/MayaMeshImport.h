@@ -32,7 +32,7 @@ private:
         MObject shadingGroup;
     };
 
-    MStatus importLOD(const p3d::LOD& lod, unsigned int index, const MString& sourceName, MObjectArray& createdTransforms);
+    MStatus importLOD(const p3d::LOD& lod, MObject parent, MObjectArray& createdTransforms);
     MStatus getOrCreateMaterial(const MaterialKey& key, MaterialNodes& nodes);
     MStatus assignMaterials(const MObject& mesh, const p3d::LOD& lod);
 

@@ -503,7 +503,7 @@ void LOD::write(BinaryWriter& writer) const
             writer.writeUInt32(face.vertices[i]);
             writer.writeUInt32(face.normals[i]);
             writer.writeFloat(face.uvs[i].u);
-            writer.writeFloat(face.uvs[i].v);
+            writer.writeFloat(1.0f - face.uvs[i].v);
         }
         if (face.vertices.size() < 4) {
             writer.writeBytes(std::vector<std::uint8_t>(16, 0));

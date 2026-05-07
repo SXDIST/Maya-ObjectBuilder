@@ -21,6 +21,24 @@ public:
     MStatus doIt(const MArgList& args) override;
 };
 
+class SetMaterialCommand final : public MPxCommand
+{
+public:
+    static constexpr const char* kName = "a3obSetMaterial";
+    static void* creator();
+    static MSyntax syntax();
+    MStatus doIt(const MArgList& args) override;
+};
+
+class SetFlagCommand final : public MPxCommand
+{
+public:
+    static constexpr const char* kName = "a3obSetFlag";
+    static void* creator();
+    static MSyntax syntax();
+    MStatus doIt(const MArgList& args) override;
+};
+
 class CreateLODCommand final : public MPxCommand
 {
 public:
