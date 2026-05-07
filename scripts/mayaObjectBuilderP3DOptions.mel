@@ -19,6 +19,19 @@ global proc mayaObjectBuilderP3DHideMayaFileOptions()
             }
         }
     }
+
+    string $frames[] = {
+        "RefOptions_FL",
+        "InclOptions_FL",
+        "ReferenceOptions_FL",
+        "IncludeOptions_FL"
+    };
+
+    for ($frame in $frames) {
+        if (`frameLayout -exists $frame`) {
+            frameLayout -edit -visible false $frame;
+        }
+    }
 }
 
 global string $gMayaObjectBuilderP3DFileAction;
@@ -33,11 +46,53 @@ global proc mayaObjectBuilderP3DSetFileAction(string $action)
 
 global proc int mayaObjectBuilderP3DIsExportAction(string $action)
 {
-    return ($action == "ExportAll" || $action == "ExportActive" || $action == "Export" || $action == "ExportSelection");
+    string $normalized = `tolower $action`;
+    return (`gmatch $normalized "*export*"`);
+}
+
+global proc string mayaObjectBuilderP3DActionFromVisibleWindow()
+{
+    string $windows[] = `lsUI -windows`;
+    for ($window in $windows) {
+        if (!`window -exists $window` || !`window -query -visible $window`) {
+            continue;
+        }
+        string $windowTitle = `window -query -title $window`;
+        string $title = `tolower $windowTitle`;
+        if (`gmatch $title "*export*"`) {
+            return "Export";
+        }
+        if (`gmatch $title "*import*"`) {
+            return "Import";
+        }
+    }
+    return "";
+}
+
+global proc int mayaObjectBuilderP3DExportControlsExist()
+{
+    return (`control -exists exKeepReferences` || `control -exists exUnloadedReferences` || `frameLayout -exists RefOptions_FL` || `frameLayout -exists InclOptions_FL`);
+}
+
+global proc int mayaObjectBuilderP3DImportControlsExist()
+{
+    return (`control -exists importGroupGrp` || `control -exists removeDuplicateShadingNetworksGrp` || `layout -exists nameClashLayout` || `layout -exists playbackLayout`);
 }
 
 global proc string mayaObjectBuilderP3DCurrentFileAction()
 {
+    if (mayaObjectBuilderP3DExportControlsExist()) {
+        return "Export";
+    }
+    if (mayaObjectBuilderP3DImportControlsExist()) {
+        return "Import";
+    }
+
+    string $windowAction = mayaObjectBuilderP3DActionFromVisibleWindow();
+    if ($windowAction != "") {
+        return $windowAction;
+    }
+
     global string $gMayaObjectBuilderP3DFileAction;
     if ($gMayaObjectBuilderP3DFileAction != "") {
         return $gMayaObjectBuilderP3DFileAction;
@@ -60,6 +115,14 @@ global proc string mayaObjectBuilderP3DCurrentFileAction()
     }
 
     return "";
+}
+
+global proc mayaObjectBuilderP3DClearFileAction()
+{
+    global string $gMayaObjectBuilderP3DFileAction;
+    global string $gFileOptionsAction;
+    $gMayaObjectBuilderP3DFileAction = "";
+    $gFileOptionsAction = "";
 }
 
 global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, string $initialSettings, string $resultCallback)
@@ -160,6 +223,7 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
         }
 
         mayaObjectBuilderP3DSetOptions($initialSettings);
+        mayaObjectBuilderP3DClearFileAction();
         $result = 1;
     } else if ($action == "query") {
         string $options = mayaObjectBuilderP3DGetOptions();

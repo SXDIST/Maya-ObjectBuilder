@@ -126,6 +126,11 @@ std::vector<float> splitFloatValues(const std::string& value)
 
 bool resolveLODPath(MDagPath path, MDagPath& lodPath)
 {
+    if (path.node().hasFn(MFn::kTransform) && boolPlugValue(path.node(), "a3obIsLOD")) {
+        lodPath = path;
+        return true;
+    }
+
     if (path.hasFn(MFn::kMesh)) {
         path.pop();
     }
