@@ -1,4 +1,8 @@
 Arma3ObjectBuilder-master/
 build/
+dist/
 .claude/
 __pycache__/
+2.txt
+package_release.ps1
+install/

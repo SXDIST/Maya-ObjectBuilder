@@ -382,6 +382,21 @@ bool setContainsMesh(const MObject& set, const MObject& mesh)
     return false;
 }
 
+bool metadataSetHasLiveMembers(const MObject& set)
+{
+    MStatus status;
+    MFnSet setFn(set, &status);
+    if (!status) return false;
+    MSelectionList members;
+    status = setFn.getMembers(members, true);
+    return status && members.length() > 0;
+}
+
+bool isObjectBuilderMetadataSet(const MObject& set)
+{
+    return !stringPlugValue(set, "a3obSelectionName").empty() || !stringPlugValue(set, "a3obFlagComponent").empty() || boolPlugValue(set, "a3obIsProxySelection");
+}
+
 void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, const std::set<std::string>& proxyPlaceholders, int& warnings, int& errors)
 {
     MStatus status;
@@ -390,7 +405,15 @@ void validateObjectSetsForMesh(const MObject& mesh, const MString& lodName, cons
     std::set<std::string> selectionNames;
     for (; !it.isDone(); it.next()) {
         MObject set = it.thisNode(&status);
-        if (!status || !setContainsMesh(set, mesh)) continue;
+        if (!status || !isObjectBuilderMetadataSet(set)) continue;
+        MFnDependencyNode setDep(set, &status);
+        const MString setName = status ? setDep.name() : MString("<unknown>");
+        if (!metadataSetHasLiveMembers(set)) {
+            MGlobal::displayWarning(MString("a3obValidate: Object Builder set has no live members and will be ignored: ") + setName);
+            ++warnings;
+            continue;
+        }
+        if (!setContainsMesh(set, mesh)) continue;
 
         const std::string selectionName = stringPlugValue(set, "a3obSelectionName");
         if (!selectionName.empty()) {

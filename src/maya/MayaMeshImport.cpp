@@ -35,6 +35,16 @@ namespace a3ob::maya
 {
 namespace
 {
+MPoint coreToMayaPoint(const p3d::Vec3& value)
+{
+    return MPoint(value.x, value.z, -value.y);
+}
+
+MVector coreToMayaVector(const p3d::Vec3& value)
+{
+    return MVector(value.x, value.z, -value.y);
+}
+
 MString sanitizedName(MString value)
 {
     if (value.length() == 0) {
@@ -563,7 +573,7 @@ MStatus applyNormals(MFnMesh& meshFn, const p3d::LOD& lod, const std::map<std::u
                 continue;
             }
             const p3d::Vec3& normal = lod.normals[normalIndex];
-            normals.append(MVector(normal.x, normal.y, normal.z));
+            normals.append(coreToMayaVector(normal));
             faceIds.append(static_cast<int>(faceIndex));
             vertexIds.append(mappedVertex->second);
         }
@@ -976,7 +986,7 @@ MStatus MayaMeshImport::importLOD(const p3d::LOD& lod, MObject parent, MObjectAr
                 return MS::kFailure;
             }
             const p3d::Vertex& vertex = lod.vertices[sourceIndex];
-            points.set(MPoint(vertex.position.x, vertex.position.y, vertex.position.z), static_cast<unsigned int>(importedIndex));
+            points.set(coreToMayaPoint(vertex.position), static_cast<unsigned int>(importedIndex));
         }
 
         MIntArray faceCounts;
