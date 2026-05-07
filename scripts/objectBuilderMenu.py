@@ -15,14 +15,79 @@ SELECTION_MANAGER_LOD_FILTER = "MayaObjectBuilderSelectionLodFilter"
 SELECTION_MANAGER_TYPE_FILTER = "MayaObjectBuilderSelectionTypeFilter"
 SELECTION_MANAGER_SEARCH = "MayaObjectBuilderSelectionSearch"
 SELECTION_MANAGER_DETAILS = "MayaObjectBuilderSelectionDetails"
+NAMED_PROPERTIES_LOD = "MayaObjectBuilderNamedPropertiesLod"
+NAMED_PROPERTIES_LIST = "MayaObjectBuilderNamedPropertiesList"
+NAMED_PROPERTIES_NAME = "MayaObjectBuilderNamedPropertiesName"
+NAMED_PROPERTIES_VALUE = "MayaObjectBuilderNamedPropertiesValue"
+NAMED_PROPERTIES_COMMON = "MayaObjectBuilderNamedPropertiesCommon"
+MATERIAL_METADATA_LIST = "MayaObjectBuilderMaterialMetadataList"
+MATERIAL_METADATA_TEXTURE = "MayaObjectBuilderMaterialTexture"
+MATERIAL_METADATA_MATERIAL = "MayaObjectBuilderMaterialPath"
 _selection_manager_items = {}
+_named_property_lods = {}
+_named_property_items = {}
+_material_metadata_items = {}
+_ui_script_jobs = []
+
+COMMON_NAMED_PROPERTIES = [
+    ("lodnoshadow", "1"),
+    ("autocenter", "0"),
+    ("buoyancy", "1"),
+    ("class", "house"),
+    ("forcenotalpha", "1"),
+    ("map", "house"),
+    ("prefershadowvolume", "1"),
+]
+
+LOD_TYPE_NAMES = {
+    0: "Resolution",
+    1: "View Gunner",
+    2: "View Pilot",
+    3: "View Cargo",
+    4: "ShadowVolume",
+    5: "Edit",
+    6: "Geometry",
+    7: "Geometry Buoyancy",
+    8: "Geometry PhysX",
+    9: "Memory",
+    10: "LandContact",
+    11: "Roadway",
+    12: "Paths",
+    13: "HitPoints",
+    14: "View Geometry",
+    15: "Fire Geometry",
+    16: "View Cargo Geometry",
+    17: "View Cargo Fire Geometry",
+    18: "View Commander",
+    19: "View Commander Geometry",
+    20: "View Commander Fire Geometry",
+    21: "View Pilot Geometry",
+    22: "View Pilot Fire Geometry",
+    23: "View Gunner Geometry",
+    24: "View Gunner Fire Geometry",
+    25: "Subparts",
+    26: "Shadow View Cargo",
+    27: "Shadow View Pilot",
+    28: "Shadow View Gunner",
+    29: "Wreckage",
+    30: "Underground",
+    31: "GroundLayer",
+    32: "Navigation",
+}
 
 
 def _plugin_path():
     return SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll"
 
 
+def _ensure_script_path():
+    scripts_dir = str(SCRIPT_PATH.parent).replace("\\", "/")
+    mel.eval('if (!stringArrayContains("' + scripts_dir + '", stringToStringArray(`getenv MAYA_SCRIPT_PATH`, ";"))) putenv MAYA_SCRIPT_PATH (`getenv MAYA_SCRIPT_PATH` + ";' + scripts_dir + '")')
+    mel.eval('source "' + scripts_dir + '/mayaObjectBuilderP3DOptions.mel"')
+
+
 def load_plugin():
+    _ensure_script_path()
     if cmds.pluginInfo(PLUGIN_NAME, query=True, loaded=True):
         return
     path = _plugin_path()
@@ -36,13 +101,16 @@ def load_plugin():
 
 def import_p3d():
     load_plugin()
+    mel.eval('mayaObjectBuilderP3DSetFileAction("Import")')
     selected = cmds.fileDialog2(fileMode=1, caption="Import P3D", fileFilter="P3D (*.p3d)")
     if selected:
         cmds.file(selected[0], i=True, type=TRANSLATOR_NAME, ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
+        _refresh_context_ui()
 
 
 def export_p3d():
     load_plugin()
+    mel.eval('mayaObjectBuilderP3DSetFileAction("ExportAll")')
     selected = cmds.fileDialog2(fileMode=0, caption="Export P3D", fileFilter="P3D (*.p3d)")
     if selected:
         cmds.file(rename=selected[0])
@@ -99,13 +167,7 @@ def set_mass():
 
 def set_material():
     load_plugin()
-    texture = _prompt("Set Material", "Texture path:", "")
-    if texture is None:
-        return
-    material = _prompt("Set Material", "Material path:", "")
-    if material is None:
-        return
-    cmds.a3obSetMaterial(texture=texture, material=material)
+    open_dock()
 
 
 def set_flag():
@@ -126,7 +188,10 @@ def _set_lod_label(node):
     raw = node.split(":")[-1]
     for marker in ("_SEL_", "_VERTEX_FLAG_", "_FACE_FLAG_"):
         if marker in raw:
-            return raw.split(marker)[0].replace("_", " ")
+            base = raw.split(marker)[0]
+            if base.startswith("Resolution_"):
+                return "Resolution " + base.rsplit("_", 1)[-1]
+            return base.replace("_", " ")
     return "Other"
 
 
@@ -273,6 +338,349 @@ def _remove_from_selection_set():
     _refresh_selection_manager()
 
 
+def _lod_label(node):
+    if cmds.attributeQuery("a3obLodType", node=node, exists=True):
+        lod_type = cmds.getAttr(node + ".a3obLodType")
+        resolution = cmds.getAttr(node + ".a3obResolution") if cmds.attributeQuery("a3obResolution", node=node, exists=True) else 0
+        name = LOD_TYPE_NAMES.get(lod_type, "LOD")
+        suffix = f" {resolution}" if lod_type == 0 else ""
+        return f"{name}{suffix}  |  {node}"
+    return node
+
+
+def _is_lod_transform(node):
+    return bool(node) and cmds.objExists(node) and cmds.attributeQuery("a3obIsLOD", node=node, exists=True)
+
+
+def _lod_transforms():
+    return [node for node in cmds.ls(type="transform") or [] if _is_lod_transform(node)]
+
+
+def _selected_lod_transform():
+    for node in cmds.ls(selection=True, long=True) or []:
+        current = node
+        while current:
+            if _is_lod_transform(current):
+                return current
+            parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
+            current = parents[0] if parents else ""
+    return None
+
+
+def _ensure_string_attr(node, attr, short_name):
+    if not cmds.attributeQuery(attr, node=node, exists=True):
+        cmds.addAttr(node, longName=attr, shortName=short_name, dataType="string")
+
+
+def _split_named_properties(raw):
+    properties = []
+    for part in (raw or "").split(";"):
+        if not part or "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        properties.append((name.strip(), value.strip()))
+    return properties
+
+
+def _join_named_properties(properties):
+    return ";".join(f"{name}={value}" for name, value in properties if name)
+
+
+def _option_menu_value(control):
+    if not cmds.optionMenu(control, exists=True):
+        return ""
+    items = cmds.optionMenu(control, query=True, itemListLong=True) or []
+    if not items:
+        return ""
+    return cmds.optionMenu(control, query=True, value=True)
+
+
+def _selected_named_property_lod():
+    selected = _selected_lod_transform()
+    if selected:
+        return selected
+    lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    if lod:
+        return lod
+    _refresh_named_property_lods()
+    return _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+
+
+def _refresh_named_property_lods():
+    global _named_property_lods
+    if not cmds.optionMenu(NAMED_PROPERTIES_LOD, exists=True):
+        return
+    current = _option_menu_value(NAMED_PROPERTIES_LOD)
+    cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, deleteAllItems=True)
+    _named_property_lods = {}
+    for lod in _lod_transforms():
+        label = _lod_label(lod)
+        _named_property_lods[label] = lod
+        cmds.menuItem(label=label, parent=NAMED_PROPERTIES_LOD)
+    labels = list(_named_property_lods)
+    if not labels:
+        cmds.menuItem(label="No Object Builder LODs", parent=NAMED_PROPERTIES_LOD, enable=False)
+    elif current in _named_property_lods:
+        cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=current)
+    else:
+        cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=labels[0])
+
+
+def _refresh_named_properties(rebuild_lods=False):
+    global _named_property_items
+    if rebuild_lods:
+        _refresh_named_property_lods()
+    if not cmds.textScrollList(NAMED_PROPERTIES_LIST, exists=True):
+        return
+    cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, removeAll=True)
+    _named_property_items = {}
+    lod = _selected_lod_transform() or _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    if not lod:
+        _refresh_named_property_lods()
+        lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
+    if not lod:
+        return
+    for label, node in _named_property_lods.items():
+        if node == lod and _option_menu_value(NAMED_PROPERTIES_LOD) != label:
+            cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=label)
+            break
+    raw = cmds.getAttr(lod + ".a3obProperties") if cmds.attributeQuery("a3obProperties", node=lod, exists=True) else ""
+    for name, value in _split_named_properties(raw):
+        label = f"{name:<24} = {value}"
+        _named_property_items[label] = (name, value)
+        cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, append=label)
+
+
+def _select_named_property():
+    selected = cmds.textScrollList(NAMED_PROPERTIES_LIST, query=True, selectItem=True) or []
+    if not selected:
+        return
+    name, value = _named_property_items.get(selected[0], ("", ""))
+    cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text=name)
+    cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text=value)
+
+
+def _set_named_property_value(name, value):
+    lod = _selected_named_property_lod()
+    if not lod:
+        cmds.warning("Import a P3D or select an Object Builder LOD")
+        return False
+    name = name.strip()
+    value = value.strip()
+    if not name:
+        return False
+    _ensure_string_attr(lod, "a3obProperties", "a3prop")
+    existing = _split_named_properties(cmds.getAttr(lod + ".a3obProperties") or "")
+    properties = [(key, val) for key, val in existing if key != name]
+    properties.append((name, value))
+    cmds.setAttr(lod + ".a3obProperties", _join_named_properties(properties), type="string")
+    _refresh_named_properties()
+    return True
+
+
+def _commit_named_property_fields(*_):
+    name = cmds.textField(NAMED_PROPERTIES_NAME, query=True, text=True).strip()
+    value = cmds.textField(NAMED_PROPERTIES_VALUE, query=True, text=True).strip()
+    _set_named_property_value(name, value)
+
+
+def _remove_named_property():
+    lod = _selected_named_property_lod()
+    name = cmds.textField(NAMED_PROPERTIES_NAME, query=True, text=True).strip()
+    if not lod or not name:
+        cmds.warning("Select a named property to remove")
+        return
+    _ensure_string_attr(lod, "a3obProperties", "a3prop")
+    properties = [(key, val) for key, val in _split_named_properties(cmds.getAttr(lod + ".a3obProperties") or "") if key != name]
+    cmds.setAttr(lod + ".a3obProperties", _join_named_properties(properties), type="string")
+    cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text="")
+    cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text="")
+    _refresh_named_properties()
+
+
+def _apply_common_named_property(*_):
+    selected = _option_menu_value(NAMED_PROPERTIES_COMMON)
+    for name, value in COMMON_NAMED_PROPERTIES:
+        label = f"{name} = {value}"
+        if selected == label:
+            cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text=name)
+            cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text=value)
+            _set_named_property_value(name, value)
+            return
+
+
+def _build_named_properties_ui():
+    cmds.frameLayout(label="Named Properties", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="LOD")
+    cmds.optionMenu(NAMED_PROPERTIES_LOD, changeCommand=lambda *_: _refresh_named_properties(False))
+    cmds.setParent("..")
+    cmds.textScrollList(NAMED_PROPERTIES_LIST, allowMultiSelection=False, height=150, selectCommand=lambda *_: _select_named_property())
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="Name")
+    cmds.textField(NAMED_PROPERTIES_NAME, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields)
+    cmds.setParent("..")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="Value")
+    cmds.textField(NAMED_PROPERTIES_VALUE, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields)
+    cmds.setParent("..")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="Common")
+    cmds.optionMenu(NAMED_PROPERTIES_COMMON, changeCommand=_apply_common_named_property)
+    for name, value in COMMON_NAMED_PROPERTIES:
+        cmds.menuItem(label=f"{name} = {value}")
+    cmds.setParent("..")
+    cmds.rowColumnLayout(numberOfColumns=1, columnWidth=[(1, 160)])
+    cmds.button(label="Remove Selected", command=lambda *_: _remove_named_property())
+    cmds.setParent("..")
+    cmds.setParent("..")
+    cmds.setParent("..")
+    _refresh_named_properties(True)
+
+
+def _mesh_shapes_from_selection():
+    shapes = []
+    seen = set()
+    for item in cmds.ls(selection=True, flatten=True, long=True) or []:
+        node = item.split(".", 1)[0]
+        if not cmds.objExists(node):
+            continue
+        candidates = []
+        if cmds.objectType(node, isType="mesh"):
+            candidates.append(node)
+        else:
+            candidates.extend(cmds.listRelatives(node, shapes=True, type="mesh", fullPath=True) or [])
+            descendants = cmds.listRelatives(node, allDescendents=True, type="mesh", fullPath=True) or []
+            candidates.extend(descendants)
+        for shape in candidates:
+            if shape not in seen:
+                seen.add(shape)
+                shapes.append(shape)
+    return shapes
+
+
+def _material_nodes_for_selection():
+    nodes = []
+    seen = set()
+    for shape in _mesh_shapes_from_selection():
+        shading_groups = cmds.listConnections(shape, type="shadingEngine") or []
+        for shading_group in shading_groups:
+            if shading_group in {"initialShadingGroup", "initialParticleSE"} or shading_group in seen:
+                continue
+            seen.add(shading_group)
+            materials = cmds.ls(cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or []
+            material_node = materials[0] if materials else ""
+            texture = ""
+            material = ""
+            for candidate in [shading_group, material_node]:
+                if candidate and not texture and cmds.attributeQuery("a3obTexture", node=candidate, exists=True):
+                    texture = cmds.getAttr(candidate + ".a3obTexture") or ""
+                if candidate and not material and cmds.attributeQuery("a3obMaterial", node=candidate, exists=True):
+                    material = cmds.getAttr(candidate + ".a3obMaterial") or ""
+            nodes.append({"material_node": material_node, "shading_groups": [shading_group], "texture": texture, "material": material})
+    return sorted(nodes, key=lambda item: ((item["material_node"] or "").lower(), item["shading_groups"][0].lower()))
+
+
+def _refresh_material_metadata():
+    global _material_metadata_items
+    if not cmds.textScrollList(MATERIAL_METADATA_LIST, exists=True):
+        return
+    cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, removeAll=True)
+    _material_metadata_items = {}
+    items = _material_nodes_for_selection()
+    if not items:
+        cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, append="Select a mesh, LOD, or faces to edit its DayZ materials")
+        return
+    for item in items:
+        material_node = item["material_node"] or "No material"
+        shading_group = item["shading_groups"][0]
+        label = f"{material_node:<28} | {shading_group:<28} | tex: {item['texture']} | rvmat: {item['material']}"
+        _material_metadata_items[label] = item
+        cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, append=label)
+
+
+def _selected_material_metadata_item():
+    selected = cmds.textScrollList(MATERIAL_METADATA_LIST, query=True, selectItem=True) or []
+    return _material_metadata_items.get(selected[0]) if selected else None
+
+
+def _select_material_metadata():
+    item = _selected_material_metadata_item()
+    if not item:
+        return
+    cmds.textField(MATERIAL_METADATA_TEXTURE, edit=True, text=item["texture"])
+    cmds.textField(MATERIAL_METADATA_MATERIAL, edit=True, text=item["material"])
+
+
+def _set_material_metadata_on_node(node, texture, material):
+    _ensure_string_attr(node, "a3obTexture", "a3tx")
+    _ensure_string_attr(node, "a3obMaterial", "a3mt")
+    cmds.setAttr(node + ".a3obTexture", texture, type="string")
+    cmds.setAttr(node + ".a3obMaterial", material, type="string")
+
+
+def _commit_selected_material_metadata(*_):
+    item = _selected_material_metadata_item()
+    if not item:
+        return
+    texture = cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip()
+    material = cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip()
+    if item["material_node"]:
+        _set_material_metadata_on_node(item["material_node"], texture, material)
+    for shading_group in item["shading_groups"]:
+        _set_material_metadata_on_node(shading_group, texture, material)
+    _refresh_material_metadata()
+
+
+def _assign_new_material_metadata_to_selection():
+    texture = cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip()
+    material = cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip()
+    selection = cmds.ls(selection=True, flatten=True) or []
+    if not selection:
+        cmds.warning("Select mesh faces before assigning a new DayZ material")
+        return
+    cmds.a3obSetMaterial(texture=texture, material=material)
+    _refresh_material_metadata()
+
+
+def _clear_selected_material_metadata():
+    item = _selected_material_metadata_item()
+    if not item:
+        cmds.warning("Select a Maya material row to clear")
+        return
+    for node in [item["material_node"]] + item["shading_groups"]:
+        if not node:
+            continue
+        if cmds.attributeQuery("a3obTexture", node=node, exists=True):
+            cmds.setAttr(node + ".a3obTexture", "", type="string")
+        if cmds.attributeQuery("a3obMaterial", node=node, exists=True):
+            cmds.setAttr(node + ".a3obMaterial", "", type="string")
+    _refresh_material_metadata()
+
+
+def _build_material_metadata_ui():
+    cmds.frameLayout(label="DayZ Material / Texture Metadata", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
+    cmds.text(label="Shows only materials used by the selected mesh, LOD, or faces.", align="left")
+    cmds.textScrollList(MATERIAL_METADATA_LIST, allowMultiSelection=False, height=170, selectCommand=lambda *_: _select_material_metadata())
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="Texture")
+    cmds.textField(MATERIAL_METADATA_TEXTURE, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata)
+    cmds.setParent("..")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
+    cmds.text(label="Material")
+    cmds.textField(MATERIAL_METADATA_MATERIAL, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata)
+    cmds.setParent("..")
+    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 195), (2, 195)])
+    cmds.button(label="Assign New To Selected Faces", command=lambda *_: _assign_new_material_metadata_to_selection())
+    cmds.button(label="Clear Highlighted Material", command=lambda *_: _clear_selected_material_metadata())
+    cmds.setParent("..")
+    cmds.setParent("..")
+    cmds.setParent("..")
+    _refresh_material_metadata()
+
+
 def _build_selection_manager_ui():
     cmds.frameLayout(label="Selections", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
     cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
@@ -294,7 +702,6 @@ def _build_selection_manager_ui():
     cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=210, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
     cmds.text(SELECTION_MANAGER_DETAILS, label="Select a row to see details.", align="left")
     cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 180), (2, 180)])
-    cmds.button(label="Refresh", command=lambda *_: _refresh_selection_manager())
     cmds.button(label="Select Members", command=lambda *_: _select_set_members())
     cmds.button(label="Rename", command=lambda *_: _rename_selection_set())
     cmds.button(label="Create From Selection", command=lambda *_: _create_selection_set())
@@ -307,6 +714,22 @@ def _build_selection_manager_ui():
 
 def selection_manager():
     open_dock()
+
+
+def _refresh_context_ui():
+    if cmds.textScrollList(NAMED_PROPERTIES_LIST, exists=True):
+        _refresh_named_properties()
+    if cmds.textScrollList(MATERIAL_METADATA_LIST, exists=True):
+        _refresh_material_metadata()
+    if cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
+        _refresh_selection_manager(False)
+
+
+def _install_context_refresh_job(parent):
+    global _ui_script_jobs
+    _ui_script_jobs = [job for job in _ui_script_jobs if cmds.scriptJob(exists=job)]
+    job = cmds.scriptJob(event=["SelectionChanged", _refresh_context_ui], parent=parent, protected=True)
+    _ui_script_jobs.append(job)
 
 
 
@@ -324,10 +747,16 @@ def _build_dock_contents():
     files_tab = cmds.scrollLayout(childResizable=True)
     cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
     cmds.text(label="MayaObjectBuilder", align="center", height=28)
-    cmds.frameLayout(label="P3D / model.cfg", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.frameLayout(label="P3D", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.text(label="Import/export settings are in Maya's file dialog option panel.", align="left")
     _two_column_buttons([
         ("Import P3D", import_p3d),
         ("Export P3D", export_p3d),
+    ])
+    cmds.setParent("..")
+
+    cmds.frameLayout(label="model.cfg", collapsable=True, collapse=True, marginWidth=8, marginHeight=6)
+    _two_column_buttons([
         ("Import model.cfg", import_model_cfg),
         ("Export model.cfg", export_model_cfg),
     ])
@@ -337,20 +766,34 @@ def _build_dock_contents():
 
     tools_tab = cmds.scrollLayout(childResizable=True)
     cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-    cmds.frameLayout(label="LOD Tools", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.frameLayout(label="Validation", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
     _two_column_buttons([
-        ("Create LOD", create_lod),
         ("Validate", validate),
     ])
+    cmds.setParent("..")
+    cmds.frameLayout(label="Advanced LOD Creation", collapsable=True, collapse=True, marginWidth=8, marginHeight=6)
+    cmds.text(label="Only for building a new P3D scene from scratch.", align="left")
+    cmds.button(label="Create LOD", command=lambda *_: create_lod())
     cmds.setParent("..")
     cmds.frameLayout(label="Object Builder Metadata", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
     _two_column_buttons([
         ("Set Mass", set_mass),
-        ("Set Material", set_material),
         ("Set Flag", set_flag),
         ("Create Proxy", create_proxy),
     ])
     cmds.setParent("..")
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    properties_tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    _build_named_properties_ui()
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    materials_tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    _build_material_metadata_ui()
     cmds.setParent("..")
     cmds.setParent("..")
 
@@ -360,7 +803,7 @@ def _build_dock_contents():
     cmds.setParent("..")
     cmds.setParent("..")
 
-    cmds.tabLayout(tabs, edit=True, tabLabel=[(files_tab, "Files"), (tools_tab, "Tools"), (selections_tab, "Selections")])
+    cmds.tabLayout(tabs, edit=True, tabLabel=[(files_tab, "Files"), (tools_tab, "Tools"), (properties_tab, "Properties"), (materials_tab, "Materials"), (selections_tab, "Selections")])
     cmds.setParent("..")
     _refresh_selection_manager()
 
@@ -370,7 +813,7 @@ def open_dock():
         return None
     if cmds.workspaceControl(DOCK_NAME, exists=True):
         cmds.workspaceControl(DOCK_NAME, edit=True, restore=True, visible=True)
-        _refresh_selection_manager()
+        _refresh_context_ui()
         return DOCK_NAME
     control = cmds.workspaceControl(DOCK_NAME, label="MayaObjectBuilder", retain=False, initialWidth=420, minimumWidth=360)
     for target in ("AttributeEditor", "AttributeEditorWorkspaceControl", "ChannelBoxLayerEditor"):
@@ -379,6 +822,7 @@ def open_dock():
             break
     cmds.setParent(control)
     _build_dock_contents()
+    _install_context_refresh_job(control)
     return control
 
 

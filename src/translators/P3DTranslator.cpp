@@ -7,9 +7,39 @@
 #include <maya/MFileObject.h>
 #include <maya/MGlobal.h>
 #include <maya/MObjectArray.h>
+#include <maya/MStringArray.h>
 
 #include <cstring>
 #include <exception>
+#include <map>
+#include <string>
+
+namespace
+{
+std::map<std::string, std::string> parseOptions(const MString& optionsString)
+{
+    MStringArray optionList;
+    optionsString.split(';', optionList);
+    std::map<std::string, std::string> options;
+    for (unsigned int i = 0; i < optionList.length(); ++i) {
+        MStringArray pair;
+        optionList[i].split('=', pair);
+        if (pair.length() == 2) {
+            options[pair[0].asChar()] = pair[1].asChar();
+        }
+    }
+    return options;
+}
+
+bool optionEnabled(const std::map<std::string, std::string>& options, const char* key, bool fallback)
+{
+    const auto it = options.find(key);
+    if (it == options.end()) {
+        return fallback;
+    }
+    return it->second == "1" || it->second == "true";
+}
+}
 
 void* P3DTranslator::creator()
 {
@@ -60,15 +90,23 @@ MPxFileTranslator::MFileKind P3DTranslator::identifyFile(const MFileObject& file
     return kNotMyFileType;
 }
 
-MStatus P3DTranslator::reader(const MFileObject& file, const MString&, FileAccessMode)
+MStatus P3DTranslator::reader(const MFileObject& file, const MString& optionsString, FileAccessMode)
 {
     try {
-        const a3ob::p3d::MLOD mlod = a3ob::p3d::MLOD::readFile(file.expandedFullName().asChar());
+        a3ob::p3d::MLOD mlod = a3ob::p3d::MLOD::readFile(file.expandedFullName().asChar());
+        const std::map<std::string, std::string> options = parseOptions(optionsString);
+        if (optionEnabled(options, "firstLodOnly", false) && mlod.lods.size() > 1) {
+            mlod.lods.erase(mlod.lods.begin() + 1, mlod.lods.end());
+        }
+
         MObjectArray createdTransforms;
         a3ob::maya::MayaMeshImport importer;
         const MStatus status = importer.importMLOD(mlod, file.name(), createdTransforms);
         if (!status) {
             return status;
+        }
+        if (optionEnabled(options, "validateMeshes", false)) {
+            MGlobal::executeCommand("a3obValidate", false, false);
         }
         MGlobal::displayInfo(MString("Imported P3D MLOD LOD count: ") + static_cast<int>(createdTransforms.length()));
         return MS::kSuccess;
@@ -78,8 +116,13 @@ MStatus P3DTranslator::reader(const MFileObject& file, const MString&, FileAcces
     }
 }
 
-MStatus P3DTranslator::writer(const MFileObject& file, const MString&, FileAccessMode)
+MStatus P3DTranslator::writer(const MFileObject& file, const MString& optionsString, FileAccessMode mode)
 {
+    const std::map<std::string, std::string> options = parseOptions(optionsString);
+    const bool selectedOnly = mode == MPxFileTranslator::kExportActiveAccessMode || optionEnabled(options, "selectedOnly", false);
+    if (optionEnabled(options, "validateMeshes", false) || optionEnabled(options, "exportValidateMeshes", false) || optionEnabled(options, "validateLods", false)) {
+        MGlobal::executeCommand(MString("a3obValidate") + (selectedOnly ? " -selectionOnly" : ""), false, false);
+    }
     const a3ob::maya::MayaMeshExport exporter;
-    return exporter.exportMLOD(file.expandedFullName());
+    return exporter.exportMLOD(file.expandedFullName(), selectedOnly);
 }
