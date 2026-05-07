@@ -42,7 +42,7 @@ DAYZ_P3D_FIXTURES=/path/to/dayz/p3d "/c/Program Files/Autodesk/Maya2027/bin/maya
 # Run the Maya model.cfg joint import/export workflow regression
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 
-# Install/open the MayaObjectBuilder dock UI in an interactive Maya Python session
+# Load the plugin and show the MayaObjectBuilder dock UI in an interactive Maya Python session
 exec(open(r"C:\\Users\\targaryen\\source\\repos\\maya\\dayz-object-builder\\scripts\\objectBuilderMenu.py").read())
 
 # Reload the dock UI after editing objectBuilderMenu.py in an interactive Maya Python session
@@ -88,7 +88,7 @@ cmake --build build --config Release
 - `src/formats/` is the DCC-independent C++ format core. `BinaryIO.*` provides little-endian binary helpers; `P3D.*` parses and writes P3D MLOD/P3DM data; `ModelCfg.*` parses/writes the current model.cfg skeleton MVP.
 - `src/translators/P3DTranslator.*` is the Maya `MPxFileTranslator` bridge. `reader()` parses P3D with the core format layer and hands it to the Maya import layer; `writer()` exports Maya LOD transforms back to P3D.
 - `src/maya/MayaMeshImport.*` and `src/maya/MayaMeshExport.*` convert between parsed P3D LODs and Maya transforms/meshes, including LOD metadata, UVs, normals, material metadata, selections/proxies, mass/flags, TAGGs, and source vertex preservation.
-- `scripts/objectBuilderMenu.py` installs the interactive Maya dock UI. It opens a `MayaObjectBuilderWorkspaceControl` tab near the right-side Attribute Editor/Channel Box area, adds a small `MOB` shelf button plus a minimal fallback menu, auto-refreshes on Maya selection changes through a `SelectionChanged` scriptJob, and exposes dock tabs for file I/O, LOD properties, named properties, proxy access, selections, material metadata, mass, flags, and validation.
+- `scripts/objectBuilderMenu.py` owns the interactive Maya dock UI. Plugin load calls `show_plugin_ui()` to create a `MayaObjectBuilderWorkspaceControl` tab near the right-side Attribute Editor/Channel Box area; plugin unload calls `hide_plugin_ui()` to remove the dock, menu, and tracked `SelectionChanged` scriptJobs. The plugin intentionally does not create a Maya shelf button. The dock exposes workflow tabs for LOD assignment, model.cfg file tools, Object Builder metadata, materials, selections, and validation.
 - `tests/cpp/p3d_roundtrip.cpp` and `tests/cpp/model_cfg_test.cpp` are pure C++ regression executables; `tests/mayapy/p3d_workflow.py` validates plugin commands and P3D import/export/reimport in Maya; `tests/mayapy/model_cfg_workflow.py` validates model.cfg joint import/export.
 
 ## Current Maya plugin status
@@ -98,7 +98,7 @@ cmake --build build --config Release
 - The pure C++ roundtrip test passes on `sample_1_character.p3d` and `sample_2_crate.p3d` with structural and TAGG summary checks.
 - Maya import/export/reimport workflow passes on the P3D fixtures through `tests/mayapy/p3d_workflow.py`; the same workflow optionally includes local DayZ `.p3d` fixtures from `DAYZ_P3D_FIXTURES`, `tests/inputs/dayz_p3d`, or `local/dayz_p3d` when present.
 - P3D support includes LOD metadata, UVs, normals, material metadata, selections/proxies, mass, vertex/face flags, named properties, core TAGGs, source vertex preservation, generated DayZ-style metadata regression coverage, and DayZ-safe validation checks.
-- The Maya UI is now a docked Object Builder-style tool rather than a top-menu workflow. The dock includes context-aware LOD editing, common named property presets, proxy path/index editing, typed selection-set creation, inline material/mass/flag tools, and selection list filtering/member counts.
+- The Maya UI is now plugin-lifecycle driven: enabling `MayaObjectBuilder.mll` shows the dock and disabling it removes the dock/menu/scriptJobs. It no longer creates a shelf button. P3D import/export is handled through Maya's native File > Import/Export dialogs with the `Arma P3D` translator options; the dock's Files tab focuses on `model.cfg`. The dock includes Object Builder-style LOD assignment with conditional resolution input, named property presets, proxy path/index editing, typed selection-set management, inline material/mass/flag tools, validation, and compact responsive layouts for narrow Maya side panels.
 - `model_cfg_test` and `tests/mayapy/model_cfg_workflow.py` validate the current model.cfg skeleton MVP against `Arma3ObjectBuilder-master/tests/inputs/model.cfg`.
 - RTM, ASC, and TBCSV are intentionally out of scope for the current Maya plugin plan.
 

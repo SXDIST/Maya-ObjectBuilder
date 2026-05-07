@@ -9,7 +9,10 @@ MENU_NAME = "MayaObjectBuilderMenu"
 PLUGIN_NAME = "MayaObjectBuilder"
 TRANSLATOR_NAME = "Arma P3D"
 DOCK_NAME = "MayaObjectBuilderWorkspaceControl"
-SHELF_NAME = "MayaObjectBuilderShelf"
+LOD_TYPE_MENU = "MayaObjectBuilderLodTypeMenu"
+LOD_RESOLUTION_FIELD = "MayaObjectBuilderLodResolutionField"
+LOD_PREVIEW_TEXT = "MayaObjectBuilderLodPreviewText"
+LOD_CONTEXT_TEXT = "MayaObjectBuilderLodContextText"
 SELECTION_MANAGER_LIST = "MayaObjectBuilderSelectionList"
 SELECTION_MANAGER_LOD_FILTER = "MayaObjectBuilderSelectionLodFilter"
 SELECTION_MANAGER_TYPE_FILTER = "MayaObjectBuilderSelectionTypeFilter"
@@ -23,6 +26,14 @@ NAMED_PROPERTIES_COMMON = "MayaObjectBuilderNamedPropertiesCommon"
 MATERIAL_METADATA_LIST = "MayaObjectBuilderMaterialMetadataList"
 MATERIAL_METADATA_TEXTURE = "MayaObjectBuilderMaterialTexture"
 MATERIAL_METADATA_MATERIAL = "MayaObjectBuilderMaterialPath"
+MASS_VALUE_FIELD = "MayaObjectBuilderMassValue"
+MASS_MODE_MENU = "MayaObjectBuilderMassMode"
+FLAG_COMPONENT_MENU = "MayaObjectBuilderFlagComponent"
+FLAG_VALUE_FIELD = "MayaObjectBuilderFlagValue"
+FLAG_NAME_FIELD = "MayaObjectBuilderFlagName"
+PROXY_PATH_FIELD = "MayaObjectBuilderProxyPath"
+PROXY_INDEX_FIELD = "MayaObjectBuilderProxyIndex"
+PROXY_FROM_SELECTION_CHECK = "MayaObjectBuilderProxyFromSelection"
 _selection_manager_items = {}
 _named_property_lods = {}
 _named_property_items = {}
@@ -39,41 +50,43 @@ COMMON_NAMED_PROPERTIES = [
     ("prefershadowvolume", "1"),
 ]
 
-LOD_TYPE_NAMES = {
-    0: "Resolution",
-    1: "View Gunner",
-    2: "View Pilot",
-    3: "View Cargo",
-    4: "ShadowVolume",
-    5: "Edit",
-    6: "Geometry",
-    7: "Geometry Buoyancy",
-    8: "Geometry PhysX",
-    9: "Memory",
-    10: "LandContact",
-    11: "Roadway",
-    12: "Paths",
-    13: "HitPoints",
-    14: "View Geometry",
-    15: "Fire Geometry",
-    16: "View Cargo Geometry",
-    17: "View Cargo Fire Geometry",
-    18: "View Commander",
-    19: "View Commander Geometry",
-    20: "View Commander Fire Geometry",
-    21: "View Pilot Geometry",
-    22: "View Pilot Fire Geometry",
-    23: "View Gunner Geometry",
-    24: "View Gunner Fire Geometry",
-    25: "Subparts",
-    26: "Shadow View Cargo",
-    27: "Shadow View Pilot",
-    28: "Shadow View Gunner",
-    29: "Wreckage",
-    30: "Underground",
-    31: "GroundLayer",
-    32: "Navigation",
-}
+LOD_DEFINITIONS = [
+    {"type": 0, "label": "Resolution", "has_resolution": True, "default_resolution": 1},
+    {"type": 1, "label": "View Gunner", "has_resolution": False, "default_resolution": 0},
+    {"type": 2, "label": "View Pilot", "has_resolution": False, "default_resolution": 0},
+    {"type": 3, "label": "View Cargo", "has_resolution": True, "default_resolution": 1},
+    {"type": 4, "label": "ShadowVolume", "has_resolution": True, "default_resolution": 0},
+    {"type": 5, "label": "Edit", "has_resolution": True, "default_resolution": 0},
+    {"type": 6, "label": "Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 7, "label": "Geometry Buoyancy", "has_resolution": False, "default_resolution": 0},
+    {"type": 8, "label": "Geometry PhysX", "has_resolution": False, "default_resolution": 0},
+    {"type": 9, "label": "Memory", "has_resolution": False, "default_resolution": 0},
+    {"type": 10, "label": "LandContact", "has_resolution": False, "default_resolution": 0},
+    {"type": 11, "label": "Roadway", "has_resolution": False, "default_resolution": 0},
+    {"type": 12, "label": "Paths", "has_resolution": False, "default_resolution": 0},
+    {"type": 13, "label": "HitPoints", "has_resolution": False, "default_resolution": 0},
+    {"type": 14, "label": "View Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 15, "label": "Fire Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 16, "label": "View Cargo Geometry", "has_resolution": True, "default_resolution": 1},
+    {"type": 17, "label": "View Cargo Fire Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 18, "label": "View Commander", "has_resolution": False, "default_resolution": 0},
+    {"type": 19, "label": "View Commander Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 20, "label": "View Commander Fire Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 21, "label": "View Pilot Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 22, "label": "View Pilot Fire Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 23, "label": "View Gunner Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 24, "label": "View Gunner Fire Geometry", "has_resolution": False, "default_resolution": 0},
+    {"type": 25, "label": "Subparts", "has_resolution": False, "default_resolution": 0},
+    {"type": 26, "label": "Shadow View Cargo", "has_resolution": True, "default_resolution": 0},
+    {"type": 27, "label": "Shadow View Pilot", "has_resolution": False, "default_resolution": 0},
+    {"type": 28, "label": "Shadow View Gunner", "has_resolution": False, "default_resolution": 0},
+    {"type": 29, "label": "Wreckage", "has_resolution": False, "default_resolution": 0},
+    {"type": 30, "label": "Underground", "has_resolution": False, "default_resolution": 0},
+    {"type": 31, "label": "GroundLayer", "has_resolution": False, "default_resolution": 0},
+    {"type": 32, "label": "Navigation", "has_resolution": False, "default_resolution": 0},
+]
+LOD_TYPE_NAMES = {definition["type"]: definition["label"] for definition in LOD_DEFINITIONS}
+LOD_DEFINITIONS_BY_LABEL = {definition["label"]: definition for definition in LOD_DEFINITIONS}
 
 
 def _plugin_path():
@@ -138,18 +151,75 @@ def _prompt(title, message, default=""):
     return cmds.promptDialog(query=True, text=True)
 
 
-def create_lod():
+def _selected_lod_definition():
+    if not cmds.optionMenu(LOD_TYPE_MENU, exists=True):
+        return LOD_DEFINITIONS[0]
+    label = cmds.optionMenu(LOD_TYPE_MENU, query=True, value=True)
+    return LOD_DEFINITIONS_BY_LABEL.get(label, LOD_DEFINITIONS[0])
+
+
+def _lod_resolution_value(definition):
+    if not definition["has_resolution"]:
+        return definition["default_resolution"]
+    if cmds.intField(LOD_RESOLUTION_FIELD, exists=True):
+        return cmds.intField(LOD_RESOLUTION_FIELD, query=True, value=True)
+    return definition["default_resolution"]
+
+
+def _lod_assignment_label(definition=None, resolution=None):
+    definition = definition or _selected_lod_definition()
+    resolution = _lod_resolution_value(definition) if resolution is None else resolution
+    if definition["has_resolution"]:
+        return f"{definition['label']} {resolution}"
+    return definition["label"]
+
+
+def _refresh_lod_assignment_ui(*_):
+    if not cmds.optionMenu(LOD_TYPE_MENU, exists=True):
+        return
+    definition = _selected_lod_definition()
+    if cmds.intField(LOD_RESOLUTION_FIELD, exists=True):
+        cmds.intField(LOD_RESOLUTION_FIELD, edit=True, enable=definition["has_resolution"])
+        if not definition["has_resolution"]:
+            cmds.intField(LOD_RESOLUTION_FIELD, edit=True, value=definition["default_resolution"])
+    selected_lod = _selected_lod_transform()
+    target = selected_lod or "No LOD selected; Create Empty LOD will create a new transform."
+    if cmds.text(LOD_CONTEXT_TEXT, exists=True):
+        cmds.text(LOD_CONTEXT_TEXT, edit=True, label=f"Target: {target}")
+    if cmds.text(LOD_PREVIEW_TEXT, exists=True):
+        cmds.text(LOD_PREVIEW_TEXT, edit=True, label=f"Will assign: {_lod_assignment_label(definition)}")
+
+
+def _lod_node_name(definition, resolution):
+    label = _lod_assignment_label(definition, resolution)
+    return label.replace(" ", "_").replace("/", "_")
+
+
+def assign_lod_to_selection():
     load_plugin()
-    name = _prompt("Create LOD", "Name:", "a3ob_LOD")
-    if name is None:
+    if not cmds.ls(selection=True):
+        cmds.warning("Select a transform, mesh, or component before assigning LOD metadata")
         return
-    lod_type = _prompt("Create LOD", "LOD type:", "1")
-    if lod_type is None:
-        return
-    resolution = _prompt("Create LOD", "Resolution:", "0")
-    if resolution is None:
-        return
-    cmds.a3obCreateLOD(lodType=int(lod_type), resolution=int(resolution), name=name)
+    definition = _selected_lod_definition()
+    resolution = _lod_resolution_value(definition)
+    cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
+    _refresh_context_ui()
+    _refresh_lod_assignment_ui()
+
+
+def create_empty_lod():
+    load_plugin()
+    selection = cmds.ls(selection=True) or []
+    cmds.select(clear=True)
+    definition = _selected_lod_definition()
+    resolution = _lod_resolution_value(definition)
+    node = cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
+    if node:
+        cmds.select(node, replace=True)
+    elif selection:
+        cmds.select(selection, replace=True)
+    _refresh_context_ui()
+    _refresh_lod_assignment_ui()
 
 
 def set_mass():
@@ -182,6 +252,40 @@ def set_flag():
     if name is None:
         return
     cmds.a3obSetFlag(component=component.lower(), value=int(value), name=name)
+
+
+def apply_mass_from_ui():
+    load_plugin()
+    value = cmds.floatField(MASS_VALUE_FIELD, query=True, value=True) if cmds.floatField(MASS_VALUE_FIELD, exists=True) else 1.0
+    mode = cmds.optionMenu(MASS_MODE_MENU, query=True, value=True) if cmds.optionMenu(MASS_MODE_MENU, exists=True) else "All vertices"
+    cmds.a3obSetMass(value=value, selectedComponents=(mode == "Selected vertices"))
+
+
+def clear_mass_from_ui():
+    load_plugin()
+    cmds.a3obSetMass(clear=True)
+
+
+def apply_flag_from_ui():
+    load_plugin()
+    component_label = cmds.optionMenu(FLAG_COMPONENT_MENU, query=True, value=True) if cmds.optionMenu(FLAG_COMPONENT_MENU, exists=True) else "Face"
+    value = cmds.intField(FLAG_VALUE_FIELD, query=True, value=True) if cmds.intField(FLAG_VALUE_FIELD, exists=True) else 1
+    name = cmds.textField(FLAG_NAME_FIELD, query=True, text=True).strip() if cmds.textField(FLAG_NAME_FIELD, exists=True) else "a3ob_flag"
+    if not name:
+        cmds.warning("Enter a flag set name")
+        return
+    cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
+
+
+def create_proxy_from_ui():
+    load_plugin()
+    path = cmds.textField(PROXY_PATH_FIELD, query=True, text=True).strip() if cmds.textField(PROXY_PATH_FIELD, exists=True) else ""
+    if not path:
+        cmds.warning("Enter a proxy path")
+        return
+    index = cmds.intField(PROXY_INDEX_FIELD, query=True, value=True) if cmds.intField(PROXY_INDEX_FIELD, exists=True) else 1
+    from_selection = cmds.checkBox(PROXY_FROM_SELECTION_CHECK, query=True, value=True) if cmds.checkBox(PROXY_FROM_SELECTION_CHECK, exists=True) else True
+    cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
 
 
 def _set_lod_label(node):
@@ -273,7 +377,7 @@ def _refresh_selection_manager(rebuild_lods=True):
         searchable = f"{item['lod']} {item['kind']} {item['name']} {item['node']}".lower()
         if search and search not in searchable:
             continue
-        label = f"{item['lod']:<18} | {item['kind']:<11} | {item['name']:<24} | {item['node']}"
+        label = f"{item['lod']} | {item['kind']} | {item['name']} | {item['node']}"
         _selection_manager_items[label] = item
         cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, append=label)
     _update_selection_details()
@@ -446,7 +550,7 @@ def _refresh_named_properties(rebuild_lods=False):
             break
     raw = cmds.getAttr(lod + ".a3obProperties") if cmds.attributeQuery("a3obProperties", node=lod, exists=True) else ""
     for name, value in _split_named_properties(raw):
-        label = f"{name:<24} = {value}"
+        label = f"{name} = {value}"
         _named_property_items[label] = (name, value)
         cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, append=label)
 
@@ -510,32 +614,19 @@ def _apply_common_named_property(*_):
 
 
 def _build_named_properties_ui():
-    cmds.frameLayout(label="Named Properties", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="LOD")
-    cmds.optionMenu(NAMED_PROPERTIES_LOD, changeCommand=lambda *_: _refresh_named_properties(False))
-    cmds.setParent("..")
-    cmds.textScrollList(NAMED_PROPERTIES_LIST, allowMultiSelection=False, height=150, selectCommand=lambda *_: _select_named_property())
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="Name")
-    cmds.textField(NAMED_PROPERTIES_NAME, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields)
-    cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="Value")
-    cmds.textField(NAMED_PROPERTIES_VALUE, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields)
-    cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="Common")
-    cmds.optionMenu(NAMED_PROPERTIES_COMMON, changeCommand=_apply_common_named_property)
+    _section("Named Properties", "Edit Object Builder named properties on the selected LOD.")
+    _labeled_row("LOD", lambda: cmds.optionMenu(NAMED_PROPERTIES_LOD, changeCommand=lambda *_: _refresh_named_properties(False)))
+    _labeled_row("Preset", lambda: cmds.optionMenu(NAMED_PROPERTIES_COMMON, changeCommand=_apply_common_named_property))
     for name, value in COMMON_NAMED_PROPERTIES:
-        cmds.menuItem(label=f"{name} = {value}")
-    cmds.setParent("..")
-    cmds.rowColumnLayout(numberOfColumns=1, columnWidth=[(1, 160)])
-    cmds.button(label="Remove Selected", command=lambda *_: _remove_named_property())
-    cmds.setParent("..")
-    cmds.setParent("..")
-    cmds.setParent("..")
+        cmds.menuItem(label=f"{name} = {value}", parent=NAMED_PROPERTIES_COMMON)
+    cmds.textScrollList(NAMED_PROPERTIES_LIST, allowMultiSelection=False, height=96, selectCommand=lambda *_: _select_named_property())
+    _labeled_row("Name", lambda: cmds.textField(NAMED_PROPERTIES_NAME, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields))
+    _labeled_row("Value", lambda: cmds.textField(NAMED_PROPERTIES_VALUE, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields))
+    _button_stack([
+        ("Add / Update Property", _commit_named_property_fields),
+        ("Remove Selected Property", _remove_named_property),
+    ])
+    _end_section()
     _refresh_named_properties(True)
 
 
@@ -595,7 +686,7 @@ def _refresh_material_metadata():
     for item in items:
         material_node = item["material_node"] or "No material"
         shading_group = item["shading_groups"][0]
-        label = f"{material_node:<28} | {shading_group:<28} | tex: {item['texture']} | rvmat: {item['material']}"
+        label = f"{material_node} | {shading_group} | tex: {item['texture']} | rvmat: {item['material']}"
         _material_metadata_items[label] = item
         cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, append=label)
 
@@ -660,56 +751,36 @@ def _clear_selected_material_metadata():
 
 
 def _build_material_metadata_ui():
-    cmds.frameLayout(label="DayZ Material / Texture Metadata", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
-    cmds.text(label="Shows only materials used by the selected mesh, LOD, or faces.", align="left")
-    cmds.textScrollList(MATERIAL_METADATA_LIST, allowMultiSelection=False, height=170, selectCommand=lambda *_: _select_material_metadata())
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="Texture")
-    cmds.textField(MATERIAL_METADATA_TEXTURE, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata)
-    cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 300), adjustableColumn=2)
-    cmds.text(label="Material")
-    cmds.textField(MATERIAL_METADATA_MATERIAL, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata)
-    cmds.setParent("..")
-    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 195), (2, 195)])
-    cmds.button(label="Assign New To Selected Faces", command=lambda *_: _assign_new_material_metadata_to_selection())
-    cmds.button(label="Clear Highlighted Material", command=lambda *_: _clear_selected_material_metadata())
-    cmds.setParent("..")
-    cmds.setParent("..")
-    cmds.setParent("..")
+    _section("DayZ Material / Texture Metadata", "Shows only materials used by the selected mesh, LOD, or faces.")
+    cmds.textScrollList(MATERIAL_METADATA_LIST, allowMultiSelection=False, height=150, selectCommand=lambda *_: _select_material_metadata())
+    _labeled_row("Texture", lambda: cmds.textField(MATERIAL_METADATA_TEXTURE, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata))
+    _labeled_row("Material", lambda: cmds.textField(MATERIAL_METADATA_MATERIAL, changeCommand=_commit_selected_material_metadata, enterCommand=_commit_selected_material_metadata))
+    _button_stack([
+        ("Assign New To Selected Faces", _assign_new_material_metadata_to_selection),
+        ("Clear Highlighted Material", _clear_selected_material_metadata),
+    ])
+    _end_section()
     _refresh_material_metadata()
 
 
 def _build_selection_manager_ui():
-    cmds.frameLayout(label="Selections", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
-    cmds.text(label="LOD")
-    cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False))
-    cmds.menuItem(label="All LODs")
-    cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
-    cmds.text(label="Type")
-    cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False))
+    _section("Selections", "Manage Object Builder selections, proxies, and flag sets.")
+    _labeled_row("LOD", lambda: cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False)))
+    cmds.menuItem(label="All LODs", parent=SELECTION_MANAGER_LOD_FILTER)
+    _labeled_row("Type", lambda: cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False)))
     for label in ("All Types", "Selection", "Proxy", "Vertex Flag", "Face Flag"):
-        cmds.menuItem(label=label)
-    cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
-    cmds.text(label="Search")
-    cmds.textField(SELECTION_MANAGER_SEARCH, changeCommand=lambda *_: _refresh_selection_manager(False), enterCommand=lambda *_: _refresh_selection_manager(False))
-    cmds.setParent("..")
-    cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=210, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
-    cmds.text(SELECTION_MANAGER_DETAILS, label="Select a row to see details.", align="left")
-    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 180), (2, 180)])
-    cmds.button(label="Select Members", command=lambda *_: _select_set_members())
-    cmds.button(label="Rename", command=lambda *_: _rename_selection_set())
-    cmds.button(label="Create From Selection", command=lambda *_: _create_selection_set())
-    cmds.button(label="Add Selected Components", command=lambda *_: _add_to_selection_set())
-    cmds.button(label="Remove Selected Components", command=lambda *_: _remove_from_selection_set())
-    cmds.setParent("..")
-    cmds.setParent("..")
-    cmds.setParent("..")
+        cmds.menuItem(label=label, parent=SELECTION_MANAGER_TYPE_FILTER)
+    _labeled_row("Search", lambda: cmds.textField(SELECTION_MANAGER_SEARCH, changeCommand=lambda *_: _refresh_selection_manager(False), enterCommand=lambda *_: _refresh_selection_manager(False)))
+    cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=135, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
+    cmds.text(SELECTION_MANAGER_DETAILS, label="Select a row to see details.", align="left", wordWrap=True)
+    _compact_button_stack([
+        ("Select Members", _select_set_members),
+        ("Rename Selection Set", _rename_selection_set),
+        ("Create From Selection", _create_selection_set),
+        ("Add Selected Components", _add_to_selection_set),
+        ("Remove Selected Components", _remove_from_selection_set),
+    ])
+    _end_section()
 
 
 def selection_manager():
@@ -723,6 +794,8 @@ def _refresh_context_ui():
         _refresh_material_metadata()
     if cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
         _refresh_selection_manager(False)
+    if cmds.text(LOD_CONTEXT_TEXT, exists=True):
+        _refresh_lod_assignment_ui()
 
 
 def _install_context_refresh_job(parent):
@@ -733,77 +806,169 @@ def _install_context_refresh_job(parent):
 
 
 
-def _two_column_buttons(items):
-    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 180), (2, 180)])
+def _action_button(label, command):
+    return cmds.button(label=label, height=32, command=lambda *_: command())
+
+
+def _button_stack(items):
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=4)
     for label, command in items:
-        cmds.button(label=label, command=lambda *_, fn=command: fn())
+        _action_button(label, command)
     cmds.setParent("..")
+
+
+def _compact_button_stack(items):
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=3)
+    for label, command in items:
+        cmds.button(label=label, height=28, command=lambda *_, fn=command: fn())
+    cmds.setParent("..")
+
+
+def _button_pair(items):
+    _button_stack(items)
+
+
+def _two_column_buttons(items):
+    _button_stack(items)
+
+
+def _full_width_button(label, command):
+    return _action_button(label, command)
+
+
+def _labeled_row(label, control_builder):
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(96, 1), adjustableColumn=2, columnAttach=[(1, "right", 0), (2, "both", 6)])
+    cmds.text(label=label, align="right")
+    result = control_builder()
+    cmds.setParent("..")
+    return result
+
+
+def _section(label, subtitle="", collapse=False):
+    cmds.frameLayout(label=label, collapsable=True, collapse=collapse, marginWidth=10, marginHeight=8)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=7)
+    if subtitle:
+        cmds.text(label=subtitle, align="left", wordWrap=True)
+
+
+def _end_section():
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+
+def _start_tab():
+    tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
+    return tab
+
+
+def _end_tab():
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+
+def _build_lod_assignment_ui():
+    _section("LOD Assignment", "Select an Object Builder LOD type and assign it to the current transform or create an empty LOD.")
+    cmds.text(LOD_CONTEXT_TEXT, label="Target: No Object Builder LOD selected.", align="left")
+    _labeled_row("LOD type", lambda: cmds.optionMenu(LOD_TYPE_MENU, changeCommand=_refresh_lod_assignment_ui))
+    for definition in LOD_DEFINITIONS:
+        cmds.menuItem(label=definition["label"], parent=LOD_TYPE_MENU)
+    _labeled_row("Resolution", lambda: cmds.intField(LOD_RESOLUTION_FIELD, minValue=0, value=1, changeCommand=_refresh_lod_assignment_ui))
+    cmds.text(LOD_PREVIEW_TEXT, label="Will assign: Resolution 1", align="left")
+    _full_width_button("Assign LOD to Selection", assign_lod_to_selection)
+    _two_column_buttons([
+        ("Create Empty LOD", create_empty_lod),
+        ("Validate Selection", lambda: cmds.a3obValidate(selectionOnly=True)),
+    ])
+    _end_section()
+    _refresh_lod_assignment_ui()
+
+
+def _build_metadata_tools_ui():
+    _section("Mass", "Apply or clear vertex mass metadata on the current selection.")
+    _labeled_row("Value", lambda: cmds.floatField(MASS_VALUE_FIELD, value=1.0, precision=3))
+    _labeled_row("Mode", lambda: cmds.optionMenu(MASS_MODE_MENU))
+    cmds.menuItem(label="All vertices", parent=MASS_MODE_MENU)
+    cmds.menuItem(label="Selected vertices", parent=MASS_MODE_MENU)
+    _button_stack([
+        ("Apply Mass", apply_mass_from_ui),
+        ("Clear Mass", clear_mass_from_ui),
+    ])
+    _end_section()
+
+    _section("Flags", "Create Object Builder face or vertex flag sets from the current selection.")
+    _labeled_row("Component", lambda: cmds.optionMenu(FLAG_COMPONENT_MENU))
+    cmds.menuItem(label="Face", parent=FLAG_COMPONENT_MENU)
+    cmds.menuItem(label="Vertex", parent=FLAG_COMPONENT_MENU)
+    _labeled_row("Value", lambda: cmds.intField(FLAG_VALUE_FIELD, value=1))
+    _labeled_row("Set name", lambda: cmds.textField(FLAG_NAME_FIELD, text="a3ob_flag"))
+    _full_width_button("Apply Flag", apply_flag_from_ui)
+    _end_section()
+
+    _section("Proxy", "Create or update proxy metadata without modal prompts.")
+    _labeled_row("Path", lambda: cmds.textField(PROXY_PATH_FIELD))
+    _labeled_row("Index", lambda: cmds.intField(PROXY_INDEX_FIELD, minValue=0, value=1))
+    cmds.checkBox(PROXY_FROM_SELECTION_CHECK, label="Create from selected components", value=True)
+    _full_width_button("Create Proxy", create_proxy_from_ui)
+    _end_section()
+
+    _build_named_properties_ui()
+
+
+def _build_validation_ui():
+    _section("Validation", "Check scene or selected LODs before export.")
+    _two_column_buttons([
+        ("Validate Scene", lambda: cmds.a3obValidate()),
+        ("Validate Selection", lambda: cmds.a3obValidate(selectionOnly=True)),
+    ])
+    _end_section()
 
 
 def _build_dock_contents():
-    load_plugin()
-    tabs = cmds.tabLayout(innerMarginWidth=6, innerMarginHeight=6)
+    _ensure_script_path()
+    tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
 
-    files_tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    lod_tab = _start_tab()
     cmds.text(label="MayaObjectBuilder", align="center", height=28)
-    cmds.frameLayout(label="P3D", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    cmds.text(label="Import/export settings are in Maya's file dialog option panel.", align="left")
-    _two_column_buttons([
-        ("Import P3D", import_p3d),
-        ("Export P3D", export_p3d),
-    ])
-    cmds.setParent("..")
+    _build_lod_assignment_ui()
+    _build_validation_ui()
+    _end_tab()
 
-    cmds.frameLayout(label="model.cfg", collapsable=True, collapse=True, marginWidth=8, marginHeight=6)
+    files_tab = _start_tab()
+    _section("P3D", "Use Maya File > Import / Export and choose file type Arma P3D. P3D options live in Maya's file dialog option panel.", collapse=True)
+    _end_section()
+    _section("model.cfg", "Import or export Object Builder skeleton configuration.")
     _two_column_buttons([
         ("Import model.cfg", import_model_cfg),
         ("Export model.cfg", export_model_cfg),
     ])
-    cmds.setParent("..")
-    cmds.setParent("..")
-    cmds.setParent("..")
+    _end_section()
+    _end_tab()
 
-    tools_tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-    cmds.frameLayout(label="Validation", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    _two_column_buttons([
-        ("Validate", validate),
-    ])
-    cmds.setParent("..")
-    cmds.frameLayout(label="Advanced LOD Creation", collapsable=True, collapse=True, marginWidth=8, marginHeight=6)
-    cmds.text(label="Only for building a new P3D scene from scratch.", align="left")
-    cmds.button(label="Create LOD", command=lambda *_: create_lod())
-    cmds.setParent("..")
-    cmds.frameLayout(label="Object Builder Metadata", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
-    _two_column_buttons([
-        ("Set Mass", set_mass),
-        ("Set Flag", set_flag),
-        ("Create Proxy", create_proxy),
-    ])
-    cmds.setParent("..")
-    cmds.setParent("..")
-    cmds.setParent("..")
+    metadata_tab = _start_tab()
+    _build_metadata_tools_ui()
+    _end_tab()
 
-    properties_tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-    _build_named_properties_ui()
-    cmds.setParent("..")
-    cmds.setParent("..")
-
-    materials_tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    materials_tab = _start_tab()
     _build_material_metadata_ui()
-    cmds.setParent("..")
-    cmds.setParent("..")
+    _end_tab()
 
-    selections_tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    selections_tab = _start_tab()
     _build_selection_manager_ui()
-    cmds.setParent("..")
-    cmds.setParent("..")
+    _end_tab()
 
-    cmds.tabLayout(tabs, edit=True, tabLabel=[(files_tab, "Files"), (tools_tab, "Tools"), (properties_tab, "Properties"), (materials_tab, "Materials"), (selections_tab, "Selections")])
+    validation_tab = _start_tab()
+    _build_validation_ui()
+    _end_tab()
+
+    cmds.tabLayout(tabs, edit=True, tabLabel=[
+        (lod_tab, "LOD"),
+        (files_tab, "Files"),
+        (metadata_tab, "Metadata"),
+        (materials_tab, "Materials"),
+        (selections_tab, "Selections"),
+        (validation_tab, "Validation"),
+    ])
     cmds.setParent("..")
     _refresh_selection_manager()
 
@@ -815,7 +980,7 @@ def open_dock():
         cmds.workspaceControl(DOCK_NAME, edit=True, restore=True, visible=True)
         _refresh_context_ui()
         return DOCK_NAME
-    control = cmds.workspaceControl(DOCK_NAME, label="MayaObjectBuilder", retain=False, initialWidth=420, minimumWidth=360)
+    control = cmds.workspaceControl(DOCK_NAME, label="MayaObjectBuilder", retain=False, initialWidth=440, minimumWidth=380)
     for target in ("AttributeEditor", "AttributeEditorWorkspaceControl", "ChannelBoxLayerEditor"):
         if cmds.workspaceControl(target, exists=True):
             cmds.workspaceControl(DOCK_NAME, edit=True, tabToControl=(target, -1))
@@ -826,15 +991,41 @@ def open_dock():
     return control
 
 
-def install_shelf_button():
-    if cmds.about(batch=True):
-        return None
-    shelf = cmds.shelfLayout(SHELF_NAME, parent="ShelfLayout", cellWidth=34, cellHeight=34) if not cmds.shelfLayout(SHELF_NAME, exists=True) else SHELF_NAME
-    button_name = SHELF_NAME + "OpenButton"
+def _kill_ui_script_jobs():
+    global _ui_script_jobs
+    for job in list(_ui_script_jobs):
+        if cmds.scriptJob(exists=job):
+            cmds.scriptJob(kill=job, force=True)
+    _ui_script_jobs = []
+
+
+def _remove_legacy_shelf_button():
+    button_name = "MayaObjectBuilderShelfOpenButton"
     if cmds.shelfButton(button_name, exists=True):
         cmds.deleteUI(button_name)
-    command = "import runpy; ns = runpy.run_path(r'" + str(SCRIPT_PATH) + "'); ns['open_dock']()"
-    return cmds.shelfButton(button_name, parent=shelf, label="MOB", annotation="Open MayaObjectBuilder", image="commandButton.png", command=command, sourceType="python")
+
+
+def show_plugin_ui():
+    if cmds.about(batch=True):
+        return None
+    _ensure_script_path()
+    main_window = mel.eval("$tmp=$gMainWindow")
+    if not cmds.menu(MENU_NAME, exists=True):
+        menu = cmds.menu(MENU_NAME, label="MayaObjectBuilder", parent=main_window, tearOff=True)
+        cmds.menuItem(label="Open MayaObjectBuilder", parent=menu, command=lambda *_: open_dock())
+    _remove_legacy_shelf_button()
+    return open_dock()
+
+
+def hide_plugin_ui():
+    if cmds.about(batch=True):
+        return
+    _kill_ui_script_jobs()
+    if cmds.workspaceControl(DOCK_NAME, exists=True):
+        cmds.deleteUI(DOCK_NAME)
+    if cmds.menu(MENU_NAME, exists=True):
+        cmds.deleteUI(MENU_NAME)
+    _remove_legacy_shelf_button()
 
 
 def create_proxy():
@@ -861,18 +1052,12 @@ def validate():
 
 
 def install():
-    if cmds.about(batch=True):
-        return None
-    main_window = mel.eval("$tmp=$gMainWindow")
-    if cmds.menu(MENU_NAME, exists=True):
-        cmds.deleteUI(MENU_NAME)
+    load_plugin()
+    return show_plugin_ui()
 
-    menu = cmds.menu(MENU_NAME, label="MayaObjectBuilder", parent=main_window, tearOff=True)
-    cmds.menuItem(label="Open MayaObjectBuilder", parent=menu, command=lambda *_: open_dock())
-    cmds.menuItem(label="Load Plugin", parent=menu, command=lambda *_: load_plugin())
-    install_shelf_button()
-    open_dock()
-    return menu
+
+def uninstall():
+    hide_plugin_ui()
 
 
 if __name__ == "__main__":
