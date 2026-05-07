@@ -4,10 +4,12 @@ import maya.cmds as cmds
 import maya.mel as mel
 
 
+SCRIPT_PATH = Path(globals().get("__file__", r"C:\Users\targaryen\source\repos\maya\dayz-object-builder\scripts\objectBuilderMenu.py")).resolve()
 MENU_NAME = "MayaObjectBuilderMenu"
 PLUGIN_NAME = "MayaObjectBuilder"
 TRANSLATOR_NAME = "Arma P3D"
-SELECTION_MANAGER_WINDOW = "MayaObjectBuilderSelectionManager"
+DOCK_NAME = "MayaObjectBuilderWorkspaceControl"
+SHELF_NAME = "MayaObjectBuilderShelf"
 SELECTION_MANAGER_LIST = "MayaObjectBuilderSelectionList"
 SELECTION_MANAGER_LOD_FILTER = "MayaObjectBuilderSelectionLodFilter"
 SELECTION_MANAGER_TYPE_FILTER = "MayaObjectBuilderSelectionTypeFilter"
@@ -17,7 +19,7 @@ _selection_manager_items = {}
 
 
 def _plugin_path():
-    return Path(__file__).resolve().parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll"
+    return SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll"
 
 
 def load_plugin():
@@ -271,50 +273,124 @@ def _remove_from_selection_set():
     _refresh_selection_manager()
 
 
-def selection_manager():
-    load_plugin()
-    if cmds.window(SELECTION_MANAGER_WINDOW, exists=True):
-        cmds.deleteUI(SELECTION_MANAGER_WINDOW)
-    window = cmds.window(SELECTION_MANAGER_WINDOW, title="MayaObjectBuilder Selections", widthHeight=(980, 560))
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-    cmds.frameLayout(label="Filters", collapsable=False, marginWidth=8, marginHeight=6)
-    cmds.rowLayout(numberOfColumns=6, columnWidth6=(70, 240, 70, 170, 60, 320), adjustableColumn=6)
+def _build_selection_manager_ui():
+    cmds.frameLayout(label="Selections", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
     cmds.text(label="LOD")
     cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False))
     cmds.menuItem(label="All LODs")
+    cmds.setParent("..")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
     cmds.text(label="Type")
     cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False))
     for label in ("All Types", "Selection", "Proxy", "Vertex Flag", "Face Flag"):
         cmds.menuItem(label=label)
+    cmds.setParent("..")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(80, 250), adjustableColumn=2)
     cmds.text(label="Search")
     cmds.textField(SELECTION_MANAGER_SEARCH, changeCommand=lambda *_: _refresh_selection_manager(False), enterCommand=lambda *_: _refresh_selection_manager(False))
     cmds.setParent("..")
-    cmds.setParent("..")
-
-    cmds.frameLayout(label="Selections", collapsable=False, marginWidth=8, marginHeight=6)
-    cmds.text(label="LOD               | Type        | Object Builder name        | Maya set node", align="left")
-    cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=260, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
-    cmds.setParent("..")
-
-    cmds.frameLayout(label="Selected item", collapsable=False, marginWidth=8, marginHeight=6)
+    cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=210, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
     cmds.text(SELECTION_MANAGER_DETAILS, label="Select a row to see details.", align="left")
+    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 180), (2, 180)])
+    cmds.button(label="Refresh", command=lambda *_: _refresh_selection_manager())
+    cmds.button(label="Select Members", command=lambda *_: _select_set_members())
+    cmds.button(label="Rename", command=lambda *_: _rename_selection_set())
+    cmds.button(label="Create From Selection", command=lambda *_: _create_selection_set())
+    cmds.button(label="Add Selected Components", command=lambda *_: _add_to_selection_set())
+    cmds.button(label="Remove Selected Components", command=lambda *_: _remove_from_selection_set())
+    cmds.setParent("..")
+    cmds.setParent("..")
     cmds.setParent("..")
 
-    cmds.frameLayout(label="Actions", collapsable=False, marginWidth=8, marginHeight=6)
-    cmds.rowLayout(numberOfColumns=4, columnWidth4=(210, 210, 210, 210))
-    cmds.button(label="Refresh List", command=lambda *_: _refresh_selection_manager())
-    cmds.button(label="Select Set Members", command=lambda *_: _select_set_members())
-    cmds.button(label="Rename OB Selection", command=lambda *_: _rename_selection_set())
-    cmds.button(label="Create From Current Components", command=lambda *_: _create_selection_set())
+
+def selection_manager():
+    open_dock()
+
+
+
+def _two_column_buttons(items):
+    cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 180), (2, 180)])
+    for label, command in items:
+        cmds.button(label=label, command=lambda *_, fn=command: fn())
     cmds.setParent("..")
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(420, 420))
-    cmds.button(label="Add Current Components To Selected Set", command=lambda *_: _add_to_selection_set())
-    cmds.button(label="Remove Current Components From Selected Set", command=lambda *_: _remove_from_selection_set())
+
+
+def _build_dock_contents():
+    load_plugin()
+    tabs = cmds.tabLayout(innerMarginWidth=6, innerMarginHeight=6)
+
+    files_tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    cmds.text(label="MayaObjectBuilder", align="center", height=28)
+    cmds.frameLayout(label="P3D / model.cfg", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    _two_column_buttons([
+        ("Import P3D", import_p3d),
+        ("Export P3D", export_p3d),
+        ("Import model.cfg", import_model_cfg),
+        ("Export model.cfg", export_model_cfg),
+    ])
     cmds.setParent("..")
     cmds.setParent("..")
-    cmds.showWindow(window)
+    cmds.setParent("..")
+
+    tools_tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    cmds.frameLayout(label="LOD Tools", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    _two_column_buttons([
+        ("Create LOD", create_lod),
+        ("Validate", validate),
+    ])
+    cmds.setParent("..")
+    cmds.frameLayout(label="Object Builder Metadata", collapsable=True, collapse=False, marginWidth=8, marginHeight=6)
+    _two_column_buttons([
+        ("Set Mass", set_mass),
+        ("Set Material", set_material),
+        ("Set Flag", set_flag),
+        ("Create Proxy", create_proxy),
+    ])
+    cmds.setParent("..")
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    selections_tab = cmds.scrollLayout(childResizable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    _build_selection_manager_ui()
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    cmds.tabLayout(tabs, edit=True, tabLabel=[(files_tab, "Files"), (tools_tab, "Tools"), (selections_tab, "Selections")])
+    cmds.setParent("..")
     _refresh_selection_manager()
 
+
+def open_dock():
+    if cmds.about(batch=True):
+        return None
+    if cmds.workspaceControl(DOCK_NAME, exists=True):
+        cmds.workspaceControl(DOCK_NAME, edit=True, restore=True, visible=True)
+        _refresh_selection_manager()
+        return DOCK_NAME
+    control = cmds.workspaceControl(DOCK_NAME, label="MayaObjectBuilder", retain=False, initialWidth=420, minimumWidth=360)
+    for target in ("AttributeEditor", "AttributeEditorWorkspaceControl", "ChannelBoxLayerEditor"):
+        if cmds.workspaceControl(target, exists=True):
+            cmds.workspaceControl(DOCK_NAME, edit=True, tabToControl=(target, -1))
+            break
+    cmds.setParent(control)
+    _build_dock_contents()
+    return control
+
+
+def install_shelf_button():
+    if cmds.about(batch=True):
+        return None
+    shelf = cmds.shelfLayout(SHELF_NAME, parent="ShelfLayout", cellWidth=34, cellHeight=34) if not cmds.shelfLayout(SHELF_NAME, exists=True) else SHELF_NAME
+    button_name = SHELF_NAME + "OpenButton"
+    if cmds.shelfButton(button_name, exists=True):
+        cmds.deleteUI(button_name)
+    command = "import runpy; ns = runpy.run_path(r'" + str(SCRIPT_PATH) + "'); ns['open_dock']()"
+    return cmds.shelfButton(button_name, parent=shelf, label="MOB", annotation="Open MayaObjectBuilder", image="commandButton.png", command=command, sourceType="python")
 
 
 def create_proxy():
@@ -348,20 +424,10 @@ def install():
         cmds.deleteUI(MENU_NAME)
 
     menu = cmds.menu(MENU_NAME, label="MayaObjectBuilder", parent=main_window, tearOff=True)
+    cmds.menuItem(label="Open MayaObjectBuilder", parent=menu, command=lambda *_: open_dock())
     cmds.menuItem(label="Load Plugin", parent=menu, command=lambda *_: load_plugin())
-    cmds.menuItem(divider=True, parent=menu)
-    cmds.menuItem(label="Import P3D", parent=menu, command=lambda *_: import_p3d())
-    cmds.menuItem(label="Export P3D", parent=menu, command=lambda *_: export_p3d())
-    cmds.menuItem(label="Import model.cfg", parent=menu, command=lambda *_: import_model_cfg())
-    cmds.menuItem(label="Export model.cfg", parent=menu, command=lambda *_: export_model_cfg())
-    cmds.menuItem(divider=True, parent=menu)
-    cmds.menuItem(label="Create LOD", parent=menu, command=lambda *_: create_lod())
-    cmds.menuItem(label="Set Mass", parent=menu, command=lambda *_: set_mass())
-    cmds.menuItem(label="Set Material", parent=menu, command=lambda *_: set_material())
-    cmds.menuItem(label="Set Flag", parent=menu, command=lambda *_: set_flag())
-    cmds.menuItem(label="Selections Manager", parent=menu, command=lambda *_: selection_manager())
-    cmds.menuItem(label="Create Proxy", parent=menu, command=lambda *_: create_proxy())
-    cmds.menuItem(label="Validate", parent=menu, command=lambda *_: validate())
+    install_shelf_button()
+    open_dock()
     return menu
 
 
