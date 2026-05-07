@@ -56,3 +56,21 @@ public:
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
 };
+
+class NamedPropertyCommand final : public MPxCommand
+{
+public:
+    static constexpr const char* kName = "a3obNamedProperty";
+    static void* creator();
+    static MSyntax syntax();
+    MStatus doIt(const MArgList& args) override;
+};
+
+class UpdateProxyCommand final : public MPxCommand
+{
+public:
+    static constexpr const char* kName = "a3obUpdateProxy";
+    static void* creator();
+    static MSyntax syntax();
+    MStatus doIt(const MArgList& args) override;
+};

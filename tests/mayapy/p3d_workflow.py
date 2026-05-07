@@ -169,7 +169,7 @@ def main():
     DAYZ_OUTDIR.mkdir(parents=True, exist_ok=True)
     cmds.loadPlugin(str(PLUGIN), quiet=True)
     commands = set(cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or [])
-    expected = {"a3obValidate", "a3obSetMass", "a3obSetMaterial", "a3obSetFlag", "a3obCreateLOD", "a3obProxy"}
+    expected = {"a3obValidate", "a3obSetMass", "a3obSetMaterial", "a3obSetFlag", "a3obCreateLOD", "a3obProxy", "a3obNamedProperty", "a3obUpdateProxy"}
     missing = expected - commands
     if missing:
         raise RuntimeError(f"Missing commands: {sorted(missing)}")

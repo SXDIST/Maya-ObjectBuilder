@@ -21,6 +21,7 @@
 #include <maya/MItMeshPolygon.h>
 #include <maya/MObjectArray.h>
 #include <maya/MPlug.h>
+#include <maya/MStringArray.h>
 #include <maya/MPointArray.h>
 #include <maya/MSelectionList.h>
 #include <maya/MVector.h>
@@ -171,6 +172,35 @@ std::vector<std::string> splitSemicolon(const std::string& value)
         if (!part.empty()) parts.push_back(part);
     }
     return parts;
+}
+
+std::vector<std::pair<std::string, std::string>> splitProperties(const std::string& value)
+{
+    std::vector<std::pair<std::string, std::string>> properties;
+    for (const std::string& part : splitSemicolon(value)) {
+        const std::size_t separator = part.find('=');
+        if (separator == std::string::npos) {
+            properties.emplace_back(part, "");
+        } else {
+            properties.emplace_back(part.substr(0, separator), part.substr(separator + 1));
+        }
+    }
+    return properties;
+}
+
+MString propertiesString(const std::vector<std::pair<std::string, std::string>>& properties)
+{
+    MString result;
+    bool first = true;
+    for (const auto& [key, value] : properties) {
+        if (key.empty()) continue;
+        if (!first) result += ";";
+        result += key.c_str();
+        result += "=";
+        result += value.c_str();
+        first = false;
+    }
+    return result;
 }
 
 bool isAscii(const std::string& value)
@@ -968,6 +998,99 @@ MStatus CreateLODCommand::doIt(const MArgList& args)
     return MS::kSuccess;
 }
 
+MObject selectedDependencyNodeOrNull()
+{
+    MSelectionList selection;
+    MGlobal::getActiveSelectionList(selection);
+    for (unsigned int i = 0; i < selection.length(); ++i) {
+        MObject node;
+        if (selection.getDependNode(i, node) && !node.isNull()) return node;
+        MDagPath path;
+        MObject component;
+        if (selection.getDagPath(i, path, component)) return path.node();
+    }
+    return MObject::kNullObj;
+}
+
+MStatus updateProxySelectionSet(MObject set, const MString& path, int index)
+{
+    const MString selectionName = proxySelectionName(path, index);
+    MStatus status = setStringAttribute(set, "a3obSelectionName", "a3sn", selectionName);
+    if (!status) return status;
+    status = setBoolAttribute(set, "a3obIsProxySelection", "a3ips", true);
+    if (!status) return status;
+    MFnDependencyNode dep(set, &status);
+    if (!status) return status;
+    MString setName = "a3ob_";
+    setName += selectionName;
+    setName.substitute(":", "_");
+    setName.substitute("/", "_");
+    setName.substitute("\\", "_");
+    setName.substitute(".", "_");
+    dep.setName(setName, false, &status);
+    return status;
+}
+
+MStatus updateProxyPlaceholder(MObject proxy, const MString& path, int index)
+{
+    const MString selectionName = proxySelectionName(path, index);
+    MStatus status = setBoolAttribute(proxy, "a3obIsProxy", "a3px", true);
+    if (!status) return status;
+    status = setStringAttribute(proxy, "a3obProxyPath", "a3pp", path);
+    if (!status) return status;
+    status = setIntAttribute(proxy, "a3obProxyIndex", "a3pi", index);
+    if (!status) return status;
+    return setStringAttribute(proxy, "a3obProxySelection", "a3ps", selectionName);
+}
+
+void* UpdateProxyCommand::creator()
+{
+    return new UpdateProxyCommand();
+}
+
+MSyntax UpdateProxyCommand::syntax()
+{
+    MSyntax syntax;
+    syntax.addFlag("-p", "-path", MSyntax::kString);
+    syntax.addFlag("-i", "-index", MSyntax::kLong);
+    return syntax;
+}
+
+MStatus UpdateProxyCommand::doIt(const MArgList& args)
+{
+    MArgDatabase argData(syntax(), args);
+    MString path;
+    if (argData.isFlagSet("-path")) {
+        argData.getFlagArgument("-path", 0, path);
+    } else if (argData.isFlagSet("-p")) {
+        argData.getFlagArgument("-p", 0, path);
+    }
+    if (path.length() == 0) {
+        MGlobal::displayError("a3obUpdateProxy: -path is required");
+        return MS::kFailure;
+    }
+    int index = 1;
+    if (argData.isFlagSet("-index")) {
+        argData.getFlagArgument("-index", 0, index);
+    } else if (argData.isFlagSet("-i")) {
+        argData.getFlagArgument("-i", 0, index);
+    }
+
+    MObject node = selectedDependencyNodeOrNull();
+    if (node.isNull()) {
+        MGlobal::displayError("a3obUpdateProxy: select a proxy placeholder or proxy selection set");
+        return MS::kFailure;
+    }
+    if (boolPlugValue(node, "a3obIsProxy")) {
+        return updateProxyPlaceholder(node, path, index);
+    }
+    if (boolPlugValue(node, "a3obIsProxySelection") || node.hasFn(MFn::kSet)) {
+        return updateProxySelectionSet(node, path, index);
+    }
+    MGlobal::displayError("a3obUpdateProxy: selected node is not a proxy placeholder or proxy selection set");
+    return MS::kFailure;
+}
+
 void* ProxyCommand::creator()
 {
     return new ProxyCommand();
@@ -982,6 +1105,86 @@ MSyntax ProxyCommand::syntax()
     syntax.addFlag("-fs", "-fromSelection");
     syntax.addFlag("-ss", "-selectionSet");
     return syntax;
+}
+
+MStatus namedPropertyResult(const MObject& lod)
+{
+    MStringArray output;
+    for (const auto& [key, value] : splitProperties(stringPlugValue(lod, "a3obProperties"))) {
+        MString item = key.c_str();
+        item += "=";
+        item += value.c_str();
+        output.append(item);
+    }
+    MPxCommand::setResult(output);
+    return MS::kSuccess;
+}
+
+void* NamedPropertyCommand::creator()
+{
+    return new NamedPropertyCommand();
+}
+
+MSyntax NamedPropertyCommand::syntax()
+{
+    MSyntax syntax;
+    syntax.addFlag("-l", "-list");
+    syntax.addFlag("-s", "-set", MSyntax::kString, MSyntax::kString);
+    syntax.addFlag("-r", "-remove", MSyntax::kString);
+    return syntax;
+}
+
+MStatus NamedPropertyCommand::doIt(const MArgList& args)
+{
+    MArgDatabase argData(syntax(), args);
+    MObject lod = selectedLODOrNull();
+    if (lod.isNull()) {
+        MGlobal::displayError("a3obNamedProperty: select a LOD transform, LOD mesh, or mesh components");
+        return MS::kFailure;
+    }
+
+    if (argData.isFlagSet("-list") || argData.isFlagSet("-l")) {
+        return namedPropertyResult(lod);
+    }
+
+    std::vector<std::pair<std::string, std::string>> properties = splitProperties(stringPlugValue(lod, "a3obProperties"));
+    if (argData.isFlagSet("-set") || argData.isFlagSet("-s")) {
+        MString key;
+        MString value;
+        if (argData.isFlagSet("-set")) {
+            argData.getFlagArgument("-set", 0, key);
+            argData.getFlagArgument("-set", 1, value);
+        } else {
+            argData.getFlagArgument("-s", 0, key);
+            argData.getFlagArgument("-s", 1, value);
+        }
+        if (key.length() == 0) {
+            MGlobal::displayError("a3obNamedProperty: property key cannot be empty");
+            return MS::kFailure;
+        }
+        const std::string keyString = key.asChar();
+        properties.erase(std::remove_if(properties.begin(), properties.end(), [&](const auto& item) { return item.first == keyString; }), properties.end());
+        properties.emplace_back(keyString, value.asChar());
+        const MStatus status = setStringAttribute(lod, "a3obProperties", "a3prop", propertiesString(properties));
+        if (!status) return status;
+        return namedPropertyResult(lod);
+    }
+
+    if (argData.isFlagSet("-remove") || argData.isFlagSet("-r")) {
+        MString key;
+        if (argData.isFlagSet("-remove")) {
+            argData.getFlagArgument("-remove", 0, key);
+        } else {
+            argData.getFlagArgument("-r", 0, key);
+        }
+        const std::string keyString = key.asChar();
+        properties.erase(std::remove_if(properties.begin(), properties.end(), [&](const auto& item) { return item.first == keyString; }), properties.end());
+        const MStatus status = setStringAttribute(lod, "a3obProperties", "a3prop", propertiesString(properties));
+        if (!status) return status;
+        return namedPropertyResult(lod);
+    }
+
+    return namedPropertyResult(lod);
 }
 
 MStatus ProxyCommand::doIt(const MArgList& args)
