@@ -71,7 +71,7 @@ Model policy:
 
 Workflow constraints:
 - `/commit-write` never pushes and never commits without an explicit request for the current scope.
-- `/release-build` packages `install/install_maya.py` and runtime scripts including `scripts/objectBuilderAutoLOD.py`; if a release prerequisite is missing, report blockers instead of simulating a release.
+- `/release-build` packages `install/mayaObjectBuilderInstall.py` as the drag target, `install/install_maya.py` as implementation, and runtime scripts including `scripts/objectBuilderAutoLOD.py`; the installer deploys a flat `Documents/maya/MayaObjectBuilder/` runtime with `plug-ins/` and `scripts/` only.
 - `/maya-debug-launch` must force the Debug plugin path and must not load a Release or packaged plugin copy.
 
 ## Key task entry points

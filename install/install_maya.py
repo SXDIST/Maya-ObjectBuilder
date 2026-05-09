@@ -14,10 +14,12 @@ REQUIRED_PACKAGE_FILES = [
     Path("scripts") / "objectBuilderMenu.py",
     Path("scripts") / "objectBuilderAutoLOD.py",
     Path("scripts") / "mayaObjectBuilderP3DOptions.mel",
+    Path("install") / "mayaObjectBuilderInstall.py",
     Path("install") / "install_maya.py",
     Path("README.md"),
     Path("LICENSE"),
 ]
+RUNTIME_PACKAGE_DIRS = [Path("plug-ins"), Path("scripts")]
 
 
 def _maya_documents_dir():
@@ -33,18 +35,41 @@ def _package_root():
 
 
 def _install_root():
-    return _maya_documents_dir() / PLUGIN_NAME / VERSION
+    return _maya_documents_dir() / PLUGIN_NAME
 
 
 def _modules_dir():
     return _maya_documents_dir() / "modules"
 
 
-def _copy_package(source, target):
+def _copy_runtime_package(source, target):
     if target.exists():
         shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
-    shutil.copytree(source, target, ignore=ignore)
+    for relative_dir in RUNTIME_PACKAGE_DIRS:
+        shutil.copytree(source / relative_dir, target / relative_dir, ignore=ignore)
+
+
+def _is_legacy_install_root(path):
+    return (
+        path.is_dir()
+        and (path / "plug-ins" / PLUGIN_FILE).exists()
+        and (path / "scripts" / "objectBuilderMenu.py").exists()
+    )
+
+
+def _cleanup_legacy_install_roots(target):
+    for child in target.iterdir():
+        if child.name in {"plug-ins", "scripts"}:
+            continue
+        if not _is_legacy_install_root(child):
+            continue
+        try:
+            shutil.rmtree(child)
+            print(f"Removed old versioned install folder: {child}")
+        except Exception as error:
+            print(f"Warning: could not remove old versioned install folder {child}: {error}")
 
 
 def _module_text(root):
@@ -97,10 +122,11 @@ def install():
 
     target = _install_root()
     _unload_plugin()
-    _copy_package(source, target)
+    _copy_runtime_package(source, target)
     module_file = _write_module_file(target)
     plugin_path = target / "plug-ins" / PLUGIN_FILE
     _load_plugin(plugin_path)
+    _cleanup_legacy_install_roots(target)
 
     print(f"{PLUGIN_NAME} installed or updated at: {target}")
     print(f"Maya module file written to: {module_file}")
@@ -117,6 +143,10 @@ def _run():
         traceback.print_exc()
         raise
     print(f"{PLUGIN_NAME} installation complete. The menu and dock should now be available in Maya.")
+
+
+def onMayaDroppedPythonFile(*_):
+    _run()
 
 
 if globals().get("__name__") in (None, "__main__"):
