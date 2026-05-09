@@ -76,6 +76,11 @@ MString P3DTranslator::defaultExtension() const
     return "p3d";
 }
 
+MString P3DTranslator::filter() const
+{
+    return "*.p3d";
+}
+
 MPxFileTranslator::MFileKind P3DTranslator::identifyFile(const MFileObject& fileName, const char* buffer, short size) const
 {
     if (size >= 4 && std::memcmp(buffer, "MLOD", 4) == 0) {
@@ -119,10 +124,13 @@ MStatus P3DTranslator::reader(const MFileObject& file, const MString& optionsStr
 MStatus P3DTranslator::writer(const MFileObject& file, const MString& optionsString, FileAccessMode mode)
 {
     const std::map<std::string, std::string> options = parseOptions(optionsString);
-    const bool selectedOnly = mode == MPxFileTranslator::kExportActiveAccessMode || optionEnabled(options, "selectedOnly", false);
+    a3ob::maya::ExportOptions exportOptions;
+    exportOptions.selectedOnly = mode == MPxFileTranslator::kExportActiveAccessMode || optionEnabled(options, "selectedOnly", false);
+    exportOptions.applyTransforms = optionEnabled(options, "applyTransforms", true);
+    exportOptions.applyModifiers = optionEnabled(options, "applyModifiers", true);
     if (optionEnabled(options, "validateMeshes", false) || optionEnabled(options, "exportValidateMeshes", false) || optionEnabled(options, "validateLods", false)) {
-        MGlobal::executeCommand(MString("a3obValidate") + (selectedOnly ? " -selectionOnly" : ""), false, false);
+        MGlobal::executeCommand(MString("a3obValidate") + (exportOptions.selectedOnly ? " -selectionOnly" : ""), false, false);
     }
     const a3ob::maya::MayaMeshExport exporter;
-    return exporter.exportMLOD(file.expandedFullName(), selectedOnly);
+    return exporter.exportMLOD(file.expandedFullName(), exportOptions);
 }

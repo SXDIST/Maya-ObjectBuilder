@@ -19,6 +19,7 @@ public:
     bool haveNamespaceSupport() const override;
     bool canBeOpened() const override;
     MString defaultExtension() const override;
+    MString filter() const override;
 
     MFileKind identifyFile(const MFileObject& fileName, const char* buffer, short size) const override;
     MStatus reader(const MFileObject& file, const MString& optionsString, FileAccessMode mode) override;

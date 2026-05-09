@@ -156,10 +156,9 @@ MString lodGroupName(int lod)
     }
 }
 
-MString selectionSetName(const MString& transformName, const std::string& selectionName)
+MString selectionSetName(const MString&, const std::string& selectionName)
 {
-    MString name = transformName;
-    name += "_SEL_";
+    MString name = "a3ob_SEL_";
     name += sanitizedName(selectionName.c_str());
     return name;
 }
@@ -187,10 +186,9 @@ MString materialNodeName(const std::string& texture, const std::string& material
     return name;
 }
 
-MString flagSetName(const MString& transformName, const char* componentType, std::uint32_t flag)
+MString flagSetName(const MString&, const char* componentType, std::uint32_t flag)
 {
-    MString name = transformName;
-    name += "_";
+    MString name = "a3ob_";
     name += componentType;
     name += "FLAG_";
     name += static_cast<int>(flag);
@@ -380,6 +378,24 @@ MStatus addStringAttribute(MObject node, const char* longName, const char* short
         return status;
     }
     return dep.findPlug(longName, true, &status).setString(value);
+}
+
+MStatus markTechnicalSet(MObject set)
+{
+    MStatus status = addBoolAttribute(set, "a3obTechnicalSet", "a3ts", true);
+    if (!status) {
+        return status;
+    }
+
+    MFnDependencyNode dep(set, &status);
+    if (!status) {
+        return status;
+    }
+    MPlug plug = dep.findPlug("hiddenInOutliner", true, &status);
+    if (status) {
+        status = plug.setBool(true);
+    }
+    return status;
 }
 
 MString joinValues(const std::set<std::string>& values)
@@ -625,7 +641,9 @@ MStatus createFlagSet(const MDagPath& meshPath, const MString& name, const char*
     }
     status = addIntAttribute(set, "a3obFlagValue", "a3fv", static_cast<int>(flag));
     if (!status) return status;
-    return addStringAttribute(set, "a3obFlagComponent", "a3fc", componentType);
+    status = addStringAttribute(set, "a3obFlagComponent", "a3fc", componentType);
+    if (!status) return status;
+    return markTechnicalSet(set);
 }
 
 MStatus createFlagSets(const MObject& mesh, const MString& transformName, const p3d::LOD& lod, const std::map<std::uint32_t, int>& vertexRemap)
@@ -732,7 +750,9 @@ MStatus createSelectionSet(const MDagPath& meshPath, const MString& transformNam
     }
     status = addStringAttribute(set, "a3obSelectionName", "a3sn", tagg.name.c_str());
     if (!status) return status;
-    return addBoolAttribute(set, "a3obIsProxySelection", "a3ips", tagg.isProxy());
+    status = addBoolAttribute(set, "a3obIsProxySelection", "a3ips", tagg.isProxy());
+    if (!status) return status;
+    return markTechnicalSet(set);
 }
 
 MStatus createSelectionSets(const MObject& mesh, const MString& transformName, const p3d::LOD& lod, const std::map<std::uint32_t, int>& vertexRemap)

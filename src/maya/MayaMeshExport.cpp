@@ -13,16 +13,20 @@
 #include <maya/MItMeshEdge.h>
 #include <maya/MItMeshPolygon.h>
 #include <maya/MItSelectionList.h>
+#include <maya/MMatrix.h>
 #include <maya/MPlug.h>
 #include <maya/MPointArray.h>
 #include <maya/MSelectionList.h>
 #include <maya/MString.h>
 #include <maya/MStringArray.h>
+#include <maya/MTransformationMatrix.h>
+#include <maya/MVector.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -37,8 +41,9 @@ p3d::Vec3 mayaToCorePoint(const MPoint& value)
     return {static_cast<float>(value.x), static_cast<float>(-value.z), static_cast<float>(value.y)};
 }
 
-p3d::Vec3 mayaToCoreVector(const MVector& value)
+p3d::Vec3 mayaToCoreVector(MVector value)
 {
+    value.normalize();
     return {static_cast<float>(value.x), static_cast<float>(-value.z), static_cast<float>(value.y)};
 }
 
@@ -151,6 +156,43 @@ bool resolveLODPath(MDagPath path, MDagPath& lodPath)
             return true;
         }
         path.pop();
+    }
+    return false;
+}
+
+bool findFirstMeshPath(const MDagPath& transformPath, MDagPath& meshPath)
+{
+    MStatus status;
+    MFnDagNode transformFn(transformPath, &status);
+    if (!status) {
+        return false;
+    }
+
+    for (unsigned int i = 0; i < transformFn.childCount(); ++i) {
+        MObject child = transformFn.child(i, &status);
+        if (!status) {
+            continue;
+        }
+        if (child.hasFn(MFn::kMesh)) {
+            meshPath = transformPath;
+            status = meshPath.extendToShapeDirectlyBelow(i);
+            return static_cast<bool>(status);
+        }
+        if (!child.hasFn(MFn::kTransform)) {
+            continue;
+        }
+
+        MFnDagNode childTransform(child, &status);
+        if (!status) {
+            continue;
+        }
+        for (unsigned int j = 0; j < childTransform.childCount(); ++j) {
+            MObject grandchild = childTransform.child(j, &status);
+            if (status && grandchild.hasFn(MFn::kMesh)) {
+                MFnDagNode meshDag(grandchild, &status);
+                return status && meshDag.getPath(meshPath);
+            }
+        }
     }
     return false;
 }
@@ -306,7 +348,25 @@ bool componentStringMatchesPath(const std::string& item, const std::vector<std::
     return std::find(pathNames.begin(), pathNames.end(), objectName) != pathNames.end();
 }
 
-void addComponentStringIndex(const std::string& item, const std::vector<std::string>& pathNames, const char* token, std::vector<int>& indices)
+bool itemMatchesPath(const std::string& item, const std::vector<std::string>& pathNames)
+{
+    return std::find(pathNames.begin(), pathNames.end(), item) != pathNames.end();
+}
+
+void addPathNameAlias(std::vector<std::string>& pathNames, const MString& path)
+{
+    const std::string value = path.asChar();
+    if (value.empty()) {
+        return;
+    }
+    pathNames.push_back(value);
+    const std::size_t separator = value.find_last_of('|');
+    if (separator != std::string::npos && separator + 1 < value.size()) {
+        pathNames.push_back(value.substr(separator + 1));
+    }
+}
+
+void addComponentStringIndex(const std::string& item, const std::vector<std::string>& pathNames, const char* token, std::set<int>& indices)
 {
     const std::string marker = std::string(".") + token + "[";
     const std::size_t markerPosition = item.find(marker);
@@ -322,18 +382,62 @@ void addComponentStringIndex(const std::string& item, const std::vector<std::str
     const std::string range = item.substr(begin, end - begin);
     const std::size_t separator = range.find(':');
     if (separator == std::string::npos) {
-        indices.push_back(std::stoi(range));
+        indices.insert(std::stoi(range));
         return;
     }
 
     const int first = std::stoi(range.substr(0, separator));
     const int last = std::stoi(range.substr(separator + 1));
     for (int index = first; index <= last; ++index) {
-        indices.push_back(index);
+        indices.insert(index);
     }
 }
 
-void readSetComponents(const MObject& set, const MDagPath& meshPath, std::vector<int>& vertices, std::vector<int>& faces)
+void addAllVertexIndices(const MDagPath& meshPath, std::set<int>& vertices)
+{
+    MStatus status;
+    const MFnMesh meshFn(meshPath, &status);
+    if (!status) {
+        return;
+    }
+    const int count = meshFn.numVertices(&status);
+    if (!status) {
+        return;
+    }
+    for (int index = 0; index < count; ++index) {
+        vertices.insert(index);
+    }
+}
+
+void deriveFacesFromVertices(const MDagPath& meshPath, const std::set<int>& vertices, std::set<int>& faces)
+{
+    if (vertices.empty()) {
+        return;
+    }
+    MStatus status;
+    MItMeshPolygon it(meshPath.node(), &status);
+    if (!status) {
+        return;
+    }
+    for (; !it.isDone(); it.next()) {
+        MIntArray faceVertices;
+        if (!it.getVertices(faceVertices)) {
+            continue;
+        }
+        bool selected = faceVertices.length() > 0;
+        for (unsigned int i = 0; i < faceVertices.length(); ++i) {
+            if (vertices.find(faceVertices[i]) == vertices.end()) {
+                selected = false;
+                break;
+            }
+        }
+        if (selected) {
+            faces.insert(it.index());
+        }
+    }
+}
+
+void readSetComponents(const MObject& set, const MDagPath& meshPath, std::set<int>& vertices, std::set<int>& faces)
 {
     MStatus status;
     MFnSet setFn(set, &status);
@@ -348,12 +452,12 @@ void readSetComponents(const MObject& set, const MDagPath& meshPath, std::vector
     }
 
     std::vector<std::string> pathNames;
-    pathNames.push_back(meshPath.fullPathName().asChar());
-    pathNames.push_back(meshPath.partialPathName().asChar());
+    addPathNameAlias(pathNames, meshPath.fullPathName());
+    addPathNameAlias(pathNames, meshPath.partialPathName());
     MDagPath transformPath = meshPath;
     transformPath.pop();
-    pathNames.push_back(transformPath.fullPathName().asChar());
-    pathNames.push_back(transformPath.partialPathName().asChar());
+    addPathNameAlias(pathNames, transformPath.fullPathName());
+    addPathNameAlias(pathNames, transformPath.partialPathName());
 
     MStringArray memberStrings;
     members.getSelectionStrings(memberStrings);
@@ -361,6 +465,9 @@ void readSetComponents(const MObject& set, const MDagPath& meshPath, std::vector
         const std::string item = memberStrings[i].asChar();
         addComponentStringIndex(item, pathNames, "vtx", vertices);
         addComponentStringIndex(item, pathNames, "f", faces);
+        if (itemMatchesPath(item, pathNames)) {
+            addAllVertexIndices(meshPath, vertices);
+        }
     }
 }
 
@@ -378,8 +485,8 @@ void addSelectionAndFlagData(const MDagPath& meshPath, const std::vector<std::ui
             continue;
         }
 
-        std::vector<int> vertices;
-        std::vector<int> faces;
+        std::set<int> vertices;
+        std::set<int> faces;
         readSetComponents(set, meshPath, vertices, faces);
         if (vertices.empty() && faces.empty()) {
             continue;
@@ -387,6 +494,7 @@ void addSelectionAndFlagData(const MDagPath& meshPath, const std::vector<std::ui
 
         const std::string selectionName = stringPlugValue(set, "a3obSelectionName");
         if (!selectionName.empty()) {
+            deriveFacesFromVertices(meshPath, vertices, faces);
             p3d::Tagg tagg;
             tagg.name = selectionName;
             auto data = std::make_unique<p3d::SelectionTaggData>();
@@ -523,14 +631,9 @@ void addUVSetTaggs(const MObject& transform, const p3d::LOD& sourceLod, p3d::LOD
     }
 }
 
-MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
+MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& options, ExportLOD& output)
 {
     MStatus status;
-    MFnDagNode transformFn(transformPath, &status);
-    if (!status) {
-        return status;
-    }
-
     const int lodType = intPlugValue(transformPath.node(), "a3obLodType", 0);
     const int resolution = intPlugValue(transformPath.node(), "a3obResolution", 0);
     const double signature = doublePlugValue(transformPath.node(), "a3obResolutionSignature", p3d::LodResolution::encode(lodType, resolution));
@@ -538,24 +641,7 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
     output.sortKey = static_cast<float>(signature);
 
     MDagPath meshPath;
-    bool foundMesh = false;
-    for (unsigned int i = 0; i < transformFn.childCount(); ++i) {
-        MObject child = transformFn.child(i, &status);
-        if (!status) {
-            return status;
-        }
-        if (child.hasFn(MFn::kMesh)) {
-            meshPath = transformPath;
-            status = meshPath.extendToShapeDirectlyBelow(i);
-            if (!status) {
-                return status;
-            }
-            foundMesh = true;
-            break;
-        }
-    }
-
-    if (!foundMesh) {
+    if (!findFirstMeshPath(transformPath, meshPath)) {
         output.lod.vertices = splitVertexValues(stringPlugValue(transformPath.node(), "a3obSourceVertices"));
         if (output.lod.vertices.empty()) {
             const int sourceVertexCount = intPlugValue(transformPath.node(), "a3obSourceVertexCount", 0);
@@ -577,6 +663,16 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
     status = meshFn.getPoints(points, MSpace::kObject);
     if (!status) {
         return status;
+    }
+
+    MMatrix bakeMatrix;
+    MMatrix normalMatrix;
+    if (options.applyTransforms) {
+        bakeMatrix = meshPath.inclusiveMatrix();
+        normalMatrix = bakeMatrix.inverse().transpose();
+    }
+    for (unsigned int i = 0; i < points.length(); ++i) {
+        points.set(points[i] * bakeMatrix, i);
     }
 
     const std::vector<std::uint32_t> vertexSourceIndices = splitIndexValues(stringPlugValue(transformPath.node(), "a3obVertexSourceIndices"));
@@ -632,6 +728,9 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
             if (!status) {
                 normal = MVector(0.0, 1.0, 0.0);
             }
+            if (options.applyTransforms) {
+                normal = normal * normalMatrix;
+            }
             output.lod.normals.push_back(mayaToCoreVector(normal));
 
             int uvId = -1;
@@ -655,12 +754,12 @@ MStatus exportMeshLOD(const MDagPath& transformPath, ExportLOD& output)
 }
 }
 
-MStatus MayaMeshExport::exportMLOD(const MString& path, bool selectedOnly) const
+MStatus MayaMeshExport::exportMLOD(const MString& path, const ExportOptions& options) const
 {
     std::vector<ExportLOD> exportLods;
 
     MStatus status;
-    if (selectedOnly) {
+    if (options.selectedOnly) {
         MSelectionList selection;
         MGlobal::getActiveSelectionList(selection);
 
@@ -688,7 +787,7 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, bool selectedOnly) const
             exportedPaths.push_back(fullPath);
 
             ExportLOD exportLod;
-            status = exportMeshLOD(lodPath, exportLod);
+            status = exportMeshLOD(lodPath, options, exportLod);
             if (!status) {
                 MGlobal::displayError(MString("P3D export failed: could not export selected LOD ") + lodPath.fullPathName());
                 return status;
@@ -725,7 +824,7 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, bool selectedOnly) const
             }
 
             ExportLOD exportLod;
-            status = exportMeshLOD(transformPath, exportLod);
+            status = exportMeshLOD(transformPath, options, exportLod);
             if (!status) {
                 MGlobal::displayError(MString("P3D export failed: could not export LOD ") + transformPath.fullPathName());
                 return status;
@@ -735,7 +834,7 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, bool selectedOnly) const
     }
 
     if (exportLods.empty()) {
-        MGlobal::displayError(selectedOnly ? "P3D export failed: select an Object Builder LOD or its mesh" : "P3D export failed: no transforms with a3obIsLOD found");
+        MGlobal::displayError(options.selectedOnly ? "P3D export failed: select an Object Builder LOD or its mesh" : "P3D export failed: no transforms with a3obIsLOD found");
         return MS::kFailure;
     }
 
