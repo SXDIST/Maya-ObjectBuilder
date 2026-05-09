@@ -28,6 +28,7 @@ $RequiredFiles = @(
     "scripts/objectBuilderMenu.py",
     "scripts/objectBuilderAutoLOD.py",
     "scripts/mayaObjectBuilderP3DOptions.mel",
+    "install/mayaObjectBuilderInstall.py",
     "install/install_maya.py",
     "README.md",
     "LICENSE"
@@ -54,6 +55,7 @@ Copy-Item $PluginPath (Join-Path $StageDir "plug-ins/MayaObjectBuilder.mll")
 Copy-Item (Join-Path $RepoRoot "scripts/objectBuilderMenu.py") (Join-Path $StageDir "scripts/objectBuilderMenu.py")
 Copy-Item (Join-Path $RepoRoot "scripts/objectBuilderAutoLOD.py") (Join-Path $StageDir "scripts/objectBuilderAutoLOD.py")
 Copy-Item (Join-Path $RepoRoot "scripts/mayaObjectBuilderP3DOptions.mel") (Join-Path $StageDir "scripts/mayaObjectBuilderP3DOptions.mel")
+Copy-Item (Join-Path $RepoRoot "install/mayaObjectBuilderInstall.py") (Join-Path $StageDir "install/mayaObjectBuilderInstall.py")
 Copy-Item (Join-Path $RepoRoot "install/install_maya.py") (Join-Path $StageDir "install/install_maya.py")
 Copy-Item (Join-Path $RepoRoot "README.md") (Join-Path $StageDir "README.md")
 Copy-Item (Join-Path $RepoRoot "LICENSE") (Join-Path $StageDir "LICENSE")
