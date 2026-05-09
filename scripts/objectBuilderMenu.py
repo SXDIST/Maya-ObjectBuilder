@@ -301,6 +301,24 @@ def create_empty_lod():
     _refresh_lod_assignment_ui()
 
 
+LOD_ATTRS = (
+    "a3obIsLOD", "a3obLodType", "a3obResolution",
+    "a3obResolutionSignature", "a3obSourceVertexCount", "a3obSourceFaceCount",
+)
+
+
+def _remove_lod_from_selection():
+    load_plugin()
+    node = _selected_lod_transform()
+    if not node:
+        cmds.warning("Select a LOD transform to remove LOD status")
+        return
+    for attr in LOD_ATTRS:
+        if cmds.attributeQuery(attr, node=node, exists=True):
+            cmds.deleteAttr(node, attribute=attr)
+    _refresh_context_ui()
+
+
 def _auto_lod_settings_from_legacy_ui():
     return {
         "preset": _option_menu_value(AUTO_LOD_PRESET_MENU).upper() or "QUADS",
@@ -423,7 +441,33 @@ def export_model_cfg_from_ui():
     export_model_cfg(path or None)
 
 
+def _lod_name_from_transform(lod_node):
+    lod_type = _safe_get_attr(lod_node, "a3obLodType", 0)
+    resolution = _safe_get_attr(lod_node, "a3obResolution", 0)
+    name = LOD_TYPE_NAMES.get(lod_type, "LOD")
+    suffix = f" {resolution}" if lod_type == 0 else ""
+    return f"{name}{suffix}"
+
+
+def _lod_name_for_set(set_node):
+    try:
+        members = cmds.sets(set_node, query=True) or []
+        for member in members:
+            current = member.split(".", 1)[0]
+            while current:
+                if _is_lod_transform(current):
+                    return _lod_name_from_transform(current)
+                parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
+                current = parents[0] if parents else ""
+    except Exception:
+        pass
+    return ""
+
+
 def _set_lod_label(node):
+    lod = _lod_name_for_set(node)
+    if lod:
+        return lod
     raw = node.split(":")[-1]
     for marker in ("_SEL_", "_VERTEX_FLAG_", "_FACE_FLAG_"):
         if marker in raw:
@@ -628,6 +672,9 @@ def _refresh_selection_manager(rebuild_lods=True):
     if not cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
         return
     items = _selection_sets()
+    selected_lod = _selected_lod_transform()
+    if selected_lod:
+        items = [i for i in items if i["lod"] == _lod_name_from_transform(selected_lod)]
     if rebuild_lods:
         _refresh_lod_filter(items)
     lod_filter = cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, query=True, value=True) if cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, exists=True) else "All LODs"
@@ -1450,6 +1497,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
+        self.lod_toggle = None
+        self._syncing_from_selection = False
         self.lod_type_combo = None
         self.lod_resolution = None
         self.lod_context = None
@@ -1490,6 +1539,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.selection_list = None
         self.selection_details = None
         self.selection_items = {}
+        self.selection_mesh_context = None
         self._build_ui()
         self.refresh_lod_assignment()
 
@@ -1530,6 +1580,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout = qt_widgets.QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
+        self.lod_toggle = qt_widgets.QCheckBox("DayZ LOD")
+        self.lod_toggle.setToolTip("Mark/unmark the selected mesh as a DayZ LOD")
+        self.lod_toggle.toggled.connect(self._on_lod_toggle_changed)
+        layout.addWidget(self.lod_toggle)
+
         self.lod_context = qt_widgets.QLabel()
         self.lod_context.setWordWrap(True)
         layout.addWidget(self.lod_context)
@@ -1538,24 +1593,15 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.lod_type_combo = qt_widgets.QComboBox()
         for definition in LOD_DEFINITIONS:
             self.lod_type_combo.addItem(definition["label"], definition["type"])
-        self.lod_type_combo.currentIndexChanged.connect(self.refresh_lod_assignment)
+        self.lod_type_combo.currentIndexChanged.connect(self._on_lod_controls_changed)
         form.addRow("LOD type", self.lod_type_combo)
 
         self.lod_resolution = qt_widgets.QSpinBox()
         self.lod_resolution.setMinimum(0)
         self.lod_resolution.setValue(1)
-        self.lod_resolution.valueChanged.connect(self.refresh_lod_assignment)
+        self.lod_resolution.valueChanged.connect(self._on_lod_controls_changed)
         form.addRow("Resolution", self.lod_resolution)
         layout.addLayout(form)
-
-        self.lod_preview = qt_widgets.QLabel()
-        self.lod_preview.setWordWrap(True)
-        layout.addWidget(self.lod_preview)
-
-        buttons = qt_widgets.QHBoxLayout()
-        buttons.addWidget(_qt_button("Assign", assign_lod_to_selection, "Assign the selected LOD type to the current selection."))
-        buttons.addWidget(_qt_button("Create Empty", create_empty_lod, "Create a new empty LOD transform with the selected type."))
-        layout.addLayout(buttons)
 
         auto_group = qt_widgets.QGroupBox("Auto LOD")
         auto_layout = qt_widgets.QFormLayout(auto_group)
@@ -1793,6 +1839,10 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         filters.addWidget(self.selection_type_filter)
         filters.addWidget(self.selection_search)
         layout.addLayout(filters)
+
+        self.selection_mesh_context = qt_widgets.QLabel("")
+        self.selection_mesh_context.setWordWrap(False)
+        layout.addWidget(self.selection_mesh_context)
 
         self.selection_list = qt_widgets.QListWidget()
         self.selection_list.currentItemChanged.connect(lambda *_: _update_selection_details())
@@ -2082,6 +2132,15 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         if self.selection_list is None:
             return
         items = _selection_sets()
+        selected_lod = _selected_lod_transform()
+        if selected_lod:
+            selected_lod_label = _lod_name_from_transform(selected_lod)
+            items = [i for i in items if i["lod"] == selected_lod_label]
+            if self.selection_mesh_context is not None:
+                self.selection_mesh_context.setText(f"Mesh: {selected_lod_label}")
+        else:
+            if self.selection_mesh_context is not None:
+                self.selection_mesh_context.setText("")
         if rebuild_lods:
             self.refresh_selection_lods(items)
         lod_filter = self.selection_lod_filter.currentText() if self.selection_lod_filter is not None else "All LODs"
@@ -2109,20 +2168,64 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
             self.set_selection_details("Select a row to see details.")
         _update_selection_details()
 
-    def refresh_lod_assignment(self, *_):
+    def _on_lod_controls_changed(self, *_):
         definition = self.selected_lod_definition()
+        selected_lod = _selected_lod_transform()
+        is_lod = bool(selected_lod)
+        if self.lod_type_combo is not None:
+            self.lod_type_combo.setEnabled(is_lod)
         if self.lod_resolution is not None:
-            self.lod_resolution.setEnabled(definition["has_resolution"])
+            enabled = is_lod and definition["has_resolution"]
+            self.lod_resolution.setEnabled(enabled)
             if not definition["has_resolution"]:
                 self.lod_resolution.blockSignals(True)
                 self.lod_resolution.setValue(definition["default_resolution"])
                 self.lod_resolution.blockSignals(False)
-        selected_lod = _selected_lod_transform()
-        target = selected_lod or "No LOD selected; Create Empty LOD will create a new transform."
+        target = selected_lod or "No LOD selected."
         if self.lod_context is not None:
             self.lod_context.setText(f"Target: {target}")
         if self.lod_preview is not None:
             self.lod_preview.setText(f"Will assign: {_lod_assignment_label(definition)}")
+        if not self._syncing_from_selection and is_lod:
+            load_plugin()
+            resolution = _lod_resolution_value(definition)
+            cmds.a3obCreateLOD(
+                lodType=definition["type"],
+                resolution=resolution,
+                name=_lod_node_name(definition, resolution),
+            )
+
+    def _on_lod_toggle_changed(self, checked):
+        if checked:
+            assign_lod_to_selection()
+        else:
+            _remove_lod_from_selection()
+
+    def refresh_lod_assignment(self, *_):
+        selected_lod = _selected_lod_transform()
+        if self.lod_toggle is not None:
+            self.lod_toggle.blockSignals(True)
+            self.lod_toggle.setChecked(bool(selected_lod))
+            self.lod_toggle.setEnabled(bool(selected_lod or cmds.ls(selection=True)))
+            self.lod_toggle.blockSignals(False)
+        self._syncing_from_selection = True
+        try:
+            if selected_lod and self.lod_type_combo is not None:
+                lod_type = _safe_get_attr(selected_lod, "a3obLodType", 0)
+                resolution = _safe_get_attr(selected_lod, "a3obResolution", 0)
+                for i in range(self.lod_type_combo.count()):
+                    if self.lod_type_combo.itemData(i) == lod_type:
+                        self.lod_type_combo.blockSignals(True)
+                        self.lod_type_combo.setCurrentIndex(i)
+                        self.lod_type_combo.blockSignals(False)
+                        break
+                if self.lod_resolution is not None:
+                    self.lod_resolution.blockSignals(True)
+                    self.lod_resolution.setValue(resolution)
+                    self.lod_resolution.blockSignals(False)
+        finally:
+            self._syncing_from_selection = False
+        self._on_lod_controls_changed()
 
 
 def _qt_workspace_parent(control):
