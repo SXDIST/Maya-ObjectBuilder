@@ -422,6 +422,12 @@ def _valid_nodes(nodes):
     return [node for node in nodes if _node_exists(node)]
 
 
+def _strip_drive_letter(path):
+    if len(path) >= 2 and path[1] == ':':
+        return path[2:]
+    return path
+
+
 def _live_set_members(set_node):
     if not _node_exists(set_node):
         return []
@@ -974,9 +980,10 @@ def _material_nodes_for_selection():
 
 
 def _material_metadata_label(item):
-    material_node = item["material_node"] or "No material"
-    shading_group = item["shading_groups"][0]
-    return f"{material_node} | {shading_group} | tex: {item['texture']} | rvmat: {item['material']}"
+    name = item["material_node"] or "No material"
+    texture = item["texture"] or "—"
+    rvmat = item["material"] or "—"
+    return f"{name}\n    tex: {texture}    rvmat: {rvmat}"
 
 
 def _refresh_material_metadata():
@@ -1038,24 +1045,36 @@ def _set_material_metadata_on_node(node, texture, material):
     return True
 
 
-def _commit_selected_material_metadata(*_):
+def _persist_selected_material_metadata():
     item = _selected_material_metadata_item()
     if not item:
-        return
+        return None
     dock = _active_qt_dock()
     if dock is not None:
-        texture = dock.material_texture_path()
-        material = dock.material_rvmat_path()
+        texture = _strip_drive_letter(dock.material_texture_path())
+        material = _strip_drive_letter(dock.material_rvmat_path())
     else:
-        texture = cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip()
-        material = cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip()
+        texture = _strip_drive_letter(cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip())
+        material = _strip_drive_letter(cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip())
     changed = False
+    all_targets = set(item["shading_groups"])
     if _node_exists(item["material_node"]):
-        changed = _set_material_metadata_on_node(item["material_node"], texture, material) or changed
-    for shading_group in item["shading_groups"]:
-        changed = _set_material_metadata_on_node(shading_group, texture, material) or changed
+        all_targets.add(item["material_node"])
+        for sg in _valid_nodes(cmds.listConnections(item["material_node"], type="shadingEngine") or []):
+            all_targets.add(sg)
+    for target in all_targets:
+        changed = _set_material_metadata_on_node(target, texture, material) or changed
     if not changed:
         cmds.warning("Material metadata target was deleted")
+        return None
+    item["texture"] = texture
+    item["material"] = material
+    return item
+
+
+def _commit_selected_material_metadata(*_):
+    if _persist_selected_material_metadata() is None:
+        return
     _refresh_material_metadata()
 
 
@@ -1515,7 +1534,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def _browse_qt_path(self, field, caption, mode, file_filter):
         selected = cmds.fileDialog2(fileMode=mode, caption=caption, fileFilter=file_filter)
         if selected:
-            field.setText(selected[0])
+            path = selected[0].replace("/", "\\")
+            field.setText(_strip_drive_letter(path))
 
     def _build_metadata_tab(self):
         widget = qt_widgets.QWidget()
@@ -1621,7 +1641,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        hint = qt_widgets.QLabel("Select a mesh, material, or faces to edit DayZ texture and rvmat metadata.")
+        hint = qt_widgets.QLabel("Pick a Maya material, then set its texture and rvmat paths. Edits save to the selected material instantly.")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
@@ -1636,10 +1656,13 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         form.addRow("Material", self.material_rvmat)
         layout.addLayout(form)
 
-        buttons = qt_widgets.QHBoxLayout()
-        buttons.addWidget(_qt_button("Apply to Faces", _assign_new_material_metadata_to_selection))
-        buttons.addWidget(_qt_button("Clear Row", _clear_selected_material_metadata))
-        layout.addLayout(buttons)
+        texture_field = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
+        rvmat_field = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
+        if texture_field is not None:
+            texture_field.textChanged.connect(lambda *_: self._on_material_path_edited())
+        if rvmat_field is not None:
+            rvmat_field.textChanged.connect(lambda *_: self._on_material_path_edited())
+
         self.refresh_material_metadata()
         return widget
 
@@ -1851,23 +1874,63 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         texture = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
         rvmat = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
         if texture is not None:
-            texture.setText(item["texture"])
+            texture.blockSignals(True)
+            try:
+                texture.setText(item["texture"])
+            finally:
+                texture.blockSignals(False)
         if rvmat is not None:
-            rvmat.setText(item["material"])
+            rvmat.blockSignals(True)
+            try:
+                rvmat.setText(item["material"])
+            finally:
+                rvmat.blockSignals(False)
+
+    def _on_material_path_edited(self):
+        if self.material_list is None:
+            return
+        current = self.material_list.currentItem()
+        if current is None:
+            return
+        item = _persist_selected_material_metadata()
+        if item is None:
+            return
+        new_label = _material_metadata_label(item)
+        old_label = current.text()
+        if new_label == old_label:
+            return
+        current.setText(new_label)
+        if hasattr(self, "material_items"):
+            self.material_items.pop(old_label, None)
+            self.material_items[new_label] = item
 
     def refresh_material_metadata(self):
         if self.material_list is None:
             return
+        current = self.material_list.currentItem()
+        prev_label = current.text() if current else None
         self.material_list.clear()
         self.material_items = {}
         items = _material_nodes_for_selection()
         if not items:
             self.material_list.addItem("Select a mesh, LOD, or faces to edit its DayZ materials")
             return
+        line_h = self.material_list.fontMetrics().height()
+        row_size = qt_core.QSize(0, line_h * 2 + 8) if qt_core is not None else None
         for item in items:
             label = _material_metadata_label(item)
             self.material_items[label] = item
-            self.material_list.addItem(label)
+            list_item = qt_widgets.QListWidgetItem(label)
+            if row_size is not None:
+                list_item.setSizeHint(row_size)
+            self.material_list.addItem(list_item)
+        if prev_label and qt_core is not None:
+            matches = self.material_list.findItems(prev_label, qt_core.Qt.MatchExactly)
+            if matches:
+                self.material_list.setCurrentItem(matches[0])
+                return
+        if self.material_list.count() > 0:
+            self.material_list.setCurrentRow(0)
 
     def selected_selection_set_node(self):
         current = self.selection_list.currentItem() if self.selection_list is not None else None
