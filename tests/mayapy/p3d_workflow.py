@@ -370,6 +370,9 @@ def create_generated_fixture(path):
     cmds.a3obValidate()
     cmds.file(rename=str(path))
     cmds.file(exportAll=True, force=True, type="Arma P3D")
+    p3d_bytes = path.read_bytes()
+    if b"#UVSet#" not in p3d_bytes:
+        raise RuntimeError("Exported P3D is missing #UVSet# TAGG — UVs will not display in Object Builder")
     cmds.file(new=True, force=True)
     cmds.file(str(path), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="generated")
     assert_generated_metadata()

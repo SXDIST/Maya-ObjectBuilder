@@ -303,7 +303,14 @@ std::vector<std::pair<std::string, std::string>> meshMaterialPairs(const MObject
     for (unsigned int faceIndex = 0; faceIndex < shaderIndices.length(); ++faceIndex) {
         const int shaderIndex = shaderIndices[faceIndex];
         if (shaderIndex >= 0 && static_cast<unsigned int>(shaderIndex) < shaders.length()) {
-            pairs.emplace_back(stringPlugValue(shaders[shaderIndex], "a3obTexture"), stringPlugValue(shaders[shaderIndex], "a3obMaterial"));
+            std::string tex = stringPlugValue(shaders[shaderIndex], "a3obTexture");
+            std::string mat = stringPlugValue(shaders[shaderIndex], "a3obMaterial");
+            std::replace(tex.begin(), tex.end(), '/', '\\');
+            std::replace(mat.begin(), mat.end(), '/', '\\');
+            auto stripDrive = [](std::string& p) { if (p.size() >= 2 && p[1] == ':') p = p.substr(2); };
+            stripDrive(tex);
+            stripDrive(mat);
+            pairs.emplace_back(std::move(tex), std::move(mat));
         } else {
             pairs.emplace_back();
         }
@@ -607,10 +614,7 @@ void addUVSetTaggs(const MObject& transform, const p3d::LOD& sourceLod, p3d::LOD
         return;
     }
 
-    const int count = intPlugValue(transform, "a3obUVSetTaggCount", 0);
-    if (count <= 0) {
-        return;
-    }
+    const int count = std::max(1, intPlugValue(transform, "a3obUVSetTaggCount", 0));
 
     std::vector<p3d::Vec2> uvs;
     for (const p3d::Face& face : sourceLod.faces) {
@@ -624,7 +628,7 @@ void addUVSetTaggs(const MObject& transform, const p3d::LOD& sourceLod, p3d::LOD
         p3d::Tagg tagg;
         tagg.name = "#UVSet#";
         auto data = std::make_unique<p3d::UVSetTaggData>();
-        data->id = static_cast<std::uint32_t>(i + 1);
+        data->id = static_cast<std::uint32_t>(i);
         data->uvs = uvs;
         tagg.data = std::move(data);
         lod.taggs.push_back(std::move(tagg));
@@ -715,17 +719,16 @@ MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& option
             face.texture = materialPairs[faceIndex].first;
             face.material = materialPairs[faceIndex].second;
         }
-        for (unsigned int i = 0; i < vertexIds.length(); ++i) {
-            std::uint32_t vertexIndex = static_cast<std::uint32_t>(vertexIds[i]);
-            if (vertexSourceIndices.size() == points.length() && static_cast<std::size_t>(vertexIds[i]) < vertexSourceIndices.size()) {
-                vertexIndex = vertexSourceIndices[static_cast<std::size_t>(vertexIds[i])];
+        auto emitFaceCorner = [&](p3d::Face& f, unsigned int localIdx, int mayaVertexId) {
+            std::uint32_t vertexIndex = static_cast<std::uint32_t>(mayaVertexId);
+            if (vertexSourceIndices.size() == points.length() && static_cast<std::size_t>(mayaVertexId) < vertexSourceIndices.size()) {
+                vertexIndex = vertexSourceIndices[static_cast<std::size_t>(mayaVertexId)];
             }
-            face.vertices.push_back(vertexIndex);
-            face.normals.push_back(static_cast<std::uint32_t>(output.lod.normals.size()));
+            f.vertices.push_back(vertexIndex);
+            f.normals.push_back(static_cast<std::uint32_t>(output.lod.normals.size()));
 
             MVector normal;
-            status = polygonIt.getNormal(i, normal, MSpace::kObject);
-            if (!status) {
+            if (!polygonIt.getNormal(localIdx, normal, MSpace::kObject)) {
                 normal = MVector(0.0, 1.0, 0.0);
             }
             if (options.applyTransforms) {
@@ -734,13 +737,45 @@ MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& option
             output.lod.normals.push_back(mayaToCoreVector(normal));
 
             int uvId = -1;
-            if (uArray.length() > 0 && polygonIt.getUVIndex(i, uvId) && uvId >= 0 && static_cast<unsigned int>(uvId) < uArray.length()) {
-                face.uvs.push_back({uArray[uvId], vArray[uvId]});
+            if (uArray.length() > 0 && polygonIt.getUVIndex(localIdx, uvId) && uvId >= 0 && static_cast<unsigned int>(uvId) < uArray.length()) {
+                f.uvs.push_back({uArray[uvId], vArray[uvId]});
             } else {
-                face.uvs.push_back({0.0f, 0.0f});
+                f.uvs.push_back({0.0f, 0.0f});
+            }
+        };
+
+        if (vertexIds.length() <= 4) {
+            for (unsigned int i = 0; i < vertexIds.length(); ++i) {
+                emitFaceCorner(face, i, vertexIds[i]);
+            }
+            output.lod.faces.push_back(std::move(face));
+        } else {
+            // N-gon: triangulate via Maya API so Object Builder (tri/quad only) can save
+            int numTris = 0;
+            polygonIt.numTriangles(numTris);
+            for (int triIdx = 0; triIdx < numTris; ++triIdx) {
+                MPointArray triPoints;
+                MIntArray triVertices;
+                polygonIt.getTriangle(triIdx, triPoints, triVertices);
+
+                p3d::Face triFace;
+                triFace.texture = face.texture;
+                triFace.material = face.material;
+
+                for (unsigned int j = 0; j < triVertices.length(); ++j) {
+                    // Map object-space Maya vertex index back to local polygon index for UV/normal lookup
+                    unsigned int localIdx = 0;
+                    for (unsigned int k = 0; k < vertexIds.length(); ++k) {
+                        if (vertexIds[k] == triVertices[j]) {
+                            localIdx = k;
+                            break;
+                        }
+                    }
+                    emitFaceCorner(triFace, localIdx, triVertices[j]);
+                }
+                output.lod.faces.push_back(std::move(triFace));
             }
         }
-        output.lod.faces.push_back(std::move(face));
     }
 
     addPropertyTaggs(transformPath.node(), output.lod);

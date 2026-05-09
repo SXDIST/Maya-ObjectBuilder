@@ -1007,6 +1007,10 @@ MStatus ValidateCommand::doIt(const MArgList& args)
                             ++errors;
                             break;
                         }
+                        if (polyIt.polygonVertexCount() > 4) {
+                            MGlobal::displayWarning(MString("a3obValidate: N-gon face (") + polyIt.polygonVertexCount() + MString(" verts) on ") + name + MString(" — will be auto-triangulated on export"));
+                            ++warnings;
+                        }
                         MIntArray vertexIds;
                         if (polyIt.getVertices(vertexIds) && polygonHasRepeatedVertices(vertexIds)) {
                             MGlobal::displayError(MString("a3obValidate: face uses repeated vertices on ") + name);

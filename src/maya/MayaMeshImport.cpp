@@ -885,7 +885,11 @@ MStatus MayaMeshImport::assignMaterials(const MObject& mesh, const p3d::LOD& lod
     std::map<MaterialKey, MIntArray> faceGroups;
     for (unsigned int faceIndex = 0; faceIndex < lod.faces.size(); ++faceIndex) {
         const p3d::Face& face = lod.faces[faceIndex];
-        faceGroups[{face.texture, face.material}].append(static_cast<int>(faceIndex));
+        std::string tex = face.texture;
+        std::string mat = face.material;
+        std::replace(tex.begin(), tex.end(), '/', '\\');
+        std::replace(mat.begin(), mat.end(), '/', '\\');
+        faceGroups[{tex, mat}].append(static_cast<int>(faceIndex));
     }
 
     for (const auto& [key, faceIndices] : faceGroups) {
