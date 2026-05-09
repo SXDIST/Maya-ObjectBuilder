@@ -1,5 +1,6 @@
 import os
 import runpy
+import struct
 from pathlib import Path
 
 import maya.cmds as cmds
@@ -57,6 +58,16 @@ def selection_names():
     return sorted(names)
 
 
+def component_selection_sets():
+    sets = []
+    for node in cmds.ls(type="objectSet") or []:
+        if cmds.attributeQuery("a3obSelectionName", node=node, exists=True):
+            name = cmds.getAttr(node + ".a3obSelectionName")
+            if name.startswith("Component"):
+                sets.append((name, node))
+    return sorted(sets)
+
+
 def selection_component_counts():
     counts = []
     for node in cmds.ls(type="objectSet") or []:
@@ -71,6 +82,18 @@ def selection_component_counts():
             face_count += sum(".f[" in item for item in expanded)
         counts.append((name, vertex_count, face_count))
     return sorted(counts)
+
+
+def object_builder_set_nodes():
+    return [node for node in cmds.ls(type="objectSet") or [] if cmds.attributeQuery("a3obSelectionName", node=node, exists=True)]
+
+
+def assert_object_builder_sets_hidden(context):
+    for node in object_builder_set_nodes():
+        if not cmds.attributeQuery("a3obTechnicalSet", node=node, exists=True) or not cmds.getAttr(node + ".a3obTechnicalSet"):
+            raise RuntimeError(f"Object Builder set missing technical marker after {context}: {node}")
+        if cmds.attributeQuery("hiddenInOutliner", node=node, exists=True) and not cmds.getAttr(node + ".hiddenInOutliner"):
+            raise RuntimeError(f"Object Builder set is visible in Outliner after {context}: {node}")
 
 
 def material_pairs():
@@ -91,15 +114,123 @@ def uv_values(mesh):
     return sorted(pairs)
 
 
-def mesh_extents(meshes):
+def mesh_points(meshes):
     points = []
     for mesh in meshes:
         raw = cmds.xform(mesh + ".vtx[*]", query=True, translation=True, worldSpace=True) or []
         points.extend((float(raw[index]), float(raw[index + 1]), float(raw[index + 2])) for index in range(0, len(raw), 3))
+    return points
+
+
+def mesh_extents(meshes):
+    points = mesh_points(meshes)
     if not points:
         raise RuntimeError("No mesh vertices found for axis orientation check")
     xs, ys, zs = zip(*points)
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+
+
+def mesh_center(meshes):
+    points = mesh_points(meshes)
+    if not points:
+        raise RuntimeError("No mesh vertices found for center check")
+    xs, ys, zs = zip(*points)
+    return ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, (max(zs) + min(zs)) / 2)
+
+
+class P3DReader:
+    def __init__(self, path):
+        self.data = Path(path).read_bytes()
+        self.offset = 0
+
+    def read_bytes(self, count):
+        value = self.data[self.offset:self.offset + count]
+        self.offset += count
+        return value
+
+    def read_u32(self):
+        value = struct.unpack_from("<I", self.data, self.offset)[0]
+        self.offset += 4
+        return value
+
+    def read_float(self):
+        value = struct.unpack_from("<f", self.data, self.offset)[0]
+        self.offset += 4
+        return value
+
+    def read_stringz(self):
+        end = self.data.index(b"\0", self.offset)
+        value = self.data[self.offset:end].decode("ascii", errors="ignore")
+        self.offset = end + 1
+        return value
+
+
+def skip_tagg(reader):
+    reader.read_bytes(1)
+    name = reader.read_stringz()
+    length = reader.read_u32()
+    if name == "#EndOfFile#":
+        if length != 0:
+            raise RuntimeError("Invalid P3D EOF TAGG length")
+        return False
+    reader.read_bytes(length)
+    return True
+
+
+def raw_p3d_lod_points(path, lod_index=0):
+    reader = P3DReader(path)
+    if reader.read_bytes(4) != b"MLOD":
+        raise RuntimeError(f"Invalid P3D signature in {path}")
+    if reader.read_u32() != 257:
+        raise RuntimeError(f"Unsupported P3D version in {path}")
+    count_lods = reader.read_u32()
+    for current_lod in range(count_lods):
+        if reader.read_bytes(4) != b"P3DM":
+            raise RuntimeError(f"Invalid P3D LOD signature in {path}")
+        reader.read_u32()
+        reader.read_u32()
+        count_verts = reader.read_u32()
+        count_normals = reader.read_u32()
+        count_faces = reader.read_u32()
+        reader.read_u32()
+        points = []
+        for _ in range(count_verts):
+            x = reader.read_float()
+            z = reader.read_float()
+            y = reader.read_float()
+            reader.read_u32()
+            points.append((x, y, z))
+        reader.read_bytes(count_normals * 12)
+        for _ in range(count_faces):
+            count_face_verts = reader.read_u32()
+            reader.read_bytes(count_face_verts * 16)
+            if count_face_verts < 4:
+                reader.read_bytes(16)
+            reader.read_u32()
+            reader.read_stringz()
+            reader.read_stringz()
+        if reader.read_bytes(4) != b"TAGG":
+            raise RuntimeError(f"Invalid P3D TAGG section signature in {path}")
+        while skip_tagg(reader):
+            pass
+        reader.read_float()
+        if current_lod == lod_index:
+            return points
+    raise RuntimeError(f"P3D file {path} has no LOD index {lod_index}")
+
+
+def point_extents(points):
+    if not points:
+        raise RuntimeError("No points found for extent check")
+    xs, ys, zs = zip(*points)
+    return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+
+
+def point_center(points):
+    if not points:
+        raise RuntimeError("No points found for center check")
+    xs, ys, zs = zip(*points)
+    return ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, (max(zs) + min(zs)) / 2)
 
 
 def assert_y_up_character_orientation(namespace):
@@ -118,6 +249,7 @@ def assert_generated_metadata():
         raise RuntimeError("Generated flag sets did not roundtrip")
     if ("dz\\weapons\\generated_ca.paa", "dz\\weapons\\generated.rvmat") not in material_pairs():
         raise RuntimeError("Generated material metadata did not roundtrip")
+    assert_object_builder_sets_hidden("generated metadata import")
     lods = [node for node in cmds.ls(type="transform") or [] if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)]
     if len(lods) != 1:
         raise RuntimeError(f"Expected one generated LOD, got {lods}")
@@ -140,13 +272,70 @@ def assert_stale_selection_ui_refresh():
     ui = runpy.run_path(str(UI_SCRIPT))
     if not any(item["node"] == set_node for item in ui["_selection_sets"]()):
         raise RuntimeError("Stale test selection set was not found before deletion")
-    cmds.delete(set_node)
+    assert_object_builder_sets_hidden("Selection Manager normalization")
+    cmds.delete(mesh)
     if ui["_live_set_members"](set_node):
-        raise RuntimeError("Deleted selection set still returned live members")
+        raise RuntimeError("Selection set with deleted members still returned live members")
+    if any(item["node"] == set_node for item in ui["_selection_sets"]()):
+        raise RuntimeError("Empty selection set remained in live Selection Manager data")
+    if cmds.objExists(set_node):
+        cmds.delete(set_node)
     if any(item["node"] == set_node for item in ui["_selection_sets"]()):
         raise RuntimeError("Deleted selection set remained in live Selection Manager data")
     cmds.a3obValidate()
-    print("OK stale Selection Manager data is pruned after deletion")
+    print("OK stale and empty Selection Manager data is pruned")
+
+
+def assert_ui_redesign_helpers_load():
+    ui = runpy.run_path(str(UI_SCRIPT))
+    for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_quick_action_bar", "_action_row", "_path_row", "_labeled_row", "import_model_cfg_from_ui", "export_model_cfg_from_ui"):
+        if name not in ui:
+            raise RuntimeError(f"Missing redesigned UI helper: {name}")
+    dock_class = ui["MayaObjectBuilderDock"]
+    for name in ("refresh_named_properties", "refresh_material_metadata", "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
+        if not hasattr(dock_class, name):
+            raise RuntimeError(f"Missing Qt dock method: {name}")
+
+    window = "MayaObjectBuilderDockBuildSmokeWindow"
+    if cmds.window(window, exists=True):
+        cmds.deleteUI(window)
+    window = cmds.window(window, title="MayaObjectBuilder UI Smoke")
+    try:
+        cmds.columnLayout(adjustableColumn=True)
+        ui["_build_dock_contents"]()
+        cmds.showWindow(window)
+    finally:
+        if cmds.window(window, exists=True):
+            cmds.deleteUI(window)
+        ui["_delete_qt_dock"]()
+    if ui["_active_qt_dock"]() is not None:
+        raise RuntimeError("Qt dock wrapper remained active after UI smoke cleanup")
+    ui["_refresh_context_ui"]()
+    print("OK redesigned UI builds without layout errors")
+
+
+def assert_selection_manager_clear_all():
+    cmds.file(new=True, force=True)
+    cube = cmds.polyCube(name="clear_all_cube", width=1, height=1, depth=1)[0]
+    cmds.select(cube + ".vtx[0]")
+    first = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_clear_first")
+    cmds.addAttr(first, longName="a3obSelectionName", dataType="string")
+    cmds.setAttr(first + ".a3obSelectionName", "clear_first", type="string")
+    cmds.select(cube + ".vtx[1]")
+    second = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_clear_second")
+    cmds.addAttr(second, longName="a3obSelectionName", dataType="string")
+    cmds.setAttr(second + ".a3obSelectionName", "clear_second", type="string")
+    maya_set = cmds.sets(cube, name="plain_maya_set")
+
+    ui = runpy.run_path(str(UI_SCRIPT))
+    if len(ui["_selection_sets"]()) != 2:
+        raise RuntimeError("Clear-all setup did not create two Object Builder sets")
+    ui["_clear_all_object_builder_sets"]()
+    if ui["_selection_sets"]():
+        raise RuntimeError("Clear All OB Sets did not remove Object Builder sets")
+    if not cmds.objExists(maya_set):
+        raise RuntimeError("Clear All OB Sets removed a plain Maya set")
+    print("OK Selection Manager can clear all Object Builder sets")
 
 
 def create_generated_fixture(path):
@@ -218,6 +407,128 @@ def assert_selected_export(selection, outdir, name):
         raise RuntimeError(f"Selected export {name} wrote {len(exported)} LODs: {exported}")
 
 
+def assert_find_components():
+    cmds.file(new=True, force=True)
+    lod = cmds.a3obCreateLOD(lodType=6, resolution=0, name="components_lod")
+    cube = cmds.polyCube(name="closed_component_cube", width=1, height=1, depth=1)[0]
+    plane = cmds.polyPlane(name="open_component_plane", subdivisionsX=1, subdivisionsY=1)[0]
+    cmds.setAttr(plane + ".translateX", 3)
+    cmds.parent(cube, lod)
+    cmds.parent(plane, lod)
+
+    cmds.select(cube + ".vtx[0]")
+    stale_set = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_Component03")
+    cmds.addAttr(stale_set, longName="a3obSelectionName", dataType="string")
+    cmds.setAttr(stale_set + ".a3obSelectionName", "Component03", type="string")
+
+    cmds.select(plane + ".vtx[0]")
+    unrelated_set = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_unrelated")
+    cmds.addAttr(unrelated_set, longName="a3obSelectionName", dataType="string")
+    cmds.setAttr(unrelated_set + ".a3obSelectionName", "unrelated", type="string")
+
+    cmds.select(lod, replace=True)
+    cmds.a3obFindComponents()
+    first_components = component_selection_sets()
+    if [name for name, _ in first_components] != ["Component01"]:
+        raise RuntimeError(f"Find Components created unexpected sets: {first_components}")
+    cmds.a3obFindComponents()
+    components = component_selection_sets()
+    if [name for name, _ in components] != ["Component01"]:
+        raise RuntimeError(f"Find Components rerun appended unexpected sets: {components}")
+    if not cmds.objExists(unrelated_set):
+        raise RuntimeError("Find Components deleted an unrelated Object Builder selection set")
+    members = cmds.sets(components[0][1], query=True) or []
+    expanded = cmds.ls(members, flatten=True) or []
+    if sum(".vtx[" in item for item in expanded) != 8:
+        raise RuntimeError(f"Find Components expected 8 cube vertices, got {expanded}")
+    print("OK Find Components replaces Component## sets and skips open shells")
+
+
+def assert_find_components_plain_mesh():
+    cmds.file(new=True, force=True)
+    cube = cmds.polyCube(name="plain_component_cube", width=1, height=1, depth=1)[0]
+    cmds.select(cube, replace=True)
+    cmds.a3obFindComponents()
+    components = component_selection_sets()
+    if [name for name, _ in components] != ["Component01"]:
+        raise RuntimeError(f"Find Components did not support plain mesh selection: {components}")
+    print("OK Find Components supports plain mesh selection")
+
+
+def assert_export_scale_units(outdir):
+    previous_unit = cmds.currentUnit(query=True, linear=True)
+    try:
+        cmds.currentUnit(linear="cm")
+        cmds.file(new=True, force=True)
+        cube = cmds.polyCube(name="scale_units_cube", width=100, height=100, depth=100)[0]
+        cmds.select(cube, replace=True)
+        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="scale_units_lod")
+        cmds.select(lod, replace=True)
+        out = outdir / "scale_units_centimeter_scene.p3d"
+        cmds.file(rename=str(out))
+        cmds.file(exportSelected=True, force=True, type="Arma P3D", options="selectedOnly=1;applyTransforms=1")
+        raw_extents = point_extents(raw_p3d_lod_points(out))
+        if any(abs(value - 100.0) > 0.01 for value in raw_extents):
+            raise RuntimeError(f"Raw centimeter-scene P3D export scale changed: extents={raw_extents}")
+        cmds.file(new=True, force=True)
+        cmds.currentUnit(linear="cm")
+        cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="scale")
+        meshes = cmds.ls("scale:*", type="mesh") or []
+        extents = mesh_extents(meshes)
+        if any(abs(value - 100.0) > 0.01 for value in extents):
+            raise RuntimeError(f"Centimeter-scene P3D reimport scale changed: extents={extents}")
+        print("OK raw centimeter-scene P3D export preserves scale")
+    finally:
+        cmds.currentUnit(linear=previous_unit)
+
+
+def assert_export_transform_bake(outdir):
+    previous_unit = cmds.currentUnit(query=True, linear=True)
+    try:
+        cmds.currentUnit(linear="cm")
+        cmds.file(new=True, force=True)
+        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="transform_bake_lod")
+        cube = cmds.polyCube(name="transform_bake_cube", width=100, height=100, depth=100)[0]
+        cube_shape = cmds.listRelatives(cube, shapes=True, fullPath=True)[0]
+        cmds.parent(cube_shape, lod, shape=True, relative=True)
+        cmds.delete(cube)
+        cmds.setAttr(lod + ".scaleX", 2)
+        cmds.setAttr(lod + ".scaleY", 3)
+        cmds.setAttr(lod + ".scaleZ", 4)
+        cmds.setAttr(lod + ".translateX", 5)
+        lod_shape = cmds.listRelatives(lod, shapes=True, fullPath=True)[0]
+        expected_extents = mesh_extents([lod_shape])
+        expected_center = mesh_center([lod_shape])
+        cmds.select(lod, replace=True)
+        out = outdir / "transform_bake_meter_scene.p3d"
+        cmds.file(rename=str(out))
+        cmds.file(exportSelected=True, force=True, type="Arma P3D", options="selectedOnly=1;applyTransforms=1")
+        raw_points = raw_p3d_lod_points(out)
+        raw_extents = point_extents(raw_points)
+        raw_center = point_center(raw_points)
+        expected_raw_extents = (expected_extents[0], expected_extents[2], expected_extents[1])
+        expected_raw_center = (expected_center[0], -expected_center[2], expected_center[1])
+        if any(abs(raw_extents[index] - expected_raw_extents[index]) > 0.01 for index in range(3)):
+            raise RuntimeError(f"Raw P3D export did not bake transform scale: {raw_extents} != {expected_raw_extents}")
+        if any(abs(raw_center[index] - expected_raw_center[index]) > 0.01 for index in range(3)):
+            raise RuntimeError(f"Raw P3D export did not bake transform translation: {raw_center} != {expected_raw_center}")
+        cmds.file(new=True, force=True)
+        cmds.currentUnit(linear="cm")
+        cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="bake")
+        meshes = cmds.ls("bake:*", type="mesh") or []
+        extents = mesh_extents(meshes)
+        center = mesh_center(meshes)
+        expected_reimport_extents = expected_extents
+        expected_reimport_center = expected_center
+        if any(abs(extents[index] - expected_reimport_extents[index]) > 0.01 for index in range(3)):
+            raise RuntimeError(f"P3D export did not bake transform scale: {extents} != {expected_reimport_extents}")
+        if any(abs(center[index] - expected_reimport_center[index]) > 0.01 for index in range(3)):
+            raise RuntimeError(f"P3D export did not bake transform translation: {center} != {expected_reimport_center}")
+        print("OK raw P3D export bakes transforms at meter scale")
+    finally:
+        cmds.currentUnit(linear=previous_unit)
+
+
 def assert_selected_export_modes(outdir):
     cases = [
         ("{lod}", "lod_transform"),
@@ -235,6 +546,40 @@ def assert_selected_export_modes(outdir):
         cmds.parent(second_mesh, second_lod)
         selection = selection.format(lod=first_lod, mesh=first_mesh)
         assert_selected_export(selection, outdir, name)
+
+
+def assert_selection_set_export_modes(outdir):
+    cases = [
+        ("{mesh}", "mesh_set", 4),
+        ("{mesh}.f[0]", "face_set", 4),
+        ("{mesh}.vtx[0]", "vertex_set", 1),
+    ]
+    for selection, name, expected_vertices in cases:
+        cmds.file(new=True, force=True)
+        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_lod")
+        mesh = cmds.polyPlane(name=f"{name}_mesh", subdivisionsX=1, subdivisionsY=1)[0]
+        cmds.parent(mesh, lod)
+        cmds.select(selection.format(mesh=mesh), replace=True)
+        ui = runpy.run_path(str(UI_SCRIPT))
+        components = ui["_canonical_selection_components"]()
+        if len(components) != expected_vertices:
+            raise RuntimeError(f"Canonical selection {name} expected {expected_vertices} vertices, got {components}")
+        set_node = cmds.sets(components, name=f"a3ob_SEL_{name}")
+        cmds.addAttr(set_node, longName="a3obSelectionName", dataType="string")
+        cmds.setAttr(set_node + ".a3obSelectionName", name, type="string")
+        out = outdir / f"selection_set_{name}.p3d"
+        cmds.file(rename=str(out))
+        cmds.file(exportAll=True, force=True, type="Arma P3D")
+        cmds.file(new=True, force=True)
+        cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace=f"set_{name}")
+        counts = [item for item in selection_component_counts() if item[0] == name]
+        if not counts or counts[0][1] != expected_vertices:
+            raise RuntimeError(f"Selection set {name} did not roundtrip expected vertex count: {counts}")
+        assert_object_builder_sets_hidden(f"selection set {name} import")
+        for node in object_builder_set_nodes():
+            if "_lod_SEL_" in node or "_mesh_SEL_" in node:
+                raise RuntimeError(f"Imported selection set kept noisy LOD/mesh prefix: {node}")
+    print("OK Object Builder selection sets export from mesh, face, and vertex selections")
 
 
 def roundtrip_file(path, outdir):
@@ -268,7 +613,7 @@ def main():
     DAYZ_OUTDIR.mkdir(parents=True, exist_ok=True)
     cmds.loadPlugin(str(PLUGIN), quiet=True)
     commands = set(cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or [])
-    expected = {"a3obValidate", "a3obSetMass", "a3obSetMaterial", "a3obSetFlag", "a3obCreateLOD", "a3obProxy", "a3obNamedProperty", "a3obUpdateProxy"}
+    expected = {"a3obValidate", "a3obSetMass", "a3obSetMaterial", "a3obSetFlag", "a3obFindComponents", "a3obCreateLOD", "a3obProxy", "a3obNamedProperty", "a3obUpdateProxy"}
     missing = expected - commands
     if missing:
         raise RuntimeError(f"Missing commands: {sorted(missing)}")
@@ -284,9 +629,16 @@ def main():
     cmds.select(lod)
     cmds.a3obValidate()
 
+    assert_ui_redesign_helpers_load()
     assert_stale_selection_ui_refresh()
+    assert_selection_manager_clear_all()
+    assert_find_components()
+    assert_find_components_plain_mesh()
     create_generated_fixture(OUTDIR / "generated_dayz_metadata.p3d")
+    assert_export_scale_units(OUTDIR)
+    assert_export_transform_bake(OUTDIR)
     assert_selected_export_modes(OUTDIR)
+    assert_selection_set_export_modes(OUTDIR)
 
     for path in INPUTS:
         roundtrip_file(path, OUTDIR)

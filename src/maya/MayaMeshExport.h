@@ -7,9 +7,16 @@
 
 namespace a3ob::maya
 {
+struct ExportOptions
+{
+    bool selectedOnly = false;
+    bool applyTransforms = true;
+    bool applyModifiers = true;
+};
+
 class MayaMeshExport
 {
 public:
-    MStatus exportMLOD(const MString& path, bool selectedOnly = false) const;
+    MStatus exportMLOD(const MString& path, const ExportOptions& options = {}) const;
 };
 }

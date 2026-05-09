@@ -136,6 +136,7 @@ MStatus initializePlugin(MObject obj)
     if (!(status = plugin.registerCommand(SetMassCommand::kName, SetMassCommand::creator, SetMassCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(SetMaterialCommand::kName, SetMaterialCommand::creator, SetMaterialCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(SetFlagCommand::kName, SetFlagCommand::creator, SetFlagCommand::syntax))) return status;
+    if (!(status = plugin.registerCommand(FindComponentsCommand::kName, FindComponentsCommand::creator, FindComponentsCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(CreateLODCommand::kName, CreateLODCommand::creator, CreateLODCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(ProxyCommand::kName, ProxyCommand::creator, ProxyCommand::syntax))) return status;
     if (!(status = plugin.registerCommand(NamedPropertyCommand::kName, NamedPropertyCommand::creator, NamedPropertyCommand::syntax))) return status;
@@ -161,6 +162,7 @@ MStatus uninitializePlugin(MObject obj)
     status = deregisterCommand(plugin, NamedPropertyCommand::kName);
     status = deregisterCommand(plugin, ProxyCommand::kName);
     status = deregisterCommand(plugin, CreateLODCommand::kName);
+    status = deregisterCommand(plugin, FindComponentsCommand::kName);
     status = deregisterCommand(plugin, SetFlagCommand::kName);
     status = deregisterCommand(plugin, SetMaterialCommand::kName);
     status = deregisterCommand(plugin, SetMassCommand::kName);

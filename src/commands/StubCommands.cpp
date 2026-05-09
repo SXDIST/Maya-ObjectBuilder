@@ -30,8 +30,10 @@
 #include <map>
 #include <regex>
 #include <set>
+#include <queue>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -163,6 +165,17 @@ MStatus setStringAttribute(MObject node, const char* longName, const char* short
     return plug.setValue(value);
 }
 
+MStatus markTechnicalSet(MObject set)
+{
+    MStatus status = setBoolAttribute(set, "a3obTechnicalSet", "a3ts", true);
+    if (!status) return status;
+    MFnDependencyNode dep(set, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug("hiddenInOutliner", true, &status);
+    if (status) status = plug.setBool(true);
+    return status;
+}
+
 std::vector<std::string> splitSemicolon(const std::string& value)
 {
     std::vector<std::string> parts;
@@ -215,6 +228,12 @@ bool isProxySelectionName(const std::string& value)
 {
     static const std::regex proxyRegex(R"(^proxy:.*\.\d+$)");
     return std::regex_match(value, proxyRegex);
+}
+
+bool isComponentSelectionName(const std::string& value)
+{
+    static const std::regex componentRegex(R"(^[Cc]omponent\d+$)");
+    return std::regex_match(value, componentRegex);
 }
 
 MString proxySelectionName(const MString& proxyPath, int proxyIndex)
@@ -523,7 +542,9 @@ MStatus createProxySelectionSet(const MString& selectionName)
     if (!status) return status;
     status = setStringAttribute(set, "a3obSelectionName", "a3sn", selectionName);
     if (!status) return status;
-    return setBoolAttribute(set, "a3obIsProxySelection", "a3ips", true);
+    status = setBoolAttribute(set, "a3obIsProxySelection", "a3ips", true);
+    if (!status) return status;
+    return markTechnicalSet(set);
 }
 
 MString repeatedMassValues(int count, double value)
@@ -614,7 +635,229 @@ MStatus createMetadataSet(const MString& setName, const char* component, int val
     if (!status) return status;
     status = setStringAttribute(set, "a3obFlagComponent", "a3fc", component);
     if (!status) return status;
-    return setIntAttribute(set, "a3obFlagValue", "a3fv", value);
+    status = setIntAttribute(set, "a3obFlagValue", "a3fv", value);
+    if (!status) return status;
+    return markTechnicalSet(set);
+}
+
+struct MeshTarget
+{
+    MDagPath meshPath;
+    MObject lod;
+};
+
+std::string dagNodeName(const MObject& node)
+{
+    MStatus status;
+    MFnDependencyNode dep(node, &status);
+    return status ? dep.name().asChar() : std::string();
+}
+
+bool sameNode(const MObject& a, const MObject& b)
+{
+    return !a.isNull() && !b.isNull() && a == b;
+}
+
+void addMeshTarget(const MDagPath& meshPath, const MObject& lod, std::vector<MeshTarget>& targets)
+{
+    if (meshPath.isValid() && meshPath.node().hasFn(MFn::kMesh)) {
+        for (const MeshTarget& target : targets) {
+            if (target.meshPath.node() == meshPath.node() && (target.lod == lod || sameNode(target.lod, lod))) return;
+        }
+        targets.push_back({meshPath, lod});
+    }
+}
+
+void addChildMeshTargets(const MObject& lod, std::vector<MeshTarget>& targets)
+{
+    MStatus status;
+    MFnDagNode dag(lod, &status);
+    if (!status) return;
+    for (unsigned int i = 0; i < dag.childCount(); ++i) {
+        MObject child = dag.child(i, &status);
+        if (!status) continue;
+        if (child.hasFn(MFn::kMesh)) {
+            MDagPath path;
+            MFnDagNode childDag(child, &status);
+            if (status && childDag.getPath(path)) addMeshTarget(path, lod, targets);
+        } else if (child.hasFn(MFn::kTransform)) {
+            MObject mesh = firstMeshChild(child);
+            if (!mesh.isNull()) {
+                MFnDagNode meshDag(mesh, &status);
+                MDagPath path;
+                if (status && meshDag.getPath(path)) addMeshTarget(path, lod, targets);
+            }
+        }
+    }
+}
+
+std::vector<MeshTarget> selectedMeshTargets()
+{
+    std::vector<MeshTarget> targets;
+    MSelectionList selection;
+    MGlobal::getActiveSelectionList(selection);
+    for (unsigned int i = 0; i < selection.length(); ++i) {
+        MDagPath path;
+        MObject component;
+        if (!selection.getDagPath(i, path, component)) continue;
+        MObject node = path.node();
+        if (node.hasFn(MFn::kMesh)) {
+            MObject lod = lodTransformForPath(path);
+            addMeshTarget(path, lod, targets);
+            continue;
+        }
+        if (node.hasFn(MFn::kTransform) && boolPlugValue(node, "a3obIsLOD")) {
+            addChildMeshTargets(node, targets);
+            continue;
+        }
+        if (node.hasFn(MFn::kTransform)) {
+            MObject mesh = firstMeshChild(node);
+            if (!mesh.isNull()) {
+                MFnDagNode meshDag(mesh);
+                MDagPath meshPath;
+                if (meshDag.getPath(meshPath)) addMeshTarget(meshPath, lodTransformForPath(meshPath), targets);
+            }
+        }
+    }
+    return targets;
+}
+
+using EdgeKey = std::pair<int, int>;
+
+EdgeKey edgeKey(int a, int b)
+{
+    return a < b ? EdgeKey(a, b) : EdgeKey(b, a);
+}
+
+struct FaceIsland
+{
+    std::set<int> faces;
+    std::set<int> vertices;
+    bool closed = true;
+};
+
+std::vector<FaceIsland> closedFaceIslands(MFnMesh& meshFn)
+{
+    MStatus status;
+    MItMeshPolygon it(meshFn.object(), &status);
+    std::map<EdgeKey, std::vector<int>> edgeFaces;
+    std::vector<std::vector<EdgeKey>> faceEdges(static_cast<std::size_t>(meshFn.numPolygons()));
+    for (; status && !it.isDone(); it.next()) {
+        MIntArray vertices;
+        it.getVertices(vertices);
+        const int faceIndex = it.index();
+        for (unsigned int i = 0; i < vertices.length(); ++i) {
+            const int a = vertices[i];
+            const int b = vertices[(i + 1) % vertices.length()];
+            EdgeKey key = edgeKey(a, b);
+            edgeFaces[key].push_back(faceIndex);
+            faceEdges[static_cast<std::size_t>(faceIndex)].push_back(key);
+        }
+    }
+
+    std::vector<std::vector<int>> adjacency(static_cast<std::size_t>(meshFn.numPolygons()));
+    for (const auto& [key, faces] : edgeFaces) {
+        if (faces.size() == 2) {
+            adjacency[static_cast<std::size_t>(faces[0])].push_back(faces[1]);
+            adjacency[static_cast<std::size_t>(faces[1])].push_back(faces[0]);
+        }
+    }
+
+    std::vector<bool> visited(static_cast<std::size_t>(meshFn.numPolygons()), false);
+    std::vector<FaceIsland> islands;
+    for (int start = 0; start < meshFn.numPolygons(); ++start) {
+        if (visited[static_cast<std::size_t>(start)]) continue;
+        FaceIsland island;
+        std::queue<int> queue;
+        queue.push(start);
+        visited[static_cast<std::size_t>(start)] = true;
+        while (!queue.empty()) {
+            const int face = queue.front();
+            queue.pop();
+            island.faces.insert(face);
+            for (const EdgeKey& key : faceEdges[static_cast<std::size_t>(face)]) {
+                island.vertices.insert(key.first);
+                island.vertices.insert(key.second);
+            }
+            for (const int next : adjacency[static_cast<std::size_t>(face)]) {
+                if (!visited[static_cast<std::size_t>(next)]) {
+                    visited[static_cast<std::size_t>(next)] = true;
+                    queue.push(next);
+                }
+            }
+        }
+        for (const int face : island.faces) {
+            for (const EdgeKey& key : faceEdges[static_cast<std::size_t>(face)]) {
+                int count = 0;
+                for (const int edgeFace : edgeFaces[key]) {
+                    if (island.faces.count(edgeFace)) ++count;
+                }
+                if (count != 2) island.closed = false;
+            }
+        }
+        islands.push_back(std::move(island));
+    }
+    return islands;
+}
+
+bool componentSetBelongsToTarget(const MObject& set, const MObject& lod, const MDagPath& meshPath)
+{
+    MStatus status;
+    MFnSet setFn(set, &status);
+    if (!status) return false;
+    MSelectionList members;
+    if (!setFn.getMembers(members, true)) return false;
+    for (unsigned int i = 0; i < members.length(); ++i) {
+        MDagPath path;
+        MObject component;
+        if (!members.getDagPath(i, path, component)) continue;
+        if (!lod.isNull() && sameNode(lodTransformForPath(path), lod)) return true;
+        if (lod.isNull() && path.node() == meshPath.node()) return true;
+    }
+    return false;
+}
+
+void deleteExistingComponentSets(const MObject& lod, const MDagPath& meshPath)
+{
+    MStatus status;
+    MObjectArray toDelete;
+    MItDependencyNodes it(MFn::kSet, &status);
+    for (; status && !it.isDone(); it.next()) {
+        MObject set = it.thisNode(&status);
+        if (!status) continue;
+        const std::string selectionName = stringPlugValue(set, "a3obSelectionName");
+        if (isComponentSelectionName(selectionName) && componentSetBelongsToTarget(set, lod, meshPath)) toDelete.append(set);
+    }
+    for (unsigned int i = 0; i < toDelete.length(); ++i) {
+        MFnDependencyNode dep(toDelete[i], &status);
+        if (status) MGlobal::deleteNode(toDelete[i]);
+    }
+}
+
+MStatus createComponentSet(const MDagPath& meshPath, int componentIndex, const std::set<int>& vertices)
+{
+    MStatus status;
+    MFnSingleIndexedComponent componentFn;
+    MObject component = componentFn.create(MFn::kMeshVertComponent, &status);
+    if (!status) return status;
+    MIntArray elements;
+    for (const int vertex : vertices) elements.append(vertex);
+    status = componentFn.addElements(elements);
+    if (!status) return status;
+    MSelectionList members;
+    members.add(meshPath, component);
+    MFnSet setFn;
+    MObject set = setFn.create(members, MFnSet::kNone, &status);
+    if (!status) return status;
+    MString componentName;
+    componentName += "Component";
+    if (componentIndex < 10) componentName += "0";
+    componentName += componentIndex;
+    MString setName = "a3ob_";
+    setName += componentName;
+    setFn.setName(setName, false, &status);
+    if (!status) return status;
+    return setStringAttribute(set, "a3obSelectionName", "a3sn", componentName);
 }
 
 MObject createMaterialNodes(const MString& texture, const MString& material, MStatus& status)
@@ -964,6 +1207,63 @@ MStatus SetFlagCommand::doIt(const MArgList& args)
     return MS::kSuccess;
 }
 
+void* FindComponentsCommand::creator()
+{
+    return new FindComponentsCommand();
+}
+
+MSyntax FindComponentsCommand::syntax()
+{
+    return MSyntax();
+}
+
+MStatus FindComponentsCommand::doIt(const MArgList&)
+{
+    const std::vector<MeshTarget> targets = selectedMeshTargets();
+    if (targets.empty()) {
+        MGlobal::displayError("a3obFindComponents: select an Object Builder LOD, mesh, or mesh component");
+        return MS::kFailure;
+    }
+
+    std::set<std::string> cleanedTargets;
+    int createdTotal = 0;
+    int skipped = 0;
+    for (const MeshTarget& target : targets) {
+        std::string targetName = dagNodeName(target.lod);
+        if (targetName.empty()) targetName = target.meshPath.fullPathName().asChar();
+        if (!cleanedTargets.count(targetName)) {
+            deleteExistingComponentSets(target.lod, target.meshPath);
+            cleanedTargets.insert(targetName);
+        }
+
+        int createdForTarget = 0;
+        MStatus status;
+        MFnMesh meshFn(target.meshPath, &status);
+        if (!status) continue;
+        for (const FaceIsland& island : closedFaceIslands(meshFn)) {
+            if (!island.closed || island.vertices.empty()) {
+                ++skipped;
+                continue;
+            }
+            status = createComponentSet(target.meshPath, createdForTarget + 1, island.vertices);
+            if (!status) return status;
+            ++createdForTarget;
+            ++createdTotal;
+        }
+    }
+
+    if (createdTotal == 0) {
+        MGlobal::displayError(MString("a3obFindComponents: no closed components found, skipped=") + skipped);
+        return MS::kFailure;
+    }
+    if (skipped > 0) {
+        MGlobal::displayWarning(MString("a3obFindComponents: created components=") + createdTotal + ", skipped open/non-manifold islands=" + skipped);
+    } else {
+        MGlobal::displayInfo(MString("a3obFindComponents: created components=") + createdTotal);
+    }
+    return MS::kSuccess;
+}
+
 void* CreateLODCommand::creator()
 {
     return new CreateLODCommand();
@@ -1041,6 +1341,8 @@ MStatus updateProxySelectionSet(MObject set, const MString& path, int index)
     MStatus status = setStringAttribute(set, "a3obSelectionName", "a3sn", selectionName);
     if (!status) return status;
     status = setBoolAttribute(set, "a3obIsProxySelection", "a3ips", true);
+    if (!status) return status;
+    status = markTechnicalSet(set);
     if (!status) return status;
     MFnDependencyNode dep(set, &status);
     if (!status) return status;

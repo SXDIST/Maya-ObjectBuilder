@@ -39,6 +39,15 @@ public:
     MStatus doIt(const MArgList& args) override;
 };
 
+class FindComponentsCommand final : public MPxCommand
+{
+public:
+    static constexpr const char* kName = "a3obFindComponents";
+    static void* creator();
+    static MSyntax syntax();
+    MStatus doIt(const MArgList& args) override;
+};
+
 class CreateLODCommand final : public MPxCommand
 {
 public:
