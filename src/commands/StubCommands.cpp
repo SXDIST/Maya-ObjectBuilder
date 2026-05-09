@@ -27,6 +27,7 @@
 #include <maya/MVector.h>
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 #include <regex>
 #include <set>
@@ -860,8 +861,35 @@ MStatus createComponentSet(const MDagPath& meshPath, int componentIndex, const s
     return setStringAttribute(set, "a3obSelectionName", "a3sn", componentName);
 }
 
+MString normalizeDayzPath(const MString& value)
+{
+    std::string path = value.asChar();
+    path.erase(path.begin(), std::find_if(path.begin(), path.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+    path.erase(std::find_if(path.rbegin(), path.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), path.end());
+    std::replace(path.begin(), path.end(), '/', '\\');
+    if (path.size() >= 2 && path[1] == ':' && std::isalpha(static_cast<unsigned char>(path[0]))) {
+        path.erase(0, 2);
+        while (!path.empty() && path.front() == '\\') path.erase(path.begin());
+    }
+    std::string normalized;
+    normalized.reserve(path.size());
+    bool previousSlash = false;
+    for (const char ch : path) {
+        if (ch == '\\') {
+            if (!previousSlash) normalized.push_back(ch);
+            previousSlash = true;
+        } else {
+            normalized.push_back(ch);
+            previousSlash = false;
+        }
+    }
+    return MString(normalized.c_str());
+}
+
 MObject createMaterialNodes(const MString& texture, const MString& material, MStatus& status)
 {
+    const MString normalizedTexture = normalizeDayzPath(texture);
+    const MString normalizedMaterial = normalizeDayzPath(material);
     MFnLambertShader shaderFn;
     MObject shader = shaderFn.create(true, &status);
     if (!status) return MObject::kNullObj;
@@ -875,13 +903,13 @@ MObject createMaterialNodes(const MString& texture, const MString& material, MSt
     shadingGroupName += "SG";
     shadingGroupFn.setName(shadingGroupName, false, &status);
     if (!status) return MObject::kNullObj;
-    status = setStringAttribute(shader, "a3obTexture", "a3tx", texture);
+    status = setStringAttribute(shader, "a3obTexture", "a3tx", normalizedTexture);
     if (!status) return MObject::kNullObj;
-    status = setStringAttribute(shader, "a3obMaterial", "a3mt", material);
+    status = setStringAttribute(shader, "a3obMaterial", "a3mt", normalizedMaterial);
     if (!status) return MObject::kNullObj;
-    status = setStringAttribute(shadingGroup, "a3obTexture", "a3sgtx", texture);
+    status = setStringAttribute(shadingGroup, "a3obTexture", "a3sgtx", normalizedTexture);
     if (!status) return MObject::kNullObj;
-    status = setStringAttribute(shadingGroup, "a3obMaterial", "a3sgmt", material);
+    status = setStringAttribute(shadingGroup, "a3obMaterial", "a3sgmt", normalizedMaterial);
     if (!status) return MObject::kNullObj;
     return shadingGroup;
 }

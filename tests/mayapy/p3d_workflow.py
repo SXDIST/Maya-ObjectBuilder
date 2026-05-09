@@ -5,6 +5,7 @@ from pathlib import Path
 
 import maya.cmds as cmds
 import maya.standalone
+import maya.api.OpenMaya as om
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -288,9 +289,11 @@ def assert_stale_selection_ui_refresh():
 
 def assert_ui_redesign_helpers_load():
     ui = runpy.run_path(str(UI_SCRIPT))
-    for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_quick_action_bar", "_action_row", "_path_row", "_labeled_row", "import_model_cfg_from_ui", "export_model_cfg_from_ui"):
+    for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_quick_action_bar", "_action_row", "_path_row", "_labeled_row", "import_model_cfg_from_ui", "export_model_cfg_from_ui", "generate_auto_lods_from_ui"):
         if name not in ui:
             raise RuntimeError(f"Missing redesigned UI helper: {name}")
+    if ui["_normalize_dayz_path"](r"P:\\Mods\\MyMod\\data\\tex_ca.paa") != r"Mods\MyMod\data\tex_ca.paa":
+        raise RuntimeError("DayZ path helper did not normalize Windows paths")
     dock_class = ui["MayaObjectBuilderDock"]
     for name in ("refresh_named_properties", "refresh_material_metadata", "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
         if not hasattr(dock_class, name):
@@ -353,6 +356,8 @@ def create_generated_fixture(path):
 
     cmds.select(mesh + ".f[0]")
     cmds.a3obSetMaterial(texture="dz\\weapons\\generated_ca.paa", material="dz\\weapons\\generated.rvmat")
+    if ("dz\\weapons\\generated_ca.paa", "dz\\weapons\\generated.rvmat") not in material_pairs():
+        raise RuntimeError("a3obSetMaterial did not normalize material paths")
 
     cmds.select(lod)
     cmds.a3obSetMass(value=2.5)
@@ -382,20 +387,112 @@ def create_generated_fixture(path):
     print("OK generated DayZ-style P3D metadata workflow")
 
 
+def create_nonmanifold_fixture(name="auto_lod_nonmanifold_source"):
+    dense = cmds.polySphere(name=name + "_dense", subdivisionsX=32, subdivisionsY=16, radius=50)[0]
+    vertices = [
+        om.MPoint(200, 0, 0),
+        om.MPoint(300, 0, 0),
+        om.MPoint(200, 100, 0),
+        om.MPoint(200, -100, 0),
+        om.MPoint(200, 0, 100),
+    ]
+    mesh_fn = om.MFnMesh()
+    mesh_fn.create(vertices, [3, 3, 3], [0, 1, 2, 0, 3, 1, 0, 4, 1])
+    nonmanifold = cmds.rename(cmds.listRelatives(mesh_fn.fullPathName(), parent=True, fullPath=True)[0], name + "_blocker")
+    return cmds.polyUnite(dense, nonmanifold, name=name, constructionHistory=False)[0]
+
+
+
+def assert_auto_lod_nonmanifold_cleanup():
+    cmds.file(new=True, force=True)
+    auto_lod = runpy.run_path(str(ROOT / "scripts" / "objectBuilderAutoLOD.py"))
+    source = create_nonmanifold_fixture()
+    if not cmds.polyInfo(source, nonManifoldVertices=True):
+        raise RuntimeError("Nonmanifold Auto LOD fixture did not create nonmanifold vertices")
+    cmds.select(source, replace=True)
+    generated = auto_lod["generate_auto_lods"]({"resolution": True, "geometry": False, "view_geometry": False, "memory": False, "fire_geometry": False, "preset": "TRIS", "first_lod": "LOD1"})
+    counts = []
+    for lod in generated:
+        if cmds.attributeQuery("a3obResolution", node=lod, exists=True):
+            counts.append((cmds.getAttr(lod + ".a3obResolution"), cmds.polyEvaluate(lod, face=True)))
+    counts = [count for _, count in sorted(counts)]
+    if len(counts) < 2 or not all(counts[index] >= counts[index + 1] for index in range(len(counts) - 1)):
+        raise RuntimeError(f"Auto LOD nonmanifold cleanup did not produce non-increasing face counts: {counts}")
+    if counts[-1] >= counts[0] and counts[0] > 4:
+        raise RuntimeError(f"Auto LOD nonmanifold cleanup left LODs unreduced: {counts}")
+    print("OK Auto LOD cleans nonmanifold meshes before reduction")
+
+
+
+def assert_auto_lod_generation(outdir):
+    cmds.file(new=True, force=True)
+    source = cmds.polyCube(name="auto_lod_source", width=100, height=200, depth=50)[0]
+    cmds.select(source, replace=True)
+    auto_lod = runpy.run_path(str(ROOT / "scripts" / "objectBuilderAutoLOD.py"))
+    generated = auto_lod["generate_auto_lods"]({"resolution": True, "geometry": True, "view_geometry": True, "memory": True, "fire_geometry": False, "preset": "QUADS", "first_lod": "LOD1"})
+    if not generated:
+        raise RuntimeError("Auto LOD did not generate any nodes")
+    if not cmds.objExists("visuals") or not cmds.objExists("geometries") or not cmds.objExists("point_clouds"):
+        raise RuntimeError("Auto LOD did not create expected organization groups")
+    expected = {(0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (6, 0), (14, 0), (9, 0)}
+    actual = set()
+    for node in cmds.ls(type="transform") or []:
+        if cmds.attributeQuery("a3obIsLOD", node=node, exists=True):
+            actual.add((cmds.getAttr(node + ".a3obLodType"), cmds.getAttr(node + ".a3obResolution")))
+    if not expected.issubset(actual):
+        raise RuntimeError(f"Auto LOD metadata mismatch: expected {expected}, got {actual}")
+    names = selection_names()
+    for name in ("invview", "boundingbox_min", "boundingbox_max", "ce_radius", "ce_center"):
+        if name not in names:
+            raise RuntimeError(f"Auto LOD Memory point selection missing: {name}")
+    cmds.a3obValidate()
+    out = outdir / "auto_lod_generated.p3d"
+    cmds.file(rename=str(out))
+    cmds.file(exportAll=True, force=True, type="Arma P3D")
+    before = lod_counts()
+    cmds.file(new=True, force=True)
+    cmds.file(str(out), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="auto")
+    after = lod_counts()
+    if len(before) != len(after):
+        raise RuntimeError(f"Auto LOD roundtrip changed LOD count: {len(before)} != {len(after)}")
+
+    cmds.file(new=True, force=True)
+    existing_visuals = cmds.group(empty=True, name="Visuals")
+    source = cmds.polySphere(name="auto_lod_resolution_only_source", subdivisionsX=32, subdivisionsY=16, radius=50)[0]
+    source_faces = cmds.polyEvaluate(source, face=True)
+    cmds.select(source, replace=True)
+    generated = auto_lod["generate_auto_lods"]({"resolution": True, "geometry": False, "view_geometry": False, "memory": False, "fire_geometry": False, "preset": "QUADS", "first_lod": "LOD1"})
+    if not generated or not cmds.objExists("visuals"):
+        raise RuntimeError("Auto LOD resolution-only generation did not create visuals")
+    if cmds.objExists(existing_visuals) or len([node for node in cmds.ls(type="transform") or [] if node.lower() == "visuals"]) != 1:
+        raise RuntimeError("Auto LOD did not reuse/rename existing Visuals group cleanly")
+    if cmds.objExists("geometries") or cmds.objExists("point_clouds"):
+        raise RuntimeError("Auto LOD created disabled-category groups")
+    counts = []
+    for lod in generated:
+        if cmds.attributeQuery("a3obResolution", node=lod, exists=True):
+            counts.append((cmds.getAttr(lod + ".a3obResolution"), cmds.polyEvaluate(lod, face=True)))
+    counts = [count for _, count in sorted(counts)]
+    if counts[0] < source_faces or not all(counts[index] > counts[index + 1] for index in range(len(counts) - 1)):
+        raise RuntimeError(f"Auto LOD did not reduce faces per resolution: source={source_faces}, counts={counts}")
+    print("OK Auto LOD generator creates and roundtrips Maya-native LODs")
+
+
+
 def assert_import_hierarchy(path):
     root = "p3d:" + path.stem.replace(".", "_")
     if not cmds.objExists(root):
         raise RuntimeError(f"Missing import root {root}")
     groups = set(cmds.listRelatives(root, children=True, type="transform") or [])
-    if "p3d:Visuals" not in groups:
-        raise RuntimeError(f"Missing Visuals group for {path.name}")
+    if "p3d:visuals" not in groups:
+        raise RuntimeError(f"Missing visuals group for {path.name}")
     lod_names = set()
     for group in groups:
         lod_names.update(cmds.listRelatives(group, children=True, type="transform") or [])
     if not any("Resolution" in name for name in lod_names):
         raise RuntimeError(f"Missing human-readable visual LOD names for {path.name}")
-    if any(cmds.getAttr(node + ".a3obLodType") in (6, 14, 15) for node in cmds.ls(type="transform") or [] if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)) and "p3d:Geometries" not in groups:
-        raise RuntimeError(f"Missing Geometries group for {path.name}")
+    if any(cmds.getAttr(node + ".a3obLodType") in (6, 14, 15) for node in cmds.ls(type="transform") or [] if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)) and "p3d:geometries" not in groups:
+        raise RuntimeError(f"Missing geometries group for {path.name}")
 
 
 def assert_selected_export(selection, outdir, name):
@@ -638,6 +735,8 @@ def main():
     assert_find_components()
     assert_find_components_plain_mesh()
     create_generated_fixture(OUTDIR / "generated_dayz_metadata.p3d")
+    assert_auto_lod_nonmanifold_cleanup()
+    assert_auto_lod_generation(OUTDIR)
     assert_export_scale_units(OUTDIR)
     assert_export_transform_bake(OUTDIR)
     assert_selected_export_modes(OUTDIR)
