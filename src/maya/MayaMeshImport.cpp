@@ -126,12 +126,12 @@ MString lodGroupName(int lod)
     case 2:
     case 3:
     case 18:
-        return "Visuals";
+        return "visuals";
     case 4:
     case 26:
     case 27:
     case 28:
-        return "Shadows";
+        return "shadows";
     case 6:
     case 7:
     case 8:
@@ -146,13 +146,13 @@ MString lodGroupName(int lod)
     case 23:
     case 24:
     case 30:
-        return "Geometries";
+        return "geometries";
     case 9:
     case 10:
     case 13:
-        return "Point clouds";
+        return "point_clouds";
     default:
-        return "Misc";
+        return "misc";
     }
 }
 

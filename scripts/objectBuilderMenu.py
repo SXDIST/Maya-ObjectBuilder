@@ -1,4 +1,6 @@
 import importlib
+import re
+import sys
 from pathlib import Path
 
 import maya.cmds as cmds
@@ -30,6 +32,15 @@ LOD_TYPE_MENU = "MayaObjectBuilderLodTypeMenu"
 LOD_RESOLUTION_FIELD = "MayaObjectBuilderLodResolutionField"
 LOD_PREVIEW_TEXT = "MayaObjectBuilderLodPreviewText"
 LOD_CONTEXT_TEXT = "MayaObjectBuilderLodContextText"
+AUTO_LOD_PRESET_MENU = "MayaObjectBuilderAutoLodPreset"
+AUTO_LOD_FIRST_MENU = "MayaObjectBuilderAutoLodFirst"
+AUTO_LOD_RESOLUTION_CHECK = "MayaObjectBuilderAutoLodResolution"
+AUTO_LOD_GEOMETRY_CHECK = "MayaObjectBuilderAutoLodGeometry"
+AUTO_LOD_MEMORY_CHECK = "MayaObjectBuilderAutoLodMemory"
+AUTO_LOD_FIRE_CHECK = "MayaObjectBuilderAutoLodFire"
+AUTO_LOD_VIEW_CHECK = "MayaObjectBuilderAutoLodView"
+AUTO_LOD_GEOMETRY_TYPE_MENU = "MayaObjectBuilderAutoLodGeometryType"
+AUTO_LOD_FIRE_QUALITY_FIELD = "MayaObjectBuilderAutoLodFireQuality"
 SELECTION_MANAGER_LIST = "MayaObjectBuilderSelectionList"
 SELECTION_MANAGER_LOD_FILTER = "MayaObjectBuilderSelectionLodFilter"
 SELECTION_MANAGER_TYPE_FILTER = "MayaObjectBuilderSelectionTypeFilter"
@@ -123,8 +134,15 @@ def _plugin_path():
 
 def _ensure_script_path():
     scripts_dir = str(SCRIPT_PATH.parent).replace("\\", "/")
+    if str(SCRIPT_PATH.parent) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_PATH.parent))
     mel.eval('if (!stringArrayContains("' + scripts_dir + '", stringToStringArray(`getenv MAYA_SCRIPT_PATH`, ";"))) putenv MAYA_SCRIPT_PATH (`getenv MAYA_SCRIPT_PATH` + ";' + scripts_dir + '")')
     mel.eval('source "' + scripts_dir + '/mayaObjectBuilderP3DOptions.mel"')
+
+
+def _auto_lod_module():
+    _ensure_script_path()
+    return importlib.import_module("objectBuilderAutoLOD")
 
 
 def load_plugin():
@@ -283,6 +301,29 @@ def create_empty_lod():
     _refresh_lod_assignment_ui()
 
 
+def _auto_lod_settings_from_legacy_ui():
+    return {
+        "preset": _option_menu_value(AUTO_LOD_PRESET_MENU).upper() or "QUADS",
+        "first_lod": _option_menu_value(AUTO_LOD_FIRST_MENU) or "LOD1",
+        "resolution": cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, exists=True) else True,
+        "geometry": cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, exists=True) else True,
+        "memory": cmds.checkBox(AUTO_LOD_MEMORY_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_MEMORY_CHECK, exists=True) else False,
+        "fire_geometry": cmds.checkBox(AUTO_LOD_FIRE_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_FIRE_CHECK, exists=True) else False,
+        "view_geometry": cmds.checkBox(AUTO_LOD_VIEW_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_VIEW_CHECK, exists=True) else False,
+        "geometry_type": (_option_menu_value(AUTO_LOD_GEOMETRY_TYPE_MENU) or "BOX").upper(),
+        "fire_quality": cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, query=True, value=True) if cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, exists=True) else 2,
+    }
+
+
+def generate_auto_lods_from_ui():
+    load_plugin()
+    dock = _active_qt_dock()
+    settings = dock.auto_lod_settings() if dock is not None else _auto_lod_settings_from_legacy_ui()
+    generated = _auto_lod_module().generate_auto_lods(settings)
+    if generated:
+        _refresh_context_ui()
+
+
 def set_mass():
     load_plugin()
     action = cmds.confirmDialog(title="Set Mass", message="Set or clear mass values?", button=["Set", "Clear", "Cancel"], defaultButton="Set", cancelButton="Cancel", dismissString="Cancel")
@@ -422,10 +463,15 @@ def _valid_nodes(nodes):
     return [node for node in nodes if _node_exists(node)]
 
 
+def _normalize_dayz_path(path):
+    path = (path or "").strip().replace("/", "\\")
+    if len(path) >= 2 and path[1] == ":":
+        path = path[2:].lstrip("\\")
+    return re.sub(r"\\+", r"\\", path)
+
+
 def _strip_drive_letter(path):
-    if len(path) >= 2 and path[1] == ':':
-        return path[2:]
-    return path
+    return _normalize_dayz_path(path)
 
 
 def _live_set_members(set_node):
@@ -1084,8 +1130,8 @@ def _assign_new_material_metadata_to_selection():
         texture = dock.material_texture_path()
         material = dock.material_rvmat_path()
     else:
-        texture = cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip()
-        material = cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip()
+        texture = _normalize_dayz_path(cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True))
+        material = _normalize_dayz_path(cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True))
     selection = cmds.ls(selection=True, flatten=True) or []
     if not selection:
         cmds.warning("Select mesh faces before assigning a new DayZ material")
@@ -1253,8 +1299,9 @@ def _full_width_button(label, command):
 def _browse_path(field, mode, caption, file_filter=""):
     selected = cmds.fileDialog2(fileMode=mode, caption=caption, fileFilter=file_filter) if file_filter else cmds.fileDialog2(fileMode=mode, caption=caption)
     if selected and cmds.textField(field, exists=True):
-        cmds.textField(field, edit=True, text=selected[0])
-        return selected[0]
+        path = _normalize_dayz_path(selected[0])
+        cmds.textField(field, edit=True, text=path)
+        return path
     return ""
 
 
@@ -1331,6 +1378,25 @@ def _build_lod_assignment_ui():
     _end_card()
     _refresh_lod_assignment_ui()
 
+    _card("Auto LOD", "Generate Maya-native DayZ LODs from the selected mesh using the imported Blender addon defaults.")
+    _labeled_row("Preset", lambda: cmds.optionMenu(AUTO_LOD_PRESET_MENU))
+    for label in ("QUADS", "TRIS", "CUSTOM"):
+        cmds.menuItem(label=label, parent=AUTO_LOD_PRESET_MENU)
+    _labeled_row("First LOD", lambda: cmds.optionMenu(AUTO_LOD_FIRST_MENU))
+    for label in ("LOD1", "LOD0"):
+        cmds.menuItem(label=label, parent=AUTO_LOD_FIRST_MENU)
+    cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, label="Resolution LODs", value=True)
+    cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, label="Geometry LOD", value=True)
+    cmds.checkBox(AUTO_LOD_MEMORY_CHECK, label="Memory LOD", value=False)
+    cmds.checkBox(AUTO_LOD_FIRE_CHECK, label="Fire Geometry LOD", value=False)
+    cmds.checkBox(AUTO_LOD_VIEW_CHECK, label="View Geometry LOD", value=False)
+    _labeled_row("Geometry", lambda: cmds.optionMenu(AUTO_LOD_GEOMETRY_TYPE_MENU))
+    for label in ("BOX", "NONE"):
+        cmds.menuItem(label=label, parent=AUTO_LOD_GEOMETRY_TYPE_MENU)
+    _labeled_row("Fire quality", lambda: cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, minValue=1, maxValue=10, value=2))
+    _action_row([("Generate Auto LOD", generate_auto_lods_from_ui, "Generate Resolution, Geometry, Memory, Fire, and View LODs from the selected mesh.")], columns=1)
+    _end_card()
+
 
 def _build_metadata_tools_ui():
     _card("Mass", "Apply or clear vertex mass metadata on the current selection.")
@@ -1388,6 +1454,15 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.lod_resolution = None
         self.lod_context = None
         self.lod_preview = None
+        self.auto_lod_preset = None
+        self.auto_lod_first = None
+        self.auto_lod_resolution = None
+        self.auto_lod_geometry = None
+        self.auto_lod_memory = None
+        self.auto_lod_fire = None
+        self.auto_lod_view = None
+        self.auto_lod_geometry_type = None
+        self.auto_lod_fire_quality = None
         self.model_cfg_import = None
         self.model_cfg_export = None
         self.mass_value_field = None
@@ -1481,6 +1556,36 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         buttons.addWidget(_qt_button("Assign", assign_lod_to_selection, "Assign the selected LOD type to the current selection."))
         buttons.addWidget(_qt_button("Create Empty", create_empty_lod, "Create a new empty LOD transform with the selected type."))
         layout.addLayout(buttons)
+
+        auto_group = qt_widgets.QGroupBox("Auto LOD")
+        auto_layout = qt_widgets.QFormLayout(auto_group)
+        self.auto_lod_preset = qt_widgets.QComboBox()
+        self.auto_lod_preset.addItems(["QUADS", "TRIS", "CUSTOM"])
+        self.auto_lod_first = qt_widgets.QComboBox()
+        self.auto_lod_first.addItems(["LOD1", "LOD0"])
+        self.auto_lod_resolution = qt_widgets.QCheckBox("Resolution LODs")
+        self.auto_lod_resolution.setChecked(True)
+        self.auto_lod_geometry = qt_widgets.QCheckBox("Geometry LOD")
+        self.auto_lod_geometry.setChecked(True)
+        self.auto_lod_memory = qt_widgets.QCheckBox("Memory LOD")
+        self.auto_lod_fire = qt_widgets.QCheckBox("Fire Geometry LOD")
+        self.auto_lod_view = qt_widgets.QCheckBox("View Geometry LOD")
+        self.auto_lod_geometry_type = qt_widgets.QComboBox()
+        self.auto_lod_geometry_type.addItems(["BOX", "NONE"])
+        self.auto_lod_fire_quality = qt_widgets.QSpinBox()
+        self.auto_lod_fire_quality.setRange(1, 10)
+        self.auto_lod_fire_quality.setValue(2)
+        auto_layout.addRow("Preset", self.auto_lod_preset)
+        auto_layout.addRow("First LOD", self.auto_lod_first)
+        auto_layout.addRow(self.auto_lod_resolution)
+        auto_layout.addRow(self.auto_lod_geometry)
+        auto_layout.addRow(self.auto_lod_memory)
+        auto_layout.addRow(self.auto_lod_fire)
+        auto_layout.addRow(self.auto_lod_view)
+        auto_layout.addRow("Geometry", self.auto_lod_geometry_type)
+        auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
+        auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
+        layout.addWidget(auto_group)
         layout.addStretch()
         return widget
 
@@ -1534,8 +1639,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def _browse_qt_path(self, field, caption, mode, file_filter):
         selected = cmds.fileDialog2(fileMode=mode, caption=caption, fileFilter=file_filter)
         if selected:
-            path = selected[0].replace("/", "\\")
-            field.setText(_strip_drive_letter(path))
+            field.setText(_normalize_dayz_path(selected[0]))
 
     def _build_metadata_tab(self):
         widget = qt_widgets.QWidget()
@@ -1744,6 +1848,19 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
                 return definition
         return LOD_DEFINITIONS[0]
 
+    def auto_lod_settings(self):
+        return {
+            "preset": self.auto_lod_preset.currentText() if self.auto_lod_preset is not None else "QUADS",
+            "first_lod": self.auto_lod_first.currentText() if self.auto_lod_first is not None else "LOD1",
+            "resolution": self.auto_lod_resolution.isChecked() if self.auto_lod_resolution is not None else True,
+            "geometry": self.auto_lod_geometry.isChecked() if self.auto_lod_geometry is not None else True,
+            "memory": self.auto_lod_memory.isChecked() if self.auto_lod_memory is not None else False,
+            "fire_geometry": self.auto_lod_fire.isChecked() if self.auto_lod_fire is not None else False,
+            "view_geometry": self.auto_lod_view.isChecked() if self.auto_lod_view is not None else False,
+            "geometry_type": self.auto_lod_geometry_type.currentText() if self.auto_lod_geometry_type is not None else "BOX",
+            "fire_quality": self.auto_lod_fire_quality.value() if self.auto_lod_fire_quality is not None else 2,
+        }
+
     def lod_resolution_value(self):
         return self.lod_resolution.value() if self.lod_resolution is not None else 1
 
@@ -1848,11 +1965,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
 
     def material_texture_path(self):
         field = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
-        return field.text().strip() if field is not None else ""
+        return _normalize_dayz_path(field.text()) if field is not None else ""
 
     def material_rvmat_path(self):
         field = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
-        return field.text().strip() if field is not None else ""
+        return _normalize_dayz_path(field.text()) if field is not None else ""
 
     def selected_material_metadata_item(self):
         current = self.material_list.currentItem() if self.material_list is not None else None

@@ -15,16 +15,22 @@ The repository also contains the original Blender add-on source under `Arma3Obje
 ## Installation from GitHub release
 
 1. Download the latest `MayaObjectBuilder-v*-win64.zip` archive from GitHub Releases.
-2. Extract the archive to any temporary folder.
+2. Extract the whole archive to any temporary folder.
 3. Open Maya 2027.
-4. Open the Python tab in Maya Script Editor and run:
+4. Run the installer from the extracted release:
+   - Preferred: drag `install/install_maya.py` into Maya's Script Editor Python area and execute it.
+   - Fallback: open the Python tab in Maya Script Editor and run:
 
 ```python
 INSTALLER_PATH = r"C:\path\to\MayaObjectBuilder-v0.1.0-win64\install\install_maya.py"
-exec(open(INSTALLER_PATH).read())
+exec(open(INSTALLER_PATH, encoding="utf-8").read())
 ```
 
-The installer copies the plugin package into your Maya user folder, writes a Maya module file, loads `MayaObjectBuilder.mll` immediately, and enables plugin autoload so it is available after restarting Maya.
+The installer copies or updates the plugin package in your Maya user folder, writes the Maya module file, loads `MayaObjectBuilder.mll` immediately, and enables plugin autoload so it is available after restarting Maya.
+
+To update an existing installation, extract the new release archive and run the installer again. The installer unloads the current plugin if it is loaded, refreshes the installed files, rewrites the module file, reloads the plugin, and keeps autoload enabled.
+
+If Maya cannot unload or overwrite the plugin, restart Maya and run the installer again. Make sure you extracted the full release folder before running `install/install_maya.py`; running the installer without the neighboring `plug-ins/` and `scripts/` folders will fail.
 
 ## Using the plugin in Maya
 

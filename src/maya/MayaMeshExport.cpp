@@ -307,7 +307,12 @@ std::vector<std::pair<std::string, std::string>> meshMaterialPairs(const MObject
             std::string mat = stringPlugValue(shaders[shaderIndex], "a3obMaterial");
             std::replace(tex.begin(), tex.end(), '/', '\\');
             std::replace(mat.begin(), mat.end(), '/', '\\');
-            auto stripDrive = [](std::string& p) { if (p.size() >= 2 && p[1] == ':') p = p.substr(2); };
+            auto stripDrive = [](std::string& p) {
+                if (p.size() >= 2 && p[1] == ':') {
+                    p = p.substr(2);
+                    while (!p.empty() && p.front() == '\\') p.erase(p.begin());
+                }
+            };
             stripDrive(tex);
             stripDrive(mat);
             pairs.emplace_back(std::move(tex), std::move(mat));
