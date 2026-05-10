@@ -126,6 +126,7 @@ MStatus P3DTranslator::writer(const MFileObject& file, const MString& optionsStr
     const std::map<std::string, std::string> options = parseOptions(optionsString);
     a3ob::maya::ExportOptions exportOptions;
     exportOptions.selectedOnly = mode == MPxFileTranslator::kExportActiveAccessMode || optionEnabled(options, "selectedOnly", false);
+    exportOptions.visibleOnly = optionEnabled(options, "visibleOnly", true);
     exportOptions.applyTransforms = optionEnabled(options, "applyTransforms", true);
     exportOptions.applyModifiers = optionEnabled(options, "applyModifiers", true);
     if (optionEnabled(options, "validateMeshes", false) || optionEnabled(options, "exportValidateMeshes", false) || optionEnabled(options, "validateLods", false)) {
