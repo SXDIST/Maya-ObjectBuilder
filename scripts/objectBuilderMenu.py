@@ -81,6 +81,133 @@ COMMON_NAMED_PROPERTIES = [
     ("prefershadowvolume", "1"),
 ]
 
+KNOWN_NAMED_PROPS = {
+    "animated": [],
+    "aicovers": ["0", "1"],
+    "armor": [],
+    "autocenter": ["0", "1"],
+    "buoyancy": ["0", "1"],
+    "cratercolor": [],
+    "canbeoccluded": ["0", "1"],
+    "canocclude": ["0", "1"],
+    "class": [
+        "breakablehouseanimated",
+        "bridge",
+        "building",
+        "bushhard",
+        "bushsoft",
+        "church",
+        "clutter",
+        "forest",
+        "house",
+        "housesimulated",
+        "land_decal",
+        "man",
+        "none",
+        "pond",
+        "road",
+        "streetlamp",
+        "thing",
+        "thingx",
+        "tower",
+        "treehard",
+        "treesoft",
+        "vehicle",
+        "wall"
+    ],
+    "damage": [
+        "building",
+        "engine",
+        "no",
+        "tent",
+        "tree",
+        "wall",
+        "wreck"
+    ],
+    "destroysound": [
+        "treebroadleaf",
+        "treepalm"
+    ],
+    "drawimportance": [],
+    "explosionshielding": [],
+    "forcenotalpha": ["0", "1"],
+    "frequent": ["0", "1"],
+    "keyframe": ["0", "1"],
+    "loddensitycoef": [],
+    "lodnoshadow": ["0", "1"],
+    "map": [
+        "main road",
+        "road",
+        "track",
+        "trail",
+        "building",
+        "fence",
+        "wall",
+        "bush",
+        "small tree",
+        "tree",
+        "rock",
+        "bunker",
+        "fortress",
+        "fuelstation",
+        "hospital",
+        "lighthouse",
+        "quay",
+        "view-tower",
+        "ruin",
+        "busstop",
+        "church",
+        "chapel",
+        "cross",
+        "fountain",
+        "power lines",
+        "powersolar",
+        "powerwave",
+        "powerwind",
+        "railway",
+        "shipwreck",
+        "stack",
+        "tourism",
+        "transmitter",
+        "watertower",
+        "hide"
+    ],
+    "mass": [],
+    "maxsegments": [],
+    "minsegments": [],
+    "notl": [],
+    "placement": [
+        "slope",
+        "slopez",
+        "slopex",
+        "slopelandcontact",
+        "vertical"
+    ],
+    "prefershadowvolume": ["0", "1"],
+    "reversed": [],
+    "sbsource": [
+        "explicit",
+        "none",
+        "shadow",
+        "shadowvolume",
+        "visual",
+        "visualex"
+    ],
+    "shadow": ["hybrid"],
+    "shadowlod": [],
+    "shadowvolumelod": [],
+    "shadowbufferlod": [],
+    "shadowbufferlodvis": [],
+    "shadowoffset": [],
+    "viewclass": [],
+    "viewdensitycoef": [],
+    "xcount": [],
+    "xsize": [],
+    "xstep": [],
+    "ycount": [],
+    "ysize": []
+}
+
 LOD_DEFINITIONS = [
     {"type": 0, "label": "Resolution", "has_resolution": True, "default_resolution": 1},
     {"type": 1, "label": "View Gunner", "has_resolution": False, "default_resolution": 0},
@@ -872,6 +999,19 @@ def _resolve_memory_lod():
         return created
     if len(scene_lods) == 1:
         return scene_lods[0]
+    if QT_AVAILABLE and qt_widgets:
+        labels = [_lod_label(n) for n in scene_lods]
+        chosen, ok = qt_widgets.QInputDialog.getItem(
+            None,
+            "Select Memory LOD",
+            "Multiple Memory LODs found. Choose one:",
+            labels,
+            0,
+            False
+        )
+        if ok:
+            chosen_idx = labels.index(chosen)
+            return scene_lods[chosen_idx]
     cmds.warning(
         "MayaObjectBuilder: Multiple Memory LODs found in the scene. "
         "Select one in the Outliner first, then click Add Memory Point."
@@ -1687,6 +1827,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.lod_resolution = None
         self.lod_context = None
         self.lod_preview = None
+        self.memory_points_group = None
         self.auto_lod_preset = None
         self.auto_lod_first = None
         self.auto_lod_resolution = None
@@ -1709,8 +1850,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.named_lod_combo = None
         self.named_preset_combo = None
         self.named_list = None
-        self.named_name_field = None
-        self.named_value_field = None
+        self.named_name_combo = None
+        self.named_value_combo = None
         self.named_lods = {}
         self.named_items = {}
         self.material_list = None
@@ -1817,8 +1958,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
         layout.addWidget(auto_group)
 
-        memory_group = qt_widgets.QGroupBox("Memory Points")
-        memory_layout = qt_widgets.QVBoxLayout(memory_group)
+        self.memory_points_group = qt_widgets.QGroupBox("Memory Points")
+        memory_layout = qt_widgets.QVBoxLayout(self.memory_points_group)
         memory_hint = qt_widgets.QLabel(
             "Add Memory Point — creates a new named locator (one vertex). "
             "Add Point to Selection — select an existing memory point and click this to add a second vertex; "
@@ -1830,7 +1971,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
         mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
         memory_layout.addLayout(mem_buttons)
-        layout.addWidget(memory_group)
+        layout.addWidget(self.memory_points_group)
 
         layout.addStretch()
         return widget
@@ -1969,12 +2110,14 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.addWidget(self.named_list, 1)
 
         edit_form = qt_widgets.QFormLayout()
-        self.named_name_field = qt_widgets.QLineEdit()
-        self.named_name_field.setPlaceholderText("property name")
-        self.named_value_field = qt_widgets.QLineEdit()
-        self.named_value_field.setPlaceholderText("property value")
-        edit_form.addRow("Name", self.named_name_field)
-        edit_form.addRow("Value", self.named_value_field)
+        self.named_name_combo = qt_widgets.QComboBox()
+        self.named_name_combo.setEditable(True)
+        self.named_name_combo.addItems(sorted(KNOWN_NAMED_PROPS.keys()))
+        self.named_name_combo.currentTextChanged.connect(self._update_named_value_combo)
+        self.named_value_combo = qt_widgets.QComboBox()
+        self.named_value_combo.setEditable(True)
+        edit_form.addRow("Name", self.named_name_combo)
+        edit_form.addRow("Value", self.named_value_combo)
         layout.addLayout(edit_form)
 
         named_buttons = qt_widgets.QHBoxLayout()
@@ -2155,22 +2298,37 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         return lod if _node_exists(lod) else None
 
     def named_property_name(self):
-        return self.named_name_field.text().strip() if self.named_name_field is not None else ""
+        return self.named_name_combo.currentText().strip() if self.named_name_combo is not None else ""
 
     def named_property_value(self):
-        return self.named_value_field.text().strip() if self.named_value_field is not None else ""
+        return self.named_value_combo.currentText().strip() if self.named_value_combo is not None else ""
 
     def named_property_preset(self):
         return self.named_preset_combo.currentText() if self.named_preset_combo is not None else ""
 
     def set_named_property_fields(self, name, value):
-        if self.named_name_field is not None:
-            self.named_name_field.setText(name)
-        if self.named_value_field is not None:
-            self.named_value_field.setText(value)
+        if self.named_name_combo is not None:
+            self.named_name_combo.blockSignals(True)
+            self.named_name_combo.setCurrentText(name)
+            self.named_name_combo.blockSignals(False)
+        if self.named_value_combo is not None:
+            self.named_value_combo.blockSignals(True)
+            self.named_value_combo.setCurrentText(value)
+            self.named_value_combo.blockSignals(False)
 
     def clear_named_property_fields(self):
         self.set_named_property_fields("", "")
+
+    def _update_named_value_combo(self):
+        if self.named_name_combo is None or self.named_value_combo is None:
+            return
+        name = self.named_name_combo.currentText().strip()
+        self.named_value_combo.blockSignals(True)
+        self.named_value_combo.clear()
+        values = KNOWN_NAMED_PROPS.get(name, [])
+        if values:
+            self.named_value_combo.addItems(values)
+        self.named_value_combo.blockSignals(False)
 
     def refresh_named_property_lods(self):
         if self.named_lod_combo is None:
@@ -2401,6 +2559,27 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         else:
             _remove_lod_from_selection()
 
+    def _update_memory_points_visibility(self):
+        if self.memory_points_group is None:
+            return
+        selected_lod = _selected_lod_transform()
+        if selected_lod:
+            lod_type = _safe_get_attr(selected_lod, "a3obLodType", -1)
+            self.memory_points_group.setVisible(lod_type == 9)
+        else:
+            self.memory_points_group.setVisible(False)
+
+    def _sync_named_lod_combo(self):
+        if self.named_lod_combo is None:
+            return
+        selected_lod = _selected_lod_transform()
+        if selected_lod:
+            label = _lod_label(selected_lod)
+            self.named_lod_combo.blockSignals(True)
+            self.named_lod_combo.setCurrentText(label)
+            self.named_lod_combo.blockSignals(False)
+            self.refresh_named_properties(False)
+
     def refresh_lod_assignment(self, *_):
         selected_lod = _selected_lod_transform()
         if self.lod_toggle is not None:
@@ -2426,6 +2605,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         finally:
             self._syncing_from_selection = False
         self._on_lod_controls_changed()
+        self._update_memory_points_visibility()
+        self._sync_named_lod_combo()
 
 
 def _qt_workspace_parent(control):
