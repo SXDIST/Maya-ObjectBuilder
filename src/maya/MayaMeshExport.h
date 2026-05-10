@@ -10,6 +10,7 @@ namespace a3ob::maya
 struct ExportOptions
 {
     bool selectedOnly = false;
+    bool visibleOnly = true;
     bool applyTransforms = true;
     bool applyModifiers = true;
 };

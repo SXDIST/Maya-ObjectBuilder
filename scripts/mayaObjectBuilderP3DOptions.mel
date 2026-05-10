@@ -187,7 +187,7 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             frameLayout -label "Include" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
             columnLayout -adjustableColumn true -rowSpacing 4;
             checkBox -label "Selected Only" mayaObjectBuilderSelectedOnly;
-            checkBox -label "Visible" -enable false mayaObjectBuilderVisibleOnly;
+            checkBox -label "Visible" -enable true mayaObjectBuilderVisibleOnly;
             setParent "..";
             setParent "..";
 

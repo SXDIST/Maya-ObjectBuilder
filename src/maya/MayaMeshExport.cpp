@@ -995,6 +995,10 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, const ExportOptions& opt
                 continue;
             }
 
+            if (options.visibleOnly && !transformPath.isVisible()) {
+                continue;
+            }
+
             lodEntries.emplace_back(lodSortKey(transformPath), transformPath);
         }
     }
