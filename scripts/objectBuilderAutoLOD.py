@@ -247,6 +247,7 @@ def _propagate_named_selections(source, target, full_resolution=True):
     For object-level sets: adds target to any set containing source.
     For component-level sets: only adds equivalent components if full_resolution=True.
     """
+    source_short = _short_name(source)
     sets_with_selections = []
     for obj_set in cmds.ls(type="objectSet") or []:
         if not cmds.attributeQuery("a3obSelectionName", node=obj_set, exists=True):
@@ -255,15 +256,15 @@ def _propagate_named_selections(source, target, full_resolution=True):
         sets_with_selections.append((obj_set, set_members))
 
     for obj_set, set_members in sets_with_selections:
-        has_source_object = source in set_members
-        has_source_components = any(isinstance(m, str) and m.startswith(source + ".") for m in set_members)
+        has_source_object = source_short in set_members
+        has_source_components = any(isinstance(m, str) and m.startswith(source_short + ".") for m in set_members)
 
         if has_source_object:
             cmds.sets(target, addElement=obj_set)
         elif has_source_components and full_resolution:
             for member in set_members:
-                if isinstance(member, str) and member.startswith(source + "."):
-                    component = member[len(source):]
+                if isinstance(member, str) and member.startswith(source_short + "."):
+                    component = member[len(source_short):]
                     cmds.sets(target + component, addElement=obj_set)
 
 
@@ -271,38 +272,29 @@ def _generate_resolution_lods(source, settings, visuals):
     start_lod = 0 if settings["first_lod"] == "LOD0" else 1
     ratios = RESOLUTION_PRESETS.get(settings["preset"], RESOLUTION_PRESETS["QUADS"])
     generated = []
-    current_source = source
+    source_snapshot = cmds.duplicate(source, returnRootsOnly=True)[0]
 
     for index, ratio in enumerate((1.0, *ratios)):
         resolution = start_lod + index
         name = "{0}{1}".format(settings["lod_prefix"], resolution)
 
-        if index == 0:
-            working_mesh = source
-            renamed = cmds.rename(source, name)
-            working_mesh = (cmds.ls(renamed, long=True) or [renamed])[0]
-            _triangulate(working_mesh)
-            _apply_weighted_normals(working_mesh)
-            _mark_lod(working_mesh, 0, resolution)
-            _set_named_properties(working_mesh, (("lodnoshadow", "1"), ("autocenter", "0")))
-            _parent(working_mesh, visuals)
-            generated.append(working_mesh)
-            current_source = working_mesh
-        else:
-            duplicate = cmds.duplicate(current_source, name=name, returnRootsOnly=True)[0]
-            _triangulate(duplicate)
-            if ratio < 1.0:
-                before, after, reduced_ok = _reduce_mesh(duplicate, ratio)
-                if not reduced_ok:
-                    cmds.delete(duplicate)
-                    raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
-            _apply_weighted_normals(duplicate)
-            _mark_lod(duplicate, 0, resolution)
-            _set_named_properties(duplicate, (("lodnoshadow", "1"), ("autocenter", "0")))
-            _propagate_named_selections(current_source, duplicate, full_resolution=False)
-            _parent(duplicate, visuals)
-            generated.append(duplicate)
+        duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
+        _triangulate(duplicate)
+        if ratio < 1.0:
+            before, after, reduced_ok = _reduce_mesh(duplicate, ratio)
+            if not reduced_ok:
+                cmds.delete(duplicate)
+                raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
+        _apply_weighted_normals(duplicate)
+        _mark_lod(duplicate, 0, resolution)
+        _set_named_properties(duplicate, (("lodnoshadow", "1"), ("autocenter", "0")))
+        if index > 0 and generated:
+            _propagate_named_selections(generated[0], duplicate, full_resolution=False)
+        _parent(duplicate, visuals)
+        duplicate = (cmds.ls(duplicate, long=True) or [duplicate])[0]
+        generated.append(duplicate)
 
+    cmds.delete(source_snapshot)
     return generated
 
 
@@ -422,7 +414,8 @@ def generate_auto_lods(settings=None):
     if settings["memory"]:
         generated.append(_generate_memory_lod(source, settings, _group("point_clouds")))
 
-    generated = [node for node in generated if node]
+    generated = [node for node in generated if node and cmds.objExists(node)]
     if generated:
+        generated = [(cmds.ls(node, long=True) or [node])[0] for node in generated]
         cmds.select(generated, replace=True)
     return generated
