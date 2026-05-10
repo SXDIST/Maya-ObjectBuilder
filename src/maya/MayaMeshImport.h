@@ -15,7 +15,7 @@ namespace a3ob::maya
 class MayaMeshImport
 {
 public:
-    MStatus importMLOD(const p3d::MLOD& mlod, const MString& sourceName, MObjectArray& createdTransforms);
+    MStatus importMLOD(p3d::MLOD&& mlod, const MString& sourceName, MObjectArray& createdTransforms);
 
 private:
     struct MaterialKey

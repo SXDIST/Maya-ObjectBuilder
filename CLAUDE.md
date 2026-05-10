@@ -112,6 +112,14 @@ Workflow constraints:
 | `a3obTechnicalSet`, `hiddenInOutliner` | objectSet | Technical set hiding/management |
 | `a3obTexture`, `a3obMaterial` | shader | Texture and `.rvmat` paths |
 
+## Memory LOD locator workflow
+
+Memory LOD (`a3obLodType = 9`) points are represented as Maya **locators** parented under the Memory LOD transform. Each locator transform's short name becomes the P3D named selection name.
+
+- **Export** (`collectLocatorsFromMemoryLOD` in `MayaMeshExport.cpp`): when the Memory LOD has no mesh child but has locator-containing child transforms, each is exported as one vertex + one `SelectionTaggData` TAGG. Proxy transforms (`a3obIsProxy=true`) are skipped. Takes priority over preserved `a3obSourceVertices` metadata.
+- **Import** (`createLocatorsForMemoryLOD` in `MayaMeshImport.cpp`): single-vertex named selections in a face-less Memory LOD are reconstructed as locators at the correct positions. Multi-vertex selections remain as metadata only.
+- **UI**: `add_memory_point()` in `objectBuilderMenu.py` creates a locator under the selected Memory LOD. Available from the LOD tab → Memory Points section in both the Qt dock and the MEL fallback.
+
 ## Do not touch without a specific task
 
 - `Arma3ObjectBuilder-master/` — reference only.

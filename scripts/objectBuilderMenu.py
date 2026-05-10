@@ -68,7 +68,7 @@ _selection_manager_items = {}
 _named_property_lods = {}
 _named_property_items = {}
 _material_metadata_items = {}
-_ui_script_jobs = []
+_ui_script_jobs = {}  # event_name -> scriptJob id
 _qt_dock_widget = None
 
 COMMON_NAMED_PROPERTIES = [
@@ -529,6 +529,15 @@ def _live_set_members(set_node):
     return live_members
 
 
+def _set_member_count(set_node):
+    if not _node_exists(set_node):
+        return 0
+    try:
+        return cmds.sets(set_node, query=True, size=True) or 0
+    except RuntimeError:
+        return 0
+
+
 def _mesh_shapes_for_item(item):
     node = item.split(".", 1)[0]
     if not _node_exists(node):
@@ -629,11 +638,11 @@ def _selected_selection_set():
 
 
 def _selection_set_details(set_node):
-    members = _live_set_members(set_node)
+    count = _set_member_count(set_node)
     name = _safe_get_attr(set_node, "a3obSelectionName", "") or ""
     flag_component = _safe_get_attr(set_node, "a3obFlagComponent", "") or ""
     is_proxy = bool(_safe_get_attr(set_node, "a3obIsProxySelection", False))
-    return f"LOD: {_set_lod_label(set_node)}    Type: {_set_kind(is_proxy, flag_component)}    OB name: {name}    Members: {len(members)}\nMaya set: {set_node}"
+    return f"LOD: {_set_lod_label(set_node)}    Type: {_set_kind(is_proxy, flag_component)}    OB name: {name}    Members: {count}\nMaya set: {set_node}"
 
 
 def _update_selection_details():
@@ -830,6 +839,171 @@ def _selected_lod_transform():
             parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
             current = parents[0] if parents else ""
     return None
+
+
+def _find_memory_lod_from_selection():
+    for node in cmds.ls(selection=True, long=True) or []:
+        current = node
+        while current:
+            if _is_lod_transform(current) and _safe_get_attr(current, "a3obLodType", -1) == 9:
+                return current
+            parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
+            current = parents[0] if parents else ""
+    return None
+
+
+def _scene_memory_lods():
+    return [n for n in _lod_transforms() if _safe_get_attr(n, "a3obLodType", -1) == 9]
+
+
+def _resolve_memory_lod():
+    lod = _find_memory_lod_from_selection()
+    if lod:
+        return lod
+    scene_lods = _scene_memory_lods()
+    if len(scene_lods) == 0:
+        cmds.select(clear=True)
+        node = cmds.a3obCreateLOD(lodType=9, resolution=0, name="Memory")
+        created = node[0] if isinstance(node, (list, tuple)) else node
+        if not created:
+            cmds.warning("MayaObjectBuilder: Failed to create Memory LOD.")
+            return None
+        cmds.inViewMessage(amg="Memory LOD created automatically", pos="midCenter", fade=True)
+        return created
+    if len(scene_lods) == 1:
+        return scene_lods[0]
+    cmds.warning(
+        "MayaObjectBuilder: Multiple Memory LODs found in the scene. "
+        "Select one in the Outliner first, then click Add Memory Point."
+    )
+    return None
+
+
+def _create_memory_locator(parent_lod, selection_name):
+    cmds.select(clear=True)
+    locator = cmds.spaceLocator(name=selection_name)[0]
+    _ensure_string_attr(locator, "a3obSelectionName", "a3sn")
+    cmds.setAttr(f"{locator}.a3obSelectionName", selection_name, type="string")
+    cmds.parent(locator, parent_lod, relative=False)
+    cmds.select(locator)
+    return locator
+
+
+def add_memory_point():
+    load_plugin()
+    parent_lod = _resolve_memory_lod()
+    if not parent_lod:
+        return
+    name = _prompt("Add Memory Point", "Memory point name:")
+    if not name:
+        return
+    try:
+        _create_memory_locator(parent_lod, name)
+    except RuntimeError as exc:
+        cmds.warning(f"MayaObjectBuilder: Could not create memory point: {exc}")
+
+
+def _memory_lod_parent(node):
+    """Returns the Memory LOD if it is the direct parent of node, else None."""
+    parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
+    if not parents:
+        return None
+    parent = parents[0]
+    if _is_lod_transform(parent) and _safe_get_attr(parent, "a3obLodType", -1) == 9:
+        return parent
+    return None
+
+
+def _is_group_container(node):
+    """True if node is a named group container directly under a Memory LOD (no locator shape itself, but has locator-bearing children)."""
+    if not _memory_lod_parent(node):
+        return False
+    if _is_lod_transform(node):
+        return False
+    if cmds.listRelatives(node, shapes=True, type="locator", fullPath=True):
+        return False
+    children = cmds.listRelatives(node, children=True, type="transform", fullPath=True) or []
+    return any(cmds.listRelatives(c, shapes=True, type="locator", fullPath=True) for c in children)
+
+
+def _add_point_to_group(group_node):
+    """Create a new anonymous locator inside a group container and select it."""
+    cmds.select(clear=True)
+    locator = cmds.spaceLocator(name="point")[0]
+    cmds.parent(locator, group_node, relative=False)
+    cmds.select(locator)
+    return locator
+
+
+def _promote_locator_to_group(locator_node, memory_lod):
+    """Convert a direct Memory LOD locator to a group container with two point locators."""
+    sel_name = _safe_get_attr(locator_node, "a3obSelectionName") or locator_node.split("|")[-1]
+    # Rename the existing locator to free up the selection name for the group
+    renamed_short = cmds.rename(locator_node, "point")
+    # Locate the renamed node among Memory LOD's direct children
+    children = cmds.listRelatives(memory_lod, children=True, type="transform", fullPath=True) or []
+    renamed_full = next((c for c in children if c.split("|")[-1] == renamed_short), None)
+    if not renamed_full:
+        raise RuntimeError(f"Could not locate renamed locator '{renamed_short}' under Memory LOD")
+    # Create an empty group under Memory LOD named after the selection
+    cmds.select(clear=True)
+    group = cmds.group(empty=True, name=sel_name, parent=memory_lod)
+    group_long = cmds.ls(group, long=True)[0]
+    _ensure_string_attr(group_long, "a3obSelectionName", "a3sn")
+    cmds.setAttr(f"{group_long}.a3obSelectionName", sel_name, type="string")
+    # Move the existing locator into the group
+    cmds.parent(renamed_full, group_long, relative=False)
+    # Add a second point locator inside the group
+    new_locator = _add_point_to_group(group_long)
+    cmds.inViewMessage(
+        amg=f"'{sel_name}' promoted to a multi-point selection group",
+        pos="midCenter", fade=True
+    )
+    return group_long, new_locator
+
+
+def add_point_to_selection():
+    load_plugin()
+    selected = cmds.ls(selection=True, long=True) or []
+    if not selected:
+        cmds.warning("MayaObjectBuilder: Select a memory point or selection group first.")
+        return
+    node = selected[0].split(".")[0]
+    if not _node_exists(node):
+        cmds.warning("MayaObjectBuilder: Select a memory point or selection group first.")
+        return
+    # Resolve shape node to its transform
+    if cmds.objectType(node) == "locator":
+        parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
+        node = parents[0] if parents else node
+    # Case 1: group container selected → add point inside it
+    if _is_group_container(node):
+        try:
+            _add_point_to_group(node)
+        except RuntimeError as exc:
+            cmds.warning(f"MayaObjectBuilder: Could not add point: {exc}")
+        return
+    # Must have a locator shape to proceed
+    if not cmds.listRelatives(node, shapes=True, type="locator", fullPath=True):
+        cmds.warning("MayaObjectBuilder: Select a memory point or selection group first.")
+        return
+    # Case 2: locator inside a group container → add sibling
+    parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
+    if parents and _is_group_container(parents[0]):
+        try:
+            _add_point_to_group(parents[0])
+        except RuntimeError as exc:
+            cmds.warning(f"MayaObjectBuilder: Could not add point: {exc}")
+        return
+    # Case 3: direct locator under Memory LOD → auto-promote to group + add second point
+    memory_lod = _memory_lod_parent(node)
+    if not memory_lod:
+        cmds.warning("MayaObjectBuilder: Selected memory point is not directly under a Memory LOD.")
+        return
+    try:
+        _promote_locator_to_group(node, memory_lod)
+    except RuntimeError as exc:
+        cmds.warning(f"MayaObjectBuilder: Could not promote to group: {exc}")
 
 
 def _ensure_string_attr(node, attr, short_name):
@@ -1267,10 +1441,13 @@ def _refresh_context_ui():
 
 def _install_context_refresh_job(parent):
     global _ui_script_jobs
-    _ui_script_jobs = [job for job in _ui_script_jobs if cmds.scriptJob(exists=job)]
+    _ui_script_jobs = {ev: jid for ev, jid in _ui_script_jobs.items()
+                       if cmds.scriptJob(exists=jid)}
     for event in ("SelectionChanged", "Undo", "Redo", "SceneOpened", "NewSceneOpened"):
+        if event in _ui_script_jobs:
+            continue
         job = cmds.scriptJob(event=[event, _refresh_context_ui], parent=parent, protected=True)
-        _ui_script_jobs.append(job)
+        _ui_script_jobs[event] = job
 
 
 
@@ -1442,6 +1619,13 @@ def _build_lod_assignment_ui():
         cmds.menuItem(label=label, parent=AUTO_LOD_GEOMETRY_TYPE_MENU)
     _labeled_row("Fire quality", lambda: cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, minValue=1, maxValue=10, value=2))
     _action_row([("Generate Auto LOD", generate_auto_lods_from_ui, "Generate Resolution, Geometry, Memory, Fire, and View LODs from the selected mesh.")], columns=1)
+    _end_card()
+
+    _card("Memory Points", "Add Memory Point creates a named locator. Add Point to Selection adds a second vertex to an existing point (auto-promotes it to a group container).")
+    _action_row([
+        ("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."),
+        ("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."),
+    ], columns=2)
     _end_card()
 
 
@@ -1632,6 +1816,22 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
         auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
         layout.addWidget(auto_group)
+
+        memory_group = qt_widgets.QGroupBox("Memory Points")
+        memory_layout = qt_widgets.QVBoxLayout(memory_group)
+        memory_hint = qt_widgets.QLabel(
+            "Add Memory Point — creates a new named locator (one vertex). "
+            "Add Point to Selection — select an existing memory point and click this to add a second vertex; "
+            "the first click auto-converts it to a named group with two point locators inside."
+        )
+        memory_hint.setWordWrap(True)
+        memory_layout.addWidget(memory_hint)
+        mem_buttons = qt_widgets.QHBoxLayout()
+        mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
+        mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
+        memory_layout.addLayout(mem_buttons)
+        layout.addWidget(memory_group)
+
         layout.addStretch()
         return widget
 
@@ -2351,10 +2551,10 @@ def open_dock():
 
 def _kill_ui_script_jobs():
     global _ui_script_jobs
-    for job in list(_ui_script_jobs):
-        if cmds.scriptJob(exists=job):
-            cmds.scriptJob(kill=job, force=True)
-    _ui_script_jobs = []
+    for jid in list(_ui_script_jobs.values()):
+        if cmds.scriptJob(exists=jid):
+            cmds.scriptJob(kill=jid, force=True)
+    _ui_script_jobs = {}
 
 
 def _remove_legacy_shelf_button():

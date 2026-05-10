@@ -587,4 +587,19 @@ void MLOD::writeFile(const std::filesystem::path& path) const
     BinaryWriter writer(path);
     write(writer);
 }
+
+void MLOD::beginWrite(BinaryWriter& writer, std::uint32_t lodCount) const
+{
+    if (lodCount == 0) {
+        throw std::runtime_error("Cannot write MLOD with no LODs");
+    }
+    writer.writeChars("MLOD");
+    writer.writeUInt32(version);
+    writer.writeUInt32(lodCount);
+}
+
+void MLOD::writeLOD(BinaryWriter& writer, const LOD& lod) const
+{
+    lod.write(writer);
+}
 }

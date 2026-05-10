@@ -622,6 +622,7 @@ void addUVSetTaggs(const MObject& transform, const p3d::LOD& sourceLod, p3d::LOD
     const int count = std::max(1, intPlugValue(transform, "a3obUVSetTaggCount", 0));
 
     std::vector<p3d::Vec2> uvs;
+    uvs.reserve(sourceLod.faces.size() * 4);
     for (const p3d::Face& face : sourceLod.faces) {
         uvs.insert(uvs.end(), face.uvs.begin(), face.uvs.end());
     }
@@ -634,10 +635,142 @@ void addUVSetTaggs(const MObject& transform, const p3d::LOD& sourceLod, p3d::LOD
         tagg.name = "#UVSet#";
         auto data = std::make_unique<p3d::UVSetTaggData>();
         data->id = static_cast<std::uint32_t>(i);
-        data->uvs = uvs;
+        data->uvs = (i == count - 1) ? std::move(uvs) : uvs;
         tagg.data = std::move(data);
         lod.taggs.push_back(std::move(tagg));
     }
+}
+
+bool hasDirectLocatorShape(const MFnDagNode& dagFn)
+{
+    MStatus status;
+    for (unsigned int j = 0; j < dagFn.childCount(); ++j) {
+        MObject child = dagFn.child(j, &status);
+        if (status && child.hasFn(MFn::kLocator)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool collectLocatorsFromMemoryLOD(const MDagPath& transformPath, const ExportOptions& options, p3d::LOD& lod)
+{
+    MStatus status;
+    MFnDagNode lodDagFn(transformPath, &status);
+    if (!status) {
+        return false;
+    }
+
+    struct LocatorPoint {
+        std::string selectionName;
+        std::uint32_t vertexIndex;
+    };
+    std::vector<LocatorPoint> points;
+
+    auto addLocatorVertex = [&](const MDagPath& locPath, const std::string& selName) {
+        MMatrix bakeMatrix;
+        if (options.applyTransforms) {
+            bakeMatrix = locPath.inclusiveMatrix();
+        } else {
+            bakeMatrix = locPath.inclusiveMatrix() * transformPath.inclusiveMatrix().inverse();
+        }
+        const MPoint worldPos = MPoint(0.0, 0.0, 0.0) * bakeMatrix;
+        const std::uint32_t vertexIndex = static_cast<std::uint32_t>(lod.vertices.size());
+        lod.vertices.push_back({mayaToCorePoint(worldPos), 0});
+        points.push_back({selName, vertexIndex});
+    };
+
+    for (unsigned int i = 0; i < lodDagFn.childCount(); ++i) {
+        MObject childObj = lodDagFn.child(i, &status);
+        if (!status || !childObj.hasFn(MFn::kTransform)) {
+            continue;
+        }
+        if (boolPlugValue(childObj, "a3obIsProxy")) {
+            continue;
+        }
+
+        MFnDagNode childDagFn(childObj, &status);
+        if (!status) {
+            continue;
+        }
+
+        if (hasDirectLocatorShape(childDagFn)) {
+            // Single-point locator directly under Memory LOD
+            MDagPath childPath;
+            status = childDagFn.getPath(childPath);
+            if (!status) {
+                continue;
+            }
+            std::string selName = stringPlugValue(childObj, "a3obSelectionName");
+            if (selName.empty()) {
+                selName = childDagFn.name().asChar();
+            }
+            addLocatorVertex(childPath, selName);
+        } else {
+            // Group container: named transform with locator-bearing child transforms
+            std::string groupSelName = stringPlugValue(childObj, "a3obSelectionName");
+            if (groupSelName.empty()) {
+                groupSelName = childDagFn.name().asChar();
+            }
+            for (unsigned int j = 0; j < childDagFn.childCount(); ++j) {
+                MObject grandchild = childDagFn.child(j, &status);
+                if (!status || !grandchild.hasFn(MFn::kTransform)) {
+                    continue;
+                }
+                if (boolPlugValue(grandchild, "a3obIsProxy")) {
+                    continue;
+                }
+                MFnDagNode grandchildDagFn(grandchild, &status);
+                if (!status || !hasDirectLocatorShape(grandchildDagFn)) {
+                    continue;
+                }
+                MDagPath grandchildPath;
+                status = grandchildDagFn.getPath(grandchildPath);
+                if (!status) {
+                    continue;
+                }
+                addLocatorVertex(grandchildPath, groupSelName);
+            }
+        }
+    }
+
+    if (points.empty()) {
+        return false;
+    }
+
+    std::vector<std::string> orderedNames;
+    std::map<std::string, std::vector<std::uint32_t>> selectionVertices;
+    for (const auto& point : points) {
+        if (selectionVertices.find(point.selectionName) == selectionVertices.end()) {
+            orderedNames.push_back(point.selectionName);
+        }
+        selectionVertices[point.selectionName].push_back(point.vertexIndex);
+    }
+
+    const std::uint32_t totalVerts = static_cast<std::uint32_t>(lod.vertices.size());
+    for (const auto& name : orderedNames) {
+        p3d::Tagg tagg;
+        tagg.name = name;
+        auto data = std::make_unique<p3d::SelectionTaggData>();
+        data->countVerts = totalVerts;
+        data->countFaces = 0;
+        for (const std::uint32_t idx : selectionVertices.at(name)) {
+            data->vertexWeights.emplace_back(idx, 1.0f);
+        }
+        tagg.data = std::move(data);
+        lod.taggs.push_back(std::move(tagg));
+    }
+
+    return true;
+}
+
+float lodSortKey(const MDagPath& transformPath)
+{
+    const int lodType = intPlugValue(transformPath.node(), "a3obLodType", 0);
+    const int resolution = intPlugValue(transformPath.node(), "a3obResolution", 0);
+    const double signature = doublePlugValue(transformPath.node(), "a3obResolutionSignature",
+        p3d::LodResolution::encode(lodType, resolution));
+    return static_cast<float>(signature);
 }
 
 MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& options, ExportLOD& output)
@@ -651,6 +784,10 @@ MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& option
 
     MDagPath meshPath;
     if (!findFirstMeshPath(transformPath, meshPath)) {
+        if (lodType == 9 && collectLocatorsFromMemoryLOD(transformPath, options, output.lod)) {
+            addPropertyTaggs(transformPath.node(), output.lod);
+            return MS::kSuccess;
+        }
         output.lod.vertices = splitVertexValues(stringPlugValue(transformPath.node(), "a3obSourceVertices"));
         if (output.lod.vertices.empty()) {
             const int sourceVertexCount = intPlugValue(transformPath.node(), "a3obSourceVertexCount", 0);
@@ -796,7 +933,8 @@ MStatus exportMeshLOD(const MDagPath& transformPath, const ExportOptions& option
 
 MStatus MayaMeshExport::exportMLOD(const MString& path, const ExportOptions& options) const
 {
-    std::vector<ExportLOD> exportLods;
+    // Pass 1: collect DAG paths + sort keys only (no mesh data loaded)
+    std::vector<std::pair<float, MDagPath>> lodEntries;
 
     MStatus status;
     if (options.selectedOnly) {
@@ -826,16 +964,10 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, const ExportOptions& opt
             }
             exportedPaths.push_back(fullPath);
 
-            ExportLOD exportLod;
-            status = exportMeshLOD(lodPath, options, exportLod);
-            if (!status) {
-                MGlobal::displayError(MString("P3D export failed: could not export selected LOD ") + lodPath.fullPathName());
-                return status;
-            }
-            exportLods.push_back(std::move(exportLod));
+            lodEntries.emplace_back(lodSortKey(lodPath), lodPath);
         }
 
-        if (exportLods.empty() && selectedNames.length() > 0) {
+        if (lodEntries.empty() && selectedNames.length() > 0) {
             MString message("P3D export failed: selection does not contain an Object Builder LOD, LOD mesh, or mesh component: ");
             for (unsigned int i = 0; i < selectedNames.length(); ++i) {
                 if (i > 0) {
@@ -863,39 +995,39 @@ MStatus MayaMeshExport::exportMLOD(const MString& path, const ExportOptions& opt
                 continue;
             }
 
-            ExportLOD exportLod;
-            status = exportMeshLOD(transformPath, options, exportLod);
-            if (!status) {
-                MGlobal::displayError(MString("P3D export failed: could not export LOD ") + transformPath.fullPathName());
-                return status;
-            }
-            exportLods.push_back(std::move(exportLod));
+            lodEntries.emplace_back(lodSortKey(transformPath), transformPath);
         }
     }
 
-    if (exportLods.empty()) {
+    if (lodEntries.empty()) {
         MGlobal::displayError(options.selectedOnly ? "P3D export failed: select an Object Builder LOD or its mesh" : "P3D export failed: no transforms with a3obIsLOD found");
         return MS::kFailure;
     }
 
-    std::sort(exportLods.begin(), exportLods.end(), [](const ExportLOD& left, const ExportLOD& right) {
-        return left.sortKey < right.sortKey;
+    std::sort(lodEntries.begin(), lodEntries.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
     });
 
-    p3d::MLOD mlod;
-    mlod.lods.reserve(exportLods.size());
-    for (ExportLOD& exportLod : exportLods) {
-        mlod.lods.push_back(std::move(exportLod.lod));
-    }
-
+    // Pass 2: export and write each LOD immediately; only one LOD in memory at a time
+    p3d::MLOD mlodHeader;
     try {
-        mlod.writeFile(std::filesystem::path(path.asChar()));
+        BinaryWriter writer(std::filesystem::path(path.asChar()));
+        mlodHeader.beginWrite(writer, static_cast<std::uint32_t>(lodEntries.size()));
+        for (const auto& [sortKey, dagPath] : lodEntries) {
+            ExportLOD exportLod;
+            status = exportMeshLOD(dagPath, options, exportLod);
+            if (!status) {
+                MGlobal::displayError(MString("P3D export failed: could not export LOD ") + dagPath.fullPathName());
+                return status;
+            }
+            mlodHeader.writeLOD(writer, exportLod.lod);
+        }
     } catch (const std::exception& error) {
         MGlobal::displayError(MString("P3D export failed: ") + error.what());
         return MS::kFailure;
     }
 
-    MGlobal::displayInfo(MString("Exported P3D MLOD LOD count: ") + static_cast<int>(mlod.lods.size()));
+    MGlobal::displayInfo(MString("Exported P3D MLOD LOD count: ") + static_cast<int>(lodEntries.size()));
     return MS::kSuccess;
 }
 }
