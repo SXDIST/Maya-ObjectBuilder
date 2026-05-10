@@ -1,5 +1,7 @@
 #pragma once
 
+#include <maya/MDGModifier.h>
+#include <maya/MDagModifier.h>
 #include <maya/MPxCommand.h>
 #include <maya/MSyntax.h>
 
@@ -19,6 +21,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };
 
 class SetMaterialCommand final : public MPxCommand
@@ -28,6 +35,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };
 
 class SetFlagCommand final : public MPxCommand
@@ -37,6 +49,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };
 
 class FindComponentsCommand final : public MPxCommand
@@ -46,6 +63,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };
 
 class CreateLODCommand final : public MPxCommand
@@ -55,6 +77,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDagModifier m_modifier;
 };
 
 class ProxyCommand final : public MPxCommand
@@ -64,6 +91,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDagModifier m_modifier;
 };
 
 class NamedPropertyCommand final : public MPxCommand
@@ -73,6 +105,11 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };
 
 class UpdateProxyCommand final : public MPxCommand
@@ -82,4 +119,9 @@ public:
     static void* creator();
     static MSyntax syntax();
     MStatus doIt(const MArgList& args) override;
+    bool isUndoable() const override { return true; }
+    MStatus undoIt() override;
+    MStatus redoIt() override;
+private:
+    MDGModifier m_modifier;
 };

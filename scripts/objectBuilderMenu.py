@@ -303,6 +303,24 @@ def export_p3d():
         cmds.file(exportAll=True, force=True, type=TRANSLATOR_NAME)
 
 
+def _validate_scene_no_flush():
+    load_plugin()
+    cmds.undoInfo(stateWithoutFlush=True)
+    try:
+        cmds.a3obValidate()
+    finally:
+        cmds.undoInfo(stateWithoutFlush=False)
+
+
+def _validate_selection_no_flush():
+    load_plugin()
+    cmds.undoInfo(stateWithoutFlush=True)
+    try:
+        cmds.a3obValidate(selectionOnly=True)
+    finally:
+        cmds.undoInfo(stateWithoutFlush=False)
+
+
 def import_model_cfg(path=None):
     load_plugin()
     selected_path = path
@@ -320,7 +338,11 @@ def export_model_cfg(path=None):
         selected = cmds.fileDialog2(fileMode=0, caption="Export model.cfg", fileFilter="Config (*.cfg)")
         selected_path = selected[0] if selected else ""
     if selected_path:
-        cmds.a3obExportModelCfg(path=selected_path)
+        cmds.undoInfo(stateWithoutFlush=True)
+        try:
+            cmds.a3obExportModelCfg(path=selected_path)
+        finally:
+            cmds.undoInfo(stateWithoutFlush=False)
 
 
 def _prompt(title, message, default=""):
@@ -406,11 +428,15 @@ def assign_lod_to_selection():
     if not cmds.ls(selection=True):
         cmds.warning("Select a transform, mesh, or component before assigning LOD metadata")
         return
-    definition = _selected_lod_definition()
-    resolution = _lod_resolution_value(definition)
-    cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
-    _refresh_context_ui()
-    _refresh_lod_assignment_ui()
+    cmds.undoInfo(openChunk=True, chunkName="Create LOD")
+    try:
+        definition = _selected_lod_definition()
+        resolution = _lod_resolution_value(definition)
+        cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
+        _refresh_context_ui()
+        _refresh_lod_assignment_ui()
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def create_empty_lod():
@@ -510,12 +536,20 @@ def apply_mass_from_ui():
     else:
         value = cmds.floatField(MASS_VALUE_FIELD, query=True, value=True) if cmds.floatField(MASS_VALUE_FIELD, exists=True) else 1.0
         mode = cmds.optionMenu(MASS_MODE_MENU, query=True, value=True) if cmds.optionMenu(MASS_MODE_MENU, exists=True) else "All vertices"
-    cmds.a3obSetMass(value=value, selectedComponents=(mode == "Selected vertices"))
+    cmds.undoInfo(openChunk=True, chunkName="Set Mass")
+    try:
+        cmds.a3obSetMass(value=value, selectedComponents=(mode == "Selected vertices"))
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def clear_mass_from_ui():
     load_plugin()
-    cmds.a3obSetMass(clear=True)
+    cmds.undoInfo(openChunk=True, chunkName="Clear Mass")
+    try:
+        cmds.a3obSetMass(clear=True)
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def apply_flag_from_ui():
@@ -532,7 +566,11 @@ def apply_flag_from_ui():
     if not name:
         cmds.warning("Enter a flag set name")
         return
-    cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
+    cmds.undoInfo(openChunk=True, chunkName="Set Flag")
+    try:
+        cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def create_proxy_from_ui():
@@ -549,7 +587,11 @@ def create_proxy_from_ui():
     if not path:
         cmds.warning("Enter a proxy path")
         return
-    cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
+    cmds.undoInfo(openChunk=True, chunkName="Create Proxy")
+    try:
+        cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def import_model_cfg_from_ui():
@@ -727,9 +769,13 @@ def _hide_object_builder_set(node):
 
 
 def _normalize_object_builder_sets():
-    for node in cmds.ls(type="objectSet") or []:
-        if _is_object_builder_set(node):
-            _hide_object_builder_set(node)
+    cmds.undoInfo(stateWithoutFlush=False)
+    try:
+        for node in cmds.ls(type="objectSet") or []:
+            if _is_object_builder_set(node):
+                _hide_object_builder_set(node)
+    finally:
+        cmds.undoInfo(stateWithoutFlush=True)
 
 
 def _selection_sets():
@@ -1216,7 +1262,7 @@ def _refresh_named_properties(rebuild_lods=False):
     global _named_property_items
     dock = _active_qt_dock()
     if dock is not None:
-        dock.refresh_named_properties(rebuild_lods)
+        dock.refresh_named_properties()
         return
     if rebuild_lods:
         _refresh_named_property_lods()
@@ -1497,8 +1543,12 @@ def _assign_new_material_metadata_to_selection():
     if not selection:
         cmds.warning("Select mesh faces before assigning a new DayZ material")
         return
-    cmds.a3obSetMaterial(texture=texture, material=material)
-    _refresh_material_metadata()
+    cmds.undoInfo(openChunk=True, chunkName="Set Material")
+    try:
+        cmds.a3obSetMaterial(texture=texture, material=material)
+        _refresh_material_metadata()
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def _clear_selected_material_metadata():
@@ -1565,7 +1615,7 @@ def _refresh_context_ui():
     dock = _active_qt_dock()
     if dock is not None:
         dock.refresh_lod_assignment()
-        dock.refresh_named_properties(True)
+        dock.refresh_named_properties()
         dock.refresh_material_metadata()
         dock.refresh_selection_manager(True)
         return
@@ -1803,8 +1853,8 @@ def _build_metadata_tools_ui():
 def _build_validation_ui():
     _card("Validation", "Check Object Builder LODs before export. Scene checks every LOD; Selection checks only selected LODs/components.")
     _action_row([
-        ("Scene", lambda: cmds.a3obValidate(), "Validate all Object Builder LODs in the scene."),
-        ("Selection", lambda: cmds.a3obValidate(selectionOnly=True), "Validate only selected Object Builder LODs."),
+        ("Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
+        ("Selection", _validate_selection_no_flush, "Validate only selected Object Builder LODs."),
     ], columns=2)
     _end_card()
 
@@ -1815,6 +1865,37 @@ def _qt_button(label, callback, tooltip=""):
         button.setToolTip(tooltip)
     button.clicked.connect(callback)
     return button
+
+
+class _CollapsibleSection(qt_widgets.QWidget):
+    def __init__(self, title, collapsed=False, parent=None):
+        super(_CollapsibleSection, self).__init__(parent)
+        self._title = title
+        self._btn = qt_widgets.QPushButton(("▶ " if collapsed else "▼ ") + title)
+        self._btn.setFlat(True)
+        self._btn.setCheckable(True)
+        self._btn.setChecked(not collapsed)
+        self._btn.setStyleSheet(
+            "QPushButton { text-align:left; font-weight:bold; padding:5px 8px;"
+            " background:#3c3c3c; border-radius:3px; }"
+            " QPushButton:checked { background:#444; }"
+        )
+        self._body = qt_widgets.QFrame()
+        self._body.setFrameShape(qt_widgets.QFrame.NoFrame)
+        self._body.setVisible(not collapsed)
+        self.body_layout = qt_widgets.QVBoxLayout(self._body)
+        self.body_layout.setContentsMargins(12, 6, 4, 6)
+        self.body_layout.setSpacing(6)
+        outer = qt_widgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 4, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._btn)
+        outer.addWidget(self._body)
+        self._btn.toggled.connect(self._on_toggle)
+
+    def _on_toggle(self, checked):
+        self._body.setVisible(checked)
+        self._btn.setText(("▼ " if checked else "▶ ") + self._title)
 
 
 class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
@@ -1878,9 +1959,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         tabs.addTab(self._build_lod_tab(), "LOD")
         tabs.addTab(self._build_files_tab(), "Files")
         tabs.addTab(self._build_metadata_tab(), "Metadata")
-        tabs.addTab(self._build_named_properties_tab(), "Properties")
-        tabs.addTab(self._build_materials_tab(), "Materials")
-        tabs.addTab(self._build_selections_tab(), "Selections")
         tabs.addTab(self._build_validation_tab(), "Validation")
         layout.addWidget(tabs)
 
@@ -1893,8 +1971,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
             ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter."),
             ("Import CFG", import_model_cfg_from_ui, "Import a model.cfg skeleton file."),
             ("Export CFG", export_model_cfg_from_ui, "Export selected/root skeleton joints to model.cfg."),
-            ("Validate Scene", lambda: cmds.a3obValidate(), "Validate all Object Builder LODs in the scene."),
-            ("Validate Sel", lambda: cmds.a3obValidate(selectionOnly=True), "Validate selected Object Builder LODs."),
+            ("Validate Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
+            ("Validate Sel", _validate_selection_no_flush, "Validate selected Object Builder LODs."),
         ]
         for index, (label, callback, tooltip) in enumerate(actions):
             layout.addWidget(_qt_button(label, callback, tooltip), index // 3, index % 3)
@@ -1928,8 +2006,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         form.addRow("Resolution", self.lod_resolution)
         layout.addLayout(form)
 
-        auto_group = qt_widgets.QGroupBox("Auto LOD")
-        auto_layout = qt_widgets.QFormLayout(auto_group)
+        auto_group = _CollapsibleSection("Auto LOD", collapsed=True)
+        auto_layout = qt_widgets.QFormLayout()
         self.auto_lod_preset = qt_widgets.QComboBox()
         self.auto_lod_preset.addItems(["QUADS", "TRIS", "CUSTOM"])
         self.auto_lod_first = qt_widgets.QComboBox()
@@ -1956,42 +2034,48 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         auto_layout.addRow("Geometry", self.auto_lod_geometry_type)
         auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
         auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
+        auto_group.body_layout.addLayout(auto_layout)
         layout.addWidget(auto_group)
 
-        self.memory_points_group = qt_widgets.QGroupBox("Memory Points")
-        memory_layout = qt_widgets.QVBoxLayout(self.memory_points_group)
+        self.memory_points_group = _CollapsibleSection("Memory Points", collapsed=False)
         memory_hint = qt_widgets.QLabel(
             "Add Memory Point — creates a new named locator (one vertex). "
             "Add Point to Selection — select an existing memory point and click this to add a second vertex; "
             "the first click auto-converts it to a named group with two point locators inside."
         )
         memory_hint.setWordWrap(True)
-        memory_layout.addWidget(memory_hint)
+        self.memory_points_group.body_layout.addWidget(memory_hint)
         mem_buttons = qt_widgets.QHBoxLayout()
         mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
         mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
-        memory_layout.addLayout(mem_buttons)
+        self.memory_points_group.body_layout.addLayout(mem_buttons)
         layout.addWidget(self.memory_points_group)
 
+        named_sec = _CollapsibleSection("Named Properties", collapsed=True)
+        named_sec.body_layout.addWidget(self._build_named_properties_tab())
+        layout.addWidget(named_sec)
+
+        materials_sec = _CollapsibleSection("Materials", collapsed=True)
+        materials_sec.body_layout.addWidget(self._build_materials_tab())
+        layout.addWidget(materials_sec)
+
+        selections_sec = _CollapsibleSection("Selections", collapsed=True)
+        selections_sec.body_layout.addWidget(self._build_selections_tab())
+        layout.addWidget(selections_sec)
+
         layout.addStretch()
-        return widget
+
+        scroll = qt_widgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(qt_widgets.QScrollArea.NoFrame)
+        scroll.setWidget(widget)
+        return scroll
 
     def _build_files_tab(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
-
-        p3d_group = qt_widgets.QGroupBox("P3D")
-        p3d_layout = qt_widgets.QVBoxLayout(p3d_group)
-        p3d_hint = qt_widgets.QLabel("Use Maya's native File dialog with the Arma P3D translator and option panel.")
-        p3d_hint.setWordWrap(True)
-        p3d_layout.addWidget(p3d_hint)
-        p3d_buttons = qt_widgets.QHBoxLayout()
-        p3d_buttons.addWidget(_qt_button("Import P3D", import_p3d))
-        p3d_buttons.addWidget(_qt_button("Export P3D", export_p3d))
-        p3d_layout.addLayout(p3d_buttons)
-        layout.addWidget(p3d_group)
 
         cfg_group = qt_widgets.QGroupBox("model.cfg")
         cfg_layout = qt_widgets.QFormLayout(cfg_group)
@@ -2096,13 +2180,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.addWidget(hint)
 
         form = qt_widgets.QFormLayout()
-        self.named_lod_combo = qt_widgets.QComboBox()
-        self.named_lod_combo.currentIndexChanged.connect(lambda *_: self.refresh_named_properties(False))
-        self.named_preset_combo = qt_widgets.QComboBox()
-        self.named_preset_combo.addItems([f"{name} = {value}" for name, value in COMMON_NAMED_PROPERTIES])
-        self.named_preset_combo.currentIndexChanged.connect(_apply_common_named_property)
-        form.addRow("LOD", self.named_lod_combo)
-        form.addRow("Preset", self.named_preset_combo)
         layout.addLayout(form)
 
         self.named_list = qt_widgets.QListWidget()
@@ -2125,7 +2202,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         named_buttons.addWidget(_qt_button("Remove", _remove_named_property, "Remove the selected property from the active LOD."))
         layout.addLayout(named_buttons)
 
-        self.refresh_named_properties(True)
+        self.refresh_named_properties()
         return widget
 
     def _build_materials_tab(self):
@@ -2217,8 +2294,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         label.setWordWrap(True)
         layout.addWidget(label)
         buttons = qt_widgets.QHBoxLayout()
-        buttons.addWidget(_qt_button("Scene", lambda: cmds.a3obValidate()))
-        buttons.addWidget(_qt_button("Selection", lambda: cmds.a3obValidate(selectionOnly=True)))
+        buttons.addWidget(_qt_button("Scene", _validate_scene_no_flush))
+        buttons.addWidget(_qt_button("Selection", _validate_selection_no_flush))
         layout.addLayout(buttons)
         layout.addStretch()
         return widget
@@ -2291,11 +2368,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         return self.proxy_from_selection_check.isChecked() if self.proxy_from_selection_check is not None else True
 
     def selected_named_property_lod(self):
-        if self.named_lod_combo is None:
+        try:
+            sel = cmds.ls(selection=True, long=True, transforms=True)
+            return sel[0] if sel else None
+        except RuntimeError:
             return None
-        label = self.named_lod_combo.currentText()
-        lod = self.named_lods.get(label)
-        return lod if _node_exists(lod) else None
 
     def named_property_name(self):
         return self.named_name_combo.currentText().strip() if self.named_name_combo is not None else ""
@@ -2304,7 +2381,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         return self.named_value_combo.currentText().strip() if self.named_value_combo is not None else ""
 
     def named_property_preset(self):
-        return self.named_preset_combo.currentText() if self.named_preset_combo is not None else ""
+        return ""
 
     def set_named_property_fields(self, name, value):
         if self.named_name_combo is not None:
@@ -2331,27 +2408,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.named_value_combo.blockSignals(False)
 
     def refresh_named_property_lods(self):
-        if self.named_lod_combo is None:
-            return
-        current = self.named_lod_combo.currentText()
-        self.named_lod_combo.blockSignals(True)
-        self.named_lod_combo.clear()
-        self.named_lods = {}
-        for lod in _lod_transforms():
-            label = _lod_label(lod)
-            self.named_lods[label] = lod
-            self.named_lod_combo.addItem(label)
-        if not self.named_lods:
-            self.named_lod_combo.addItem("No Object Builder LODs")
-        elif current in self.named_lods:
-            self.named_lod_combo.setCurrentText(current)
-        self.named_lod_combo.blockSignals(False)
+        pass
 
-    def refresh_named_properties(self, rebuild_lods=False):
+    def refresh_named_properties(self):
         if self.named_list is None:
             return
-        if rebuild_lods:
-            self.refresh_named_property_lods()
         self.named_list.clear()
         self.named_items = {}
         lod = self.selected_named_property_lod()
@@ -2570,15 +2631,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
             self.memory_points_group.setVisible(False)
 
     def _sync_named_lod_combo(self):
-        if self.named_lod_combo is None:
-            return
-        selected_lod = _selected_lod_transform()
-        if selected_lod:
-            label = _lod_label(selected_lod)
-            self.named_lod_combo.blockSignals(True)
-            self.named_lod_combo.setCurrentText(label)
-            self.named_lod_combo.blockSignals(False)
-            self.refresh_named_properties(False)
+        self.refresh_named_properties()
 
     def refresh_lod_assignment(self, *_):
         selected_lod = _selected_lod_transform()
@@ -2602,11 +2655,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
                     self.lod_resolution.blockSignals(True)
                     self.lod_resolution.setValue(resolution)
                     self.lod_resolution.blockSignals(False)
+            self._on_lod_controls_changed()
+            self._update_memory_points_visibility()
+            self._sync_named_lod_combo()
         finally:
             self._syncing_from_selection = False
-        self._on_lod_controls_changed()
-        self._update_memory_points_visibility()
-        self._sync_named_lod_combo()
 
 
 def _qt_workspace_parent(control):
@@ -2652,8 +2705,8 @@ def _build_dock_contents():
         ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter."),
         ("Import CFG", import_model_cfg, "Import a model.cfg skeleton file."),
         ("Export CFG", export_model_cfg, "Export selected/root skeleton joints to model.cfg."),
-        ("Validate Scene", lambda: cmds.a3obValidate(), "Validate all Object Builder LODs in the scene."),
-        ("Validate Sel", lambda: cmds.a3obValidate(selectionOnly=True), "Validate selected Object Builder LODs."),
+        ("Validate Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
+        ("Validate Sel", _validate_selection_no_flush, "Validate selected Object Builder LODs."),
     ])
     tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
 
@@ -2786,9 +2839,9 @@ def validate():
     load_plugin()
     mode = cmds.confirmDialog(title="Validate", message="Validate selected LODs only?", button=["Selection", "All", "Cancel"], defaultButton="All", cancelButton="Cancel", dismissString="Cancel")
     if mode == "Selection":
-        cmds.a3obValidate(selectionOnly=True)
+        _validate_selection_no_flush()
     elif mode == "All":
-        cmds.a3obValidate()
+        _validate_scene_no_flush()
 
 
 def install():
