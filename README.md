@@ -54,6 +54,27 @@ Use the dock UI for:
 - generating auto LODs;
 - running validation before export.
 
+### Memory LOD workflow
+
+The Memory LOD (`type = 9`) stores named 3D points used by DayZ as attachment sockets, bone references, and other positional markers. In Maya, each point is represented as a named **locator** parented under the Memory LOD transform.
+
+**Creating memory points:**
+
+1. Select the Memory LOD transform (or any object inside it) in the Outliner.
+2. In the dock UI, go to the **LOD** tab → **Memory Points** section.
+3. Click **Add Memory Point** and enter the point name (e.g. `Pelvis`, `weapon_L`, `Head`).
+4. A locator is created at the world origin under the Memory LOD. Use Maya's standard move tools to position it.
+
+To rename a point, select the locator transform in the Outliner and press **F2** (or Edit > Rename). The export uses the transform node's short name as the P3D selection name.
+
+**Importing a P3D with a Memory LOD:**
+
+During import, each single-vertex named selection in the Memory LOD is automatically converted into a locator positioned at the corresponding vertex. Multi-vertex selections (not typical in DayZ Memory LODs) are preserved only as transform metadata and are not shown as locators.
+
+**Export:**
+
+On P3D export, the plugin collects all locator-containing child transforms of the Memory LOD and writes each one as a vertex + named selection TAGG. Locator transforms tagged with `a3obIsProxy` are skipped. The exported point name is the Maya node's short name.
+
 ## Build from source
 
 Requirements:

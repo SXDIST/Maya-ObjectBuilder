@@ -815,6 +815,73 @@ MStatus createProxyPlaceholders(MObject parentTransform, const MString& transfor
     }
     return MS::kSuccess;
 }
+
+MStatus createSingleLocator(MObject parent, const MString& name, const MString& selectionName, const MPoint& position)
+{
+    MStatus status;
+    MFnTransform locatorTransformFn;
+    MObject locatorTransform = locatorTransformFn.create(parent, &status);
+    if (!status) return status;
+    locatorTransformFn.setName(name, false, &status);
+    if (!status) return status;
+    status = addStringAttribute(locatorTransform, "a3obSelectionName", "a3sn", selectionName);
+    if (!status) return status;
+    const MVector translation(position.x, position.y, position.z);
+    status = locatorTransformFn.setTranslation(translation, MSpace::kTransform);
+    if (!status) return status;
+    MFnDagNode shapeFn;
+    MObject shape = shapeFn.create("locator", locatorTransform, &status);
+    if (!status) return status;
+    MString shapeName = locatorTransformFn.name();
+    shapeName += "Shape";
+    shapeFn.setName(shapeName, false, &status);
+    return MS::kSuccess;
+}
+
+MStatus createLocatorsForMemoryLOD(MObject parentTransform, const p3d::LOD& lod)
+{
+    MStatus status;
+    for (const p3d::Tagg& tagg : lod.taggs) {
+        if (!tagg.data || tagg.data->kind() != p3d::TaggKind::Selection || tagg.isProxy()) {
+            continue;
+        }
+        const auto* selection = static_cast<const p3d::SelectionTaggData*>(tagg.data.get());
+
+        std::vector<MPoint> positions;
+        for (const auto& [vertexIndex, weight] : selection->vertexWeights) {
+            if (vertexIndex < lod.vertices.size()) {
+                positions.push_back(coreToMayaPoint(lod.vertices[vertexIndex].position));
+            }
+        }
+        if (positions.empty()) {
+            continue;
+        }
+
+        const MString selName = tagg.name.c_str();
+        const MString nodeName = sanitizedName(selName);
+
+        if (positions.size() == 1) {
+            // Single-point selection: direct locator under Memory LOD
+            status = createSingleLocator(parentTransform, nodeName, selName, positions[0]);
+            if (!status) return status;
+        } else {
+            // Multi-point selection: group container under Memory LOD, anonymous locators inside
+            MFnTransform groupFn;
+            MObject groupTransform = groupFn.create(parentTransform, &status);
+            if (!status) return status;
+            groupFn.setName(nodeName, false, &status);
+            if (!status) return status;
+            status = addStringAttribute(groupTransform, "a3obSelectionName", "a3sn", selName);
+            if (!status) return status;
+
+            for (const MPoint& pos : positions) {
+                status = createSingleLocator(groupTransform, "point", "", pos);
+                if (!status) return status;
+            }
+        }
+    }
+    return MS::kSuccess;
+}
 }
 
 bool MayaMeshImport::MaterialKey::operator<(const MaterialKey& other) const
@@ -929,7 +996,7 @@ MStatus MayaMeshImport::assignMaterials(const MObject& mesh, const p3d::LOD& lod
     return MS::kSuccess;
 }
 
-MStatus MayaMeshImport::importMLOD(const p3d::MLOD& mlod, const MString& sourceName, MObjectArray& createdTransforms)
+MStatus MayaMeshImport::importMLOD(p3d::MLOD&& mlod, const MString& sourceName, MObjectArray& createdTransforms)
 {
     MStatus status;
     MFnTransform rootFn;
@@ -944,7 +1011,10 @@ MStatus MayaMeshImport::importMLOD(const p3d::MLOD& mlod, const MString& sourceN
     }
 
     std::map<std::string, MObject> groups;
-    for (const p3d::LOD& lod : mlod.lods) {
+    for (std::size_t i = 0; i < mlod.lods.size(); ++i) {
+        p3d::LOD lod = std::move(mlod.lods[i]);
+        mlod.lods[i] = p3d::LOD{};
+
         const MString groupName = lodGroupName(lod.resolution.lod);
         MObject group = MObject::kNullObj;
         const auto existing = groups.find(groupName.asChar());
@@ -1065,6 +1135,13 @@ MStatus MayaMeshImport::importLOD(const p3d::LOD& lod, MObject parent, MObjectAr
     status = createProxyPlaceholders(transform, transformFn.name(), lod);
     if (!status) {
         return status;
+    }
+
+    if (lod.faces.empty() && lod.resolution.lod == 9) {
+        status = createLocatorsForMemoryLOD(transform, lod);
+        if (!status) {
+            return status;
+        }
     }
 
     status = setLODMetadata(transform, lod, vertexSourceIndices.empty() ? nullptr : &vertexSourceIndices);

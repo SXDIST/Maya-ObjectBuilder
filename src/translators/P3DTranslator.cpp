@@ -106,7 +106,7 @@ MStatus P3DTranslator::reader(const MFileObject& file, const MString& optionsStr
 
         MObjectArray createdTransforms;
         a3ob::maya::MayaMeshImport importer;
-        const MStatus status = importer.importMLOD(mlod, file.name(), createdTransforms);
+        const MStatus status = importer.importMLOD(std::move(mlod), file.name(), createdTransforms);
         if (!status) {
             return status;
         }

@@ -208,14 +208,14 @@ def _reduce_mesh(transform, keep_ratio):
     if _has_reduce_blockers(transform):
         _cleanup_for_reduce(transform)
     try:
-        cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=1.0, keepBorder=True, keepMapBorder=True, keepColorBorder=True, keepFaceGroupBorder=True, keepHardEdge=True, keepCreaseEdge=True, keepBorderWeight=0.5, keepMapBorderWeight=0.5, keepColorBorderWeight=0.5, keepFaceGroupBorderWeight=0.5, keepHardEdgeWeight=0.5, keepCreaseEdgeWeight=0.5, cachingReduce=True, constructionHistory=False)
+        cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=1.0, keepBorder=True, keepMapBorder=True, keepColorBorder=True, keepFaceGroupBorder=True, keepHardEdge=True, keepCreaseEdge=True, keepBorderWeight=0.5, keepMapBorderWeight=0.5, keepColorBorderWeight=0.5, keepFaceGroupBorderWeight=0.5, keepHardEdgeWeight=0.5, keepCreaseEdgeWeight=0.5, cachingReduce=False, constructionHistory=False)
     except RuntimeError as exc:
         cmds.warning("Auto LOD polyReduce failed on {0}: {1}".format(transform, exc))
     after = _face_count(transform)
     if after >= before and before > 4:
         _cleanup_for_reduce(transform)
         try:
-            cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=0.0, keepBorder=False, keepMapBorder=False, keepColorBorder=False, keepFaceGroupBorder=False, keepHardEdge=False, keepCreaseEdge=False, cachingReduce=True, constructionHistory=False)
+            cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=0.0, keepBorder=False, keepMapBorder=False, keepColorBorder=False, keepFaceGroupBorder=False, keepHardEdge=False, keepCreaseEdge=False, cachingReduce=False, constructionHistory=False)
             after = _face_count(transform)
         except RuntimeError as exc:
             cmds.warning("Auto LOD fallback polyReduce failed on {0}: {1}".format(transform, exc))

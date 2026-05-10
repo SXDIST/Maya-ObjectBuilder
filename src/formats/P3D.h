@@ -174,5 +174,7 @@ struct MLOD
     static MLOD readFile(const std::filesystem::path& path, bool firstLodOnly = false);
     void write(BinaryWriter& writer) const;
     void writeFile(const std::filesystem::path& path) const;
+    void beginWrite(BinaryWriter& writer, std::uint32_t lodCount) const;
+    void writeLOD(BinaryWriter& writer, const LOD& lod) const;
 };
 }
