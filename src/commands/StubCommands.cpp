@@ -106,6 +106,27 @@ MStatus setBoolAttribute(MObject node, const char* longName, const char* shortNa
     return plug.setValue(value);
 }
 
+MStatus setBoolAttribute(MDGModifier& modifier, MObject node, const char* longName, const char* shortName, bool value)
+{
+    MStatus status;
+    MFnDependencyNode dep(node, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug(longName, true, &status);
+    if (!status) {
+        MFnNumericAttribute attr;
+        MObject attrObj = attr.create(longName, shortName, MFnNumericData::kBoolean, value, &status);
+        if (!status) return status;
+        attr.setKeyable(true);
+        status = modifier.addAttribute(node, attrObj);
+        if (!status) return status;
+        status = modifier.doIt();
+        if (!status) return status;
+        plug = dep.findPlug(longName, true, &status);
+        if (!status) return status;
+    }
+    return modifier.newPlugValueBool(plug, value);
+}
+
 MStatus setIntAttribute(MObject node, const char* longName, const char* shortName, int value)
 {
     MStatus status;
@@ -125,6 +146,27 @@ MStatus setIntAttribute(MObject node, const char* longName, const char* shortNam
     return plug.setValue(value);
 }
 
+MStatus setIntAttribute(MDGModifier& modifier, MObject node, const char* longName, const char* shortName, int value)
+{
+    MStatus status;
+    MFnDependencyNode dep(node, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug(longName, true, &status);
+    if (!status) {
+        MFnNumericAttribute attr;
+        MObject attrObj = attr.create(longName, shortName, MFnNumericData::kInt, value, &status);
+        if (!status) return status;
+        attr.setKeyable(true);
+        status = modifier.addAttribute(node, attrObj);
+        if (!status) return status;
+        status = modifier.doIt();
+        if (!status) return status;
+        plug = dep.findPlug(longName, true, &status);
+        if (!status) return status;
+    }
+    return modifier.newPlugValueInt(plug, value);
+}
+
 MStatus setDoubleAttribute(MObject node, const char* longName, const char* shortName, double value)
 {
     MStatus status;
@@ -142,6 +184,27 @@ MStatus setDoubleAttribute(MObject node, const char* longName, const char* short
         if (!status) return status;
     }
     return plug.setValue(value);
+}
+
+MStatus setDoubleAttribute(MDGModifier& modifier, MObject node, const char* longName, const char* shortName, double value)
+{
+    MStatus status;
+    MFnDependencyNode dep(node, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug(longName, true, &status);
+    if (!status) {
+        MFnNumericAttribute attr;
+        MObject attrObj = attr.create(longName, shortName, MFnNumericData::kDouble, value, &status);
+        if (!status) return status;
+        attr.setKeyable(true);
+        status = modifier.addAttribute(node, attrObj);
+        if (!status) return status;
+        status = modifier.doIt();
+        if (!status) return status;
+        plug = dep.findPlug(longName, true, &status);
+        if (!status) return status;
+    }
+    return modifier.newPlugValueDouble(plug, value);
 }
 
 MStatus setStringAttribute(MObject node, const char* longName, const char* shortName, const MString& value)
@@ -164,6 +227,30 @@ MStatus setStringAttribute(MObject node, const char* longName, const char* short
         if (!status) return status;
     }
     return plug.setValue(value);
+}
+
+MStatus setStringAttribute(MDGModifier& modifier, MObject node, const char* longName, const char* shortName, const MString& value)
+{
+    MStatus status;
+    MFnDependencyNode dep(node, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug(longName, true, &status);
+    if (!status) {
+        MFnStringData data;
+        MObject defaultValue = data.create(value, &status);
+        if (!status) return status;
+        MFnTypedAttribute attr;
+        MObject attrObj = attr.create(longName, shortName, MFnData::kString, defaultValue, &status);
+        if (!status) return status;
+        attr.setKeyable(true);
+        status = modifier.addAttribute(node, attrObj);
+        if (!status) return status;
+        status = modifier.doIt();
+        if (!status) return status;
+        plug = dep.findPlug(longName, true, &status);
+        if (!status) return status;
+    }
+    return modifier.newPlugValueString(plug, value);
 }
 
 MStatus markTechnicalSet(MObject set)
@@ -347,6 +434,22 @@ MStatus setLODAttributes(MObject transform, int lodType, int resolution)
     status = setIntAttribute(transform, "a3obSourceVertexCount", "a3svc", 0);
     if (!status) return status;
     return setIntAttribute(transform, "a3obSourceFaceCount", "a3sfc", 0);
+}
+
+MStatus setLODAttributes(MDagModifier& modifier, MObject transform, int lodType, int resolution)
+{
+    const double signature = a3ob::p3d::LodResolution::encode(lodType, resolution);
+    MStatus status = setBoolAttribute(modifier, transform, "a3obIsLOD", "a3lod", true);
+    if (!status) return status;
+    status = setIntAttribute(modifier, transform, "a3obLodType", "a3lt", lodType);
+    if (!status) return status;
+    status = setIntAttribute(modifier, transform, "a3obResolution", "a3res", resolution);
+    if (!status) return status;
+    status = setDoubleAttribute(modifier, transform, "a3obResolutionSignature", "a3sig", signature);
+    if (!status) return status;
+    status = setIntAttribute(modifier, transform, "a3obSourceVertexCount", "a3svc", 0);
+    if (!status) return status;
+    return setIntAttribute(modifier, transform, "a3obSourceFaceCount", "a3sfc", 0);
 }
 
 int vertexCountForLOD(const MObject& transform)
@@ -621,6 +724,32 @@ MStatus setSelectedMassValues(MObject lod, double value)
     return setStringAttribute(lod, "a3obMassValues", "a3mv", massValuesString(masses));
 }
 
+MStatus setSelectedMassValues(MDGModifier& modifier, MObject lod, double value)
+{
+    MSelectionList members;
+    MObject selectedLod = MObject::kNullObj;
+    if (!selectedComponents(members, selectedLod)) return MS::kFailure;
+    if (lod.isNull()) lod = selectedLod;
+
+    std::vector<double> masses = massValuesForLOD(lod, 0.0);
+    for (unsigned int i = 0; i < members.length(); ++i) {
+        MDagPath path;
+        MObject component;
+        if (!members.getDagPath(i, path, component) || !component.hasFn(MFn::kMeshVertComponent)) continue;
+        MFnSingleIndexedComponent componentFn(component);
+        MIntArray elements;
+        componentFn.getElements(elements);
+        for (unsigned int j = 0; j < elements.length(); ++j) {
+            const int index = elements[j];
+            if (index >= 0 && static_cast<std::size_t>(index) < masses.size()) masses[static_cast<std::size_t>(index)] = value;
+        }
+    }
+
+    MStatus status = setBoolAttribute(modifier, lod, "a3obHasMass", "a3mass", true);
+    if (!status) return status;
+    return setStringAttribute(modifier, lod, "a3obMassValues", "a3mv", massValuesString(masses));
+}
+
 MStatus createMetadataSet(const MString& setName, const char* component, int value)
 {
     MSelectionList members;
@@ -639,6 +768,37 @@ MStatus createMetadataSet(const MString& setName, const char* component, int val
     status = setIntAttribute(set, "a3obFlagValue", "a3fv", value);
     if (!status) return status;
     return markTechnicalSet(set);
+}
+
+MStatus createMetadataSet(MDGModifier& modifier, const MString& setName, const char* component, int value)
+{
+    MSelectionList members;
+    MObject lod;
+    MStatus status = selectedComponents(members, lod);
+    if (!status) return status;
+    MObject set = modifier.createNode("objectSet", &status);
+    if (!status) return status;
+    MFnSet setFn(set);
+    setFn.setName(setName, false, &status);
+    if (!status) return status;
+    for (unsigned int i = 0; i < members.length(); ++i) {
+        MDagPath path;
+        MObject component_obj;
+        if (members.getDagPath(i, path, component_obj)) {
+            setFn.addMember(path, component_obj);
+        }
+    }
+    status = setStringAttribute(modifier, set, "a3obSelectionName", "a3sn", setName);
+    if (!status) return status;
+    status = setStringAttribute(modifier, set, "a3obFlagComponent", "a3fc", component);
+    if (!status) return status;
+    status = setIntAttribute(modifier, set, "a3obFlagValue", "a3fv", value);
+    if (!status) return status;
+    MFnDependencyNode dep(set, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug("hiddenInOutliner", true, &status);
+    if (status) modifier.newPlugValueBool(plug, true);
+    return modifier.doIt();
 }
 
 struct MeshTarget
@@ -835,6 +995,22 @@ void deleteExistingComponentSets(const MObject& lod, const MDagPath& meshPath)
     }
 }
 
+void deleteExistingComponentSets(MDGModifier& modifier, const MObject& lod, const MDagPath& meshPath)
+{
+    MStatus status;
+    MObjectArray toDelete;
+    MItDependencyNodes it(MFn::kSet, &status);
+    for (; status && !it.isDone(); it.next()) {
+        MObject set = it.thisNode(&status);
+        if (!status) continue;
+        const std::string selectionName = stringPlugValue(set, "a3obSelectionName");
+        if (isComponentSelectionName(selectionName) && componentSetBelongsToTarget(set, lod, meshPath)) toDelete.append(set);
+    }
+    for (unsigned int i = 0; i < toDelete.length(); ++i) {
+        modifier.deleteNode(toDelete[i]);
+    }
+}
+
 MStatus createComponentSet(const MDagPath& meshPath, int componentIndex, const std::set<int>& vertices)
 {
     MStatus status;
@@ -859,6 +1035,39 @@ MStatus createComponentSet(const MDagPath& meshPath, int componentIndex, const s
     setFn.setName(setName, false, &status);
     if (!status) return status;
     return setStringAttribute(set, "a3obSelectionName", "a3sn", componentName);
+}
+
+MStatus createComponentSet(MDGModifier& modifier, const MDagPath& meshPath, int componentIndex, const std::set<int>& vertices)
+{
+    MStatus status;
+    MFnSingleIndexedComponent componentFn;
+    MObject component = componentFn.create(MFn::kMeshVertComponent, &status);
+    if (!status) return status;
+    MIntArray elements;
+    for (const int vertex : vertices) elements.append(vertex);
+    status = componentFn.addElements(elements);
+    if (!status) return status;
+    MSelectionList members;
+    members.add(meshPath, component);
+    MObject set = modifier.createNode("objectSet", &status);
+    if (!status) return status;
+    MFnSet setFn(set);
+    for (unsigned int i = 0; i < members.length(); ++i) {
+        MDagPath path;
+        MObject comp;
+        if (members.getDagPath(i, path, comp)) {
+            setFn.addMember(path, comp);
+        }
+    }
+    MString componentName;
+    componentName += "Component";
+    if (componentIndex < 10) componentName += "0";
+    componentName += componentIndex;
+    MString setName = "a3ob_";
+    setName += componentName;
+    setFn.setName(setName, false, &status);
+    if (!status) return status;
+    return setStringAttribute(modifier, set, "a3obSelectionName", "a3sn", componentName);
 }
 
 MString normalizeDayzPath(const MString& value)
@@ -1101,12 +1310,12 @@ MStatus SetMassCommand::doIt(const MArgList& args)
 
     MArgDatabase argData(syntax(), args);
     if (argData.isFlagSet("-clear") || argData.isFlagSet("-c")) {
-        MStatus status = setBoolAttribute(transform, "a3obHasMass", "a3mass", false);
+        MStatus status = setBoolAttribute(m_modifier, transform, "a3obHasMass", "a3mass", false);
         if (!status) return status;
-        status = setStringAttribute(transform, "a3obMassValues", "a3mv", "");
+        status = setStringAttribute(m_modifier, transform, "a3obMassValues", "a3mv", "");
         if (!status) return status;
         MGlobal::displayInfo("a3obSetMass: cleared mass values");
-        return MS::kSuccess;
+        return m_modifier.doIt();
     }
 
     double value = 1.0;
@@ -1116,13 +1325,13 @@ MStatus SetMassCommand::doIt(const MArgList& args)
         argData.getFlagArgument("-v", 0, value);
     }
     if (argData.isFlagSet("-selectedComponents") || argData.isFlagSet("-sc")) {
-        MStatus status = setSelectedMassValues(transform, value);
+        MStatus status = setSelectedMassValues(m_modifier, transform, value);
         if (!status) {
             MGlobal::displayError("a3obSetMass: select LOD mesh vertex components");
             return MS::kFailure;
         }
         MGlobal::displayInfo("a3obSetMass: set selected vertex mass values");
-        return MS::kSuccess;
+        return m_modifier.doIt();
     }
 
     const int count = vertexCountForLOD(transform);
@@ -1131,12 +1340,12 @@ MStatus SetMassCommand::doIt(const MArgList& args)
         return MS::kFailure;
     }
 
-    MStatus status = setBoolAttribute(transform, "a3obHasMass", "a3mass", true);
+    MStatus status = setBoolAttribute(m_modifier, transform, "a3obHasMass", "a3mass", true);
     if (!status) return status;
-    status = setStringAttribute(transform, "a3obMassValues", "a3mv", repeatedMassValues(count, value));
+    status = setStringAttribute(m_modifier, transform, "a3obMassValues", "a3mv", repeatedMassValues(count, value));
     if (!status) return status;
     MGlobal::displayInfo(MString("a3obSetMass: set mass values count=") + count);
-    return MS::kSuccess;
+    return m_modifier.doIt();
 }
 
 void* SetMaterialCommand::creator()
@@ -1180,7 +1389,8 @@ MStatus SetMaterialCommand::doIt(const MArgList& args)
     if (!status) return status;
     MFnDependencyNode shadingGroupDep(shadingGroup, &status);
     if (!status) return status;
-    status = MGlobal::executeCommand(MString("sets -e -forceElement ") + shadingGroupDep.name(), false, false);
+
+    status = MGlobal::executeCommand(MString("sets -e -forceElement ") + shadingGroupDep.name(), false, true);
     if (!status) return status;
     MGlobal::displayInfo("a3obSetMaterial: assigned material metadata");
     return MS::kSuccess;
@@ -1230,7 +1440,7 @@ MStatus SetFlagCommand::doIt(const MArgList& args)
         return MS::kFailure;
     }
 
-    MStatus status = createMetadataSet(name, component.asChar(), value);
+    MStatus status = createMetadataSet(m_modifier, name, component.asChar(), value);
     if (!status) {
         MGlobal::displayError("a3obSetFlag: select mesh vertex or face components");
         return MS::kFailure;
@@ -1264,7 +1474,7 @@ MStatus FindComponentsCommand::doIt(const MArgList&)
         std::string targetName = dagNodeName(target.lod);
         if (targetName.empty()) targetName = target.meshPath.fullPathName().asChar();
         if (!cleanedTargets.count(targetName)) {
-            deleteExistingComponentSets(target.lod, target.meshPath);
+            deleteExistingComponentSets(m_modifier, target.lod, target.meshPath);
             cleanedTargets.insert(targetName);
         }
 
@@ -1277,7 +1487,7 @@ MStatus FindComponentsCommand::doIt(const MArgList&)
                 ++skipped;
                 continue;
             }
-            status = createComponentSet(target.meshPath, createdForTarget + 1, island.vertices);
+            status = createComponentSet(m_modifier, target.meshPath, createdForTarget + 1, island.vertices);
             if (!status) return status;
             ++createdForTarget;
             ++createdTotal;
@@ -1293,7 +1503,7 @@ MStatus FindComponentsCommand::doIt(const MArgList&)
     } else {
         MGlobal::displayInfo(MString("a3obFindComponents: created components=") + createdTotal);
     }
-    return MS::kSuccess;
+    return m_modifier.doIt();
 }
 
 void* CreateLODCommand::creator()
@@ -1336,15 +1546,20 @@ MStatus CreateLODCommand::doIt(const MArgList& args)
     MStatus status;
     MObject transform = selectedTransformOrNull();
     if (transform.isNull()) {
-        MFnTransform transformFn;
-        transform = transformFn.create(MObject::kNullObj, &status);
+        transform = m_modifier.createNode("transform", MObject::kNullObj, &status);
         if (!status) return status;
+        MFnTransform transformFn(transform);
         transformFn.setName(name.length() > 0 ? name : "a3ob_LOD#", false, &status);
+        if (!status) return status;
+        status = m_modifier.doIt();
         if (!status) return status;
     }
 
-    status = setLODAttributes(transform, lodType, resolution);
+    status = setLODAttributes(m_modifier, transform, lodType, resolution);
     if (!status) return status;
+    status = m_modifier.doIt();
+    if (!status) return status;
+
     MFnDependencyNode dep(transform, &status);
     if (status) {
         setResult(dep.name());
@@ -1388,6 +1603,31 @@ MStatus updateProxySelectionSet(MObject set, const MString& path, int index)
     return status;
 }
 
+MStatus updateProxySelectionSet(MDGModifier& modifier, MObject set, const MString& path, int index)
+{
+    const MString selectionName = proxySelectionName(path, index);
+    MStatus status = setStringAttribute(modifier, set, "a3obSelectionName", "a3sn", selectionName);
+    if (!status) return status;
+    status = setStringAttribute(modifier, set, "a3obIsProxySelection", "a3ips", "1");
+    if (!status) return status;
+    status = setBoolAttribute(modifier, set, "a3obTechnicalSet", "a3ts", true);
+    if (!status) return status;
+    MFnDependencyNode dep(set, &status);
+    if (!status) return status;
+    MPlug plug = dep.findPlug("hiddenInOutliner", true, &status);
+    if (status) {
+        modifier.newPlugValueBool(plug, true);
+    }
+    MString setName = "a3ob_";
+    setName += selectionName;
+    setName.substitute(":", "_");
+    setName.substitute("/", "_");
+    setName.substitute("\\", "_");
+    setName.substitute(".", "_");
+    dep.setName(setName, false, &status);
+    return modifier.doIt();
+}
+
 MStatus updateProxyPlaceholder(MObject proxy, const MString& path, int index)
 {
     const MString selectionName = proxySelectionName(path, index);
@@ -1398,6 +1638,20 @@ MStatus updateProxyPlaceholder(MObject proxy, const MString& path, int index)
     status = setIntAttribute(proxy, "a3obProxyIndex", "a3pi", index);
     if (!status) return status;
     return setStringAttribute(proxy, "a3obProxySelection", "a3ps", selectionName);
+}
+
+MStatus updateProxyPlaceholder(MDGModifier& modifier, MObject proxy, const MString& path, int index)
+{
+    const MString selectionName = proxySelectionName(path, index);
+    MStatus status = setBoolAttribute(modifier, proxy, "a3obIsProxy", "a3px", true);
+    if (!status) return status;
+    status = setStringAttribute(modifier, proxy, "a3obProxyPath", "a3pp", path);
+    if (!status) return status;
+    status = setIntAttribute(modifier, proxy, "a3obProxyIndex", "a3pi", index);
+    if (!status) return status;
+    status = setStringAttribute(modifier, proxy, "a3obProxySelection", "a3ps", selectionName);
+    if (!status) return status;
+    return modifier.doIt();
 }
 
 void* UpdateProxyCommand::creator()
@@ -1439,10 +1693,10 @@ MStatus UpdateProxyCommand::doIt(const MArgList& args)
         return MS::kFailure;
     }
     if (boolPlugValue(node, "a3obIsProxy")) {
-        return updateProxyPlaceholder(node, path, index);
+        return updateProxyPlaceholder(m_modifier, node, path, index);
     }
     if (boolPlugValue(node, "a3obIsProxySelection") || node.hasFn(MFn::kSet)) {
-        return updateProxySelectionSet(node, path, index);
+        return updateProxySelectionSet(m_modifier, node, path, index);
     }
     MGlobal::displayError("a3obUpdateProxy: selected node is not a proxy placeholder or proxy selection set");
     return MS::kFailure;
@@ -1522,7 +1776,9 @@ MStatus NamedPropertyCommand::doIt(const MArgList& args)
         const std::string keyString = key.asChar();
         properties.erase(std::remove_if(properties.begin(), properties.end(), [&](const auto& item) { return item.first == keyString; }), properties.end());
         properties.emplace_back(keyString, value.asChar());
-        const MStatus status = setStringAttribute(lod, "a3obProperties", "a3prop", propertiesString(properties));
+        MStatus status = setStringAttribute(m_modifier, lod, "a3obProperties", "a3prop", propertiesString(properties));
+        if (!status) return status;
+        status = m_modifier.doIt();
         if (!status) return status;
         return namedPropertyResult(lod);
     }
@@ -1536,7 +1792,9 @@ MStatus NamedPropertyCommand::doIt(const MArgList& args)
         }
         const std::string keyString = key.asChar();
         properties.erase(std::remove_if(properties.begin(), properties.end(), [&](const auto& item) { return item.first == keyString; }), properties.end());
-        const MStatus status = setStringAttribute(lod, "a3obProperties", "a3prop", propertiesString(properties));
+        MStatus status = setStringAttribute(m_modifier, lod, "a3obProperties", "a3prop", propertiesString(properties));
+        if (!status) return status;
+        status = m_modifier.doIt();
         if (!status) return status;
         return namedPropertyResult(lod);
     }
@@ -1577,21 +1835,23 @@ MStatus ProxyCommand::doIt(const MArgList& args)
 
     MObject proxy = update ? proxyPlaceholder(lod, selectionNameString) : MObject::kNullObj;
     MStatus status;
-    MFnTransform proxyFn;
     if (proxy.isNull()) {
-        proxy = proxyFn.create(lod, &status);
+        proxy = m_modifier.createNode("transform", lod, &status);
         if (!status) return status;
+        MFnTransform proxyFn(proxy);
         proxyFn.setName("a3ob_proxy#", false, &status);
+        if (!status) return status;
+        status = m_modifier.doIt();
         if (!status) return status;
     }
 
-    status = setBoolAttribute(proxy, "a3obIsProxy", "a3px", true);
+    status = setBoolAttribute(m_modifier, proxy, "a3obIsProxy", "a3px", true);
     if (!status) return status;
-    status = setStringAttribute(proxy, "a3obProxyPath", "a3pp", proxyPath);
+    status = setStringAttribute(m_modifier, proxy, "a3obProxyPath", "a3pp", proxyPath);
     if (!status) return status;
-    status = setIntAttribute(proxy, "a3obProxyIndex", "a3pi", proxyIndex);
+    status = setIntAttribute(m_modifier, proxy, "a3obProxyIndex", "a3pi", proxyIndex);
     if (!status) return status;
-    status = setStringAttribute(proxy, "a3obProxySelection", "a3ps", selectionName);
+    status = setStringAttribute(m_modifier, proxy, "a3obProxySelection", "a3ps", selectionName);
     if (!status) return status;
 
     if (fromSelection && !proxySelectionSetExists(selectionNameString)) {
@@ -1600,5 +1860,85 @@ MStatus ProxyCommand::doIt(const MArgList& args)
     }
 
     MGlobal::displayInfo(MString("a3obProxy: created ") + selectionName);
-    return MS::kSuccess;
+    return m_modifier.doIt();
+}
+
+MStatus SetMassCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus SetMassCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus SetMaterialCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus SetMaterialCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus SetFlagCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus SetFlagCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus FindComponentsCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus FindComponentsCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus CreateLODCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus CreateLODCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus ProxyCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus ProxyCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus NamedPropertyCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus NamedPropertyCommand::redoIt()
+{
+    return m_modifier.doIt();
+}
+
+MStatus UpdateProxyCommand::undoIt()
+{
+    return m_modifier.undoIt();
+}
+
+MStatus UpdateProxyCommand::redoIt()
+{
+    return m_modifier.doIt();
 }

@@ -3,9 +3,9 @@ from maya import mel
 
 
 RESOLUTION_PRESETS = {
-    "CUSTOM": (0.75, 0.50, 0.25, 0.10),
-    "TRIS": (0.80, 0.60, 0.40, 0.20),
-    "QUADS": (0.50, 0.30, 0.20, 0.10),
+    "CUSTOM": (0.75, 0.55, 0.38, 0.22),
+    "TRIS": (0.82, 0.65, 0.48, 0.30),
+    "QUADS": (0.70, 0.50, 0.33, 0.20),
 }
 
 DEFAULT_SETTINGS = {
@@ -278,13 +278,21 @@ def _generate_resolution_lods(source, settings, visuals):
         resolution = start_lod + index
         name = "{0}{1}".format(settings["lod_prefix"], resolution)
 
-        duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
-        _triangulate(duplicate)
+        if index == 0:
+            duplicate = cmds.rename(source, name)
+            duplicate = (cmds.ls(duplicate, long=True) or [duplicate])[0]
+        else:
+            duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
         if ratio < 1.0:
+            try:
+                cmds.polyMergeVertex(duplicate, d=0.0001, constructionHistory=False)
+            except RuntimeError:
+                pass
             before, after, reduced_ok = _reduce_mesh(duplicate, ratio)
             if not reduced_ok:
                 cmds.delete(duplicate)
                 raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
+        _triangulate(duplicate)
         _apply_weighted_normals(duplicate)
         _mark_lod(duplicate, 0, resolution)
         _set_named_properties(duplicate, (("lodnoshadow", "1"), ("autocenter", "0")))
