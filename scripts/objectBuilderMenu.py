@@ -932,9 +932,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.material_texture = None
         self.material_rvmat = None
         self.material_items = {}
-        self.selection_lod_filter = None
-        self.selection_type_filter = None
-        self.selection_search = None
         self.selection_list = None
         self.selection_details = None
         self.selection_mesh_context = None
@@ -1231,24 +1228,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        layout.addWidget(_hint("Object Builder selections, proxies and face / vertex flag sets."))
-
-        filters = qt_widgets.QHBoxLayout()
-        self.selection_lod_filter = qt_widgets.QComboBox()
-        self.selection_type_filter = qt_widgets.QComboBox()
-        self.selection_type_filter.addItems(["All Types", "Selection", "Proxy", "Vertex Flag", "Face Flag"])
-        self.selection_search = qt_widgets.QLineEdit()
-        self.selection_search.setPlaceholderText("Search LOD, type, name, or Maya set")
-        self.selection_lod_filter.currentIndexChanged.connect(lambda *_: self.refresh_selection_manager(False))
-        self.selection_type_filter.currentIndexChanged.connect(lambda *_: self.refresh_selection_manager(False))
-        self.selection_search.textChanged.connect(lambda *_: self.refresh_selection_manager(False))
-        filters.addWidget(self.selection_lod_filter)
-        filters.addWidget(self.selection_type_filter)
-        filters.addWidget(self.selection_search)
-        layout.addLayout(filters)
-
-        self.selection_mesh_context = qt_widgets.QLabel("")
-        self.selection_mesh_context.setWordWrap(False)
+        # Context line: which LOD's selections are shown (or a prompt when none is active).
+        self.selection_mesh_context = _hint("Select a DayZ LOD to see its selections.")
         layout.addWidget(self.selection_mesh_context)
 
         self.selection_list = qt_widgets.QListWidget()
@@ -1504,54 +1485,35 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         if self.selection_details is not None:
             self.selection_details.setText(message)
 
-    def refresh_selection_lods(self, items):
-        if self.selection_lod_filter is None:
-            return
-        current = self.selection_lod_filter.currentText()
-        self.selection_lod_filter.blockSignals(True)
-        self.selection_lod_filter.clear()
-        self.selection_lod_filter.addItem("All LODs")
-        lods = sorted({item["lod"] for item in items})
-        self.selection_lod_filter.addItems(lods)
-        if current in ["All LODs", *lods]:
-            self.selection_lod_filter.setCurrentText(current)
-        self.selection_lod_filter.blockSignals(False)
-
     def refresh_selection_manager(self, rebuild_lods=True):
         if self.selection_list is None:
             return
-        items = _selection_sets()
         selected_lod = _selected_lod_transform()
-        if selected_lod:
-            selected_lod_label = _lod_name_from_transform(selected_lod)
-            items = [i for i in items if i["lod"] == selected_lod_label]
-            if self.selection_mesh_context is not None:
-                self.selection_mesh_context.setText(f"Mesh: {selected_lod_label}")
-        else:
-            if self.selection_mesh_context is not None:
-                self.selection_mesh_context.setText("")
-        if rebuild_lods:
-            self.refresh_selection_lods(items)
-        lod_filter = self.selection_lod_filter.currentText() if self.selection_lod_filter is not None else "All LODs"
-        type_filter = self.selection_type_filter.currentText() if self.selection_type_filter is not None else "All Types"
-        search = self.selection_search.text().lower() if self.selection_search is not None else ""
         prev_node = self.selected_selection_set_node()
         self.selection_list.blockSignals(True)
         self.selection_list.clear()
+
+        if not selected_lod:
+            # No DayZ LOD in the current selection — show nothing but a prompt.
+            self.selection_list.blockSignals(False)
+            if self.selection_mesh_context is not None:
+                self.selection_mesh_context.setText("Select a DayZ LOD to see its selections.")
+            self.set_selection_details("Select a row to see details.")
+            return
+
+        lod_label = _lod_name_from_transform(selected_lod)
+        if self.selection_mesh_context is not None:
+            self.selection_mesh_context.setText(f"Selections on {lod_label}")
+
         restore_row = -1
-        for item in items:
-            if lod_filter != "All LODs" and item["lod"] != lod_filter:
-                continue
-            if type_filter != "All Types" and item["kind"] != type_filter:
-                continue
-            searchable = f"{item['lod']} {item['kind']} {item['name']} {item['node']}".lower()
-            if search and search not in searchable:
+        for item in _selection_sets():
+            if item["lod"] != lod_label:
                 continue
             list_item = qt_widgets.QListWidgetItem(item["name"])
             icon = _qt_icon(_SELECTION_KIND_ICONS.get(item["kind"], ""))
             if icon is not None and not icon.isNull():
                 list_item.setIcon(icon)
-            list_item.setToolTip(f"{item['kind']}  ·  LOD {item['lod']}\nMaya set: {item['node']}")
+            list_item.setToolTip(f"{item['kind']}  ·  Maya set: {item['node']}")
             list_item.setData(qt_core.Qt.UserRole, item)
             self.selection_list.addItem(list_item)
             if prev_node is not None and item["node"] == prev_node:
