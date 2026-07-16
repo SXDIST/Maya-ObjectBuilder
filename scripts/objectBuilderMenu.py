@@ -1218,6 +1218,25 @@ def _qt_button(label, callback, tooltip="", icon=""):
     return button
 
 
+def _icon_button(icon_name, fallback_text, tooltip):
+    """Small square button showing a Maya icon, falling back to text if absent."""
+    button = qt_widgets.QPushButton()
+    icon = _qt_icon(icon_name)
+    if icon is not None and not icon.isNull():
+        button.setIcon(icon)
+    else:
+        button.setText(fallback_text)
+    if tooltip:
+        button.setToolTip(tooltip)
+    button.setMaximumWidth(30)
+    return button
+
+
+def _picker_field(container):
+    """Return the QLineEdit stored on a path picker built by _path_picker."""
+    return getattr(container, "_line_edit", None) if container is not None else None
+
+
 def _panel_optionvar_key(title):
     slug = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
     return "MayaObjectBuilder_panel_%s_expanded" % slug
@@ -1474,16 +1493,16 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         container = qt_widgets.QWidget()
         layout = qt_widgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
         field = qt_widgets.QLineEdit()
-        browse = qt_widgets.QPushButton("...")
-        clear = qt_widgets.QPushButton("X")
-        browse.setToolTip(caption)
-        clear.setToolTip(f"Clear {label}")
+        browse = _icon_button(":/fileOpen.png", "...", caption)
+        clear = _icon_button(":/deleteActive.png", "X", f"Clear {label}")
         browse.clicked.connect(lambda: self._browse_qt_path(field, caption, mode, file_filter))
         clear.clicked.connect(field.clear)
         layout.addWidget(field, 1)
         layout.addWidget(browse)
         layout.addWidget(clear)
+        container._line_edit = field
         return container
 
     def _browse_qt_path(self, field, caption, mode, file_filter):
@@ -1601,8 +1620,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         form.addRow("Material", self.material_rvmat)
         layout.addLayout(form)
 
-        texture_field = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
-        rvmat_field = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
+        texture_field = _picker_field(self.material_texture)
+        rvmat_field = _picker_field(self.material_rvmat)
         if texture_field is not None:
             texture_field.textChanged.connect(lambda *_: self._on_material_path_edited())
         if rvmat_field is not None:
@@ -1700,11 +1719,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         return self.lod_resolution.value() if self.lod_resolution is not None else 1
 
     def model_cfg_import_path(self):
-        field = self.model_cfg_import.findChild(qt_widgets.QLineEdit) if self.model_cfg_import is not None else None
+        field = _picker_field(self.model_cfg_import)
         return field.text().strip() if field is not None else ""
 
     def model_cfg_export_path(self):
-        field = self.model_cfg_export.findChild(qt_widgets.QLineEdit) if self.model_cfg_export is not None else None
+        field = _picker_field(self.model_cfg_export)
         return field.text().strip() if field is not None else ""
 
     def mass_value(self):
@@ -1723,7 +1742,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         return self.flag_name_field.text().strip() if self.flag_name_field is not None else "a3ob_flag"
 
     def proxy_path(self):
-        field = self.proxy_path_field.findChild(qt_widgets.QLineEdit) if self.proxy_path_field is not None else None
+        field = _picker_field(self.proxy_path_field)
         return field.text().strip() if field is not None else ""
 
     def proxy_index(self):
@@ -1792,11 +1811,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.set_named_property_fields(name, value)
 
     def material_texture_path(self):
-        field = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
+        field = _picker_field(self.material_texture)
         return _normalize_dayz_path(field.text()) if field is not None else ""
 
     def material_rvmat_path(self):
-        field = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
+        field = _picker_field(self.material_rvmat)
         return _normalize_dayz_path(field.text()) if field is not None else ""
 
     def selected_material_metadata_item(self):
@@ -1816,8 +1835,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         item = self.selected_material_metadata_item()
         if not item:
             return
-        texture = self.material_texture.findChild(qt_widgets.QLineEdit) if self.material_texture is not None else None
-        rvmat = self.material_rvmat.findChild(qt_widgets.QLineEdit) if self.material_rvmat is not None else None
+        texture = _picker_field(self.material_texture)
+        rvmat = _picker_field(self.material_rvmat)
         if texture is not None:
             texture.blockSignals(True)
             try:
