@@ -41,46 +41,6 @@ MENU_NAME = "MayaObjectBuilderMenu"
 PLUGIN_NAME = "MayaObjectBuilder"
 TRANSLATOR_NAME = "Arma P3D"
 DOCK_NAME = "MayaObjectBuilderWorkspaceControl"
-LOD_TYPE_MENU = "MayaObjectBuilderLodTypeMenu"
-LOD_RESOLUTION_FIELD = "MayaObjectBuilderLodResolutionField"
-LOD_PREVIEW_TEXT = "MayaObjectBuilderLodPreviewText"
-LOD_CONTEXT_TEXT = "MayaObjectBuilderLodContextText"
-AUTO_LOD_PRESET_MENU = "MayaObjectBuilderAutoLodPreset"
-AUTO_LOD_FIRST_MENU = "MayaObjectBuilderAutoLodFirst"
-AUTO_LOD_RESOLUTION_CHECK = "MayaObjectBuilderAutoLodResolution"
-AUTO_LOD_GEOMETRY_CHECK = "MayaObjectBuilderAutoLodGeometry"
-AUTO_LOD_MEMORY_CHECK = "MayaObjectBuilderAutoLodMemory"
-AUTO_LOD_FIRE_CHECK = "MayaObjectBuilderAutoLodFire"
-AUTO_LOD_VIEW_CHECK = "MayaObjectBuilderAutoLodView"
-AUTO_LOD_GEOMETRY_TYPE_MENU = "MayaObjectBuilderAutoLodGeometryType"
-AUTO_LOD_FIRE_QUALITY_FIELD = "MayaObjectBuilderAutoLodFireQuality"
-SELECTION_MANAGER_LIST = "MayaObjectBuilderSelectionList"
-SELECTION_MANAGER_LOD_FILTER = "MayaObjectBuilderSelectionLodFilter"
-SELECTION_MANAGER_TYPE_FILTER = "MayaObjectBuilderSelectionTypeFilter"
-SELECTION_MANAGER_SEARCH = "MayaObjectBuilderSelectionSearch"
-SELECTION_MANAGER_DETAILS = "MayaObjectBuilderSelectionDetails"
-NAMED_PROPERTIES_LOD = "MayaObjectBuilderNamedPropertiesLod"
-NAMED_PROPERTIES_LIST = "MayaObjectBuilderNamedPropertiesList"
-NAMED_PROPERTIES_NAME = "MayaObjectBuilderNamedPropertiesName"
-NAMED_PROPERTIES_VALUE = "MayaObjectBuilderNamedPropertiesValue"
-NAMED_PROPERTIES_COMMON = "MayaObjectBuilderNamedPropertiesCommon"
-MATERIAL_METADATA_LIST = "MayaObjectBuilderMaterialMetadataList"
-MATERIAL_METADATA_TEXTURE = "MayaObjectBuilderMaterialTexture"
-MATERIAL_METADATA_MATERIAL = "MayaObjectBuilderMaterialPath"
-MASS_VALUE_FIELD = "MayaObjectBuilderMassValue"
-MASS_MODE_MENU = "MayaObjectBuilderMassMode"
-FLAG_COMPONENT_MENU = "MayaObjectBuilderFlagComponent"
-FLAG_VALUE_FIELD = "MayaObjectBuilderFlagValue"
-FLAG_NAME_FIELD = "MayaObjectBuilderFlagName"
-PROXY_PATH_FIELD = "MayaObjectBuilderProxyPath"
-PROXY_INDEX_FIELD = "MayaObjectBuilderProxyIndex"
-PROXY_FROM_SELECTION_CHECK = "MayaObjectBuilderProxyFromSelection"
-MODEL_CFG_IMPORT_FIELD = "MayaObjectBuilderModelCfgImportPath"
-MODEL_CFG_EXPORT_FIELD = "MayaObjectBuilderModelCfgExportPath"
-_selection_manager_items = {}
-_named_property_lods = {}
-_named_property_items = {}
-_material_metadata_items = {}
 _ui_script_jobs = {}  # event_name -> scriptJob id
 _qt_dock_widget = None
 
@@ -380,10 +340,7 @@ def _selected_lod_definition():
     dock = _active_qt_dock()
     if dock is not None:
         return dock.selected_lod_definition()
-    if not cmds.optionMenu(LOD_TYPE_MENU, exists=True):
-        return LOD_DEFINITIONS[0]
-    label = cmds.optionMenu(LOD_TYPE_MENU, query=True, value=True)
-    return LOD_DEFINITIONS_BY_LABEL.get(label, LOD_DEFINITIONS[0])
+    return LOD_DEFINITIONS[0]
 
 
 def _lod_resolution_value(definition):
@@ -392,8 +349,6 @@ def _lod_resolution_value(definition):
     dock = _active_qt_dock()
     if dock is not None:
         return dock.lod_resolution_value()
-    if cmds.intField(LOD_RESOLUTION_FIELD, exists=True):
-        return cmds.intField(LOD_RESOLUTION_FIELD, query=True, value=True)
     return definition["default_resolution"]
 
 
@@ -409,20 +364,6 @@ def _refresh_lod_assignment_ui(*_):
     dock = _active_qt_dock()
     if dock is not None:
         dock.refresh_lod_assignment()
-        return
-    if not cmds.optionMenu(LOD_TYPE_MENU, exists=True):
-        return
-    definition = _selected_lod_definition()
-    if cmds.intField(LOD_RESOLUTION_FIELD, exists=True):
-        cmds.intField(LOD_RESOLUTION_FIELD, edit=True, enable=definition["has_resolution"])
-        if not definition["has_resolution"]:
-            cmds.intField(LOD_RESOLUTION_FIELD, edit=True, value=definition["default_resolution"])
-    selected_lod = _selected_lod_transform()
-    target = selected_lod or "No LOD selected; Create Empty LOD will create a new transform."
-    if cmds.text(LOD_CONTEXT_TEXT, exists=True):
-        cmds.text(LOD_CONTEXT_TEXT, edit=True, label=f"Target: {target}")
-    if cmds.text(LOD_PREVIEW_TEXT, exists=True):
-        cmds.text(LOD_PREVIEW_TEXT, edit=True, label=f"Will assign: {_lod_assignment_label(definition)}")
 
 
 def _lod_node_name(definition, resolution):
@@ -479,25 +420,12 @@ def _remove_lod_from_selection():
     _refresh_context_ui()
 
 
-def _auto_lod_settings_from_legacy_ui():
-    return {
-        "preset": _option_menu_value(AUTO_LOD_PRESET_MENU).upper() or "QUADS",
-        "first_lod": _option_menu_value(AUTO_LOD_FIRST_MENU) or "LOD1",
-        "resolution": cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, exists=True) else True,
-        "geometry": cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, exists=True) else True,
-        "memory": cmds.checkBox(AUTO_LOD_MEMORY_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_MEMORY_CHECK, exists=True) else False,
-        "fire_geometry": cmds.checkBox(AUTO_LOD_FIRE_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_FIRE_CHECK, exists=True) else False,
-        "view_geometry": cmds.checkBox(AUTO_LOD_VIEW_CHECK, query=True, value=True) if cmds.checkBox(AUTO_LOD_VIEW_CHECK, exists=True) else False,
-        "geometry_type": (_option_menu_value(AUTO_LOD_GEOMETRY_TYPE_MENU) or "BOX").upper(),
-        "fire_quality": cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, query=True, value=True) if cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, exists=True) else 2,
-    }
-
-
 def generate_auto_lods_from_ui():
     load_plugin()
     dock = _active_qt_dock()
-    settings = dock.auto_lod_settings() if dock is not None else _auto_lod_settings_from_legacy_ui()
-    generated = _auto_lod_module().generate_auto_lods(settings)
+    if dock is None:
+        return
+    generated = _auto_lod_module().generate_auto_lods(dock.auto_lod_settings())
     if generated:
         _refresh_context_ui()
 
@@ -537,12 +465,10 @@ def set_flag():
 def apply_mass_from_ui():
     load_plugin()
     dock = _active_qt_dock()
-    if dock is not None:
-        value = dock.mass_value()
-        mode = dock.mass_mode()
-    else:
-        value = cmds.floatField(MASS_VALUE_FIELD, query=True, value=True) if cmds.floatField(MASS_VALUE_FIELD, exists=True) else 1.0
-        mode = cmds.optionMenu(MASS_MODE_MENU, query=True, value=True) if cmds.optionMenu(MASS_MODE_MENU, exists=True) else "All vertices"
+    if dock is None:
+        return
+    value = dock.mass_value()
+    mode = dock.mass_mode()
     cmds.undoInfo(openChunk=True, chunkName="Set Mass")
     try:
         cmds.a3obSetMass(value=value, selectedComponents=(mode == "Selected vertices"))
@@ -562,14 +488,11 @@ def clear_mass_from_ui():
 def apply_flag_from_ui():
     load_plugin()
     dock = _active_qt_dock()
-    if dock is not None:
-        component_label = dock.flag_component()
-        value = dock.flag_value()
-        name = dock.flag_name()
-    else:
-        component_label = cmds.optionMenu(FLAG_COMPONENT_MENU, query=True, value=True) if cmds.optionMenu(FLAG_COMPONENT_MENU, exists=True) else "Face"
-        value = cmds.intField(FLAG_VALUE_FIELD, query=True, value=True) if cmds.intField(FLAG_VALUE_FIELD, exists=True) else 1
-        name = cmds.textField(FLAG_NAME_FIELD, query=True, text=True).strip() if cmds.textField(FLAG_NAME_FIELD, exists=True) else "a3ob_flag"
+    if dock is None:
+        return
+    component_label = dock.flag_component()
+    value = dock.flag_value()
+    name = dock.flag_name()
     if not name:
         cmds.warning("Enter a flag set name")
         return
@@ -583,14 +506,11 @@ def apply_flag_from_ui():
 def create_proxy_from_ui():
     load_plugin()
     dock = _active_qt_dock()
-    if dock is not None:
-        path = dock.proxy_path()
-        index = dock.proxy_index()
-        from_selection = dock.proxy_from_selection()
-    else:
-        path = cmds.textField(PROXY_PATH_FIELD, query=True, text=True).strip() if cmds.textField(PROXY_PATH_FIELD, exists=True) else ""
-        index = cmds.intField(PROXY_INDEX_FIELD, query=True, value=True) if cmds.intField(PROXY_INDEX_FIELD, exists=True) else 1
-        from_selection = cmds.checkBox(PROXY_FROM_SELECTION_CHECK, query=True, value=True) if cmds.checkBox(PROXY_FROM_SELECTION_CHECK, exists=True) else True
+    if dock is None:
+        return
+    path = dock.proxy_path()
+    index = dock.proxy_index()
+    from_selection = dock.proxy_from_selection()
     if not path:
         cmds.warning("Enter a proxy path")
         return
@@ -604,16 +524,12 @@ def create_proxy_from_ui():
 def import_model_cfg_from_ui():
     dock = _active_qt_dock()
     path = dock.model_cfg_import_path() if dock is not None else ""
-    if not path:
-        path = cmds.textField(MODEL_CFG_IMPORT_FIELD, query=True, text=True).strip() if cmds.textField(MODEL_CFG_IMPORT_FIELD, exists=True) else ""
     import_model_cfg(path or None)
 
 
 def export_model_cfg_from_ui():
     dock = _active_qt_dock()
     path = dock.model_cfg_export_path() if dock is not None else ""
-    if not path:
-        path = cmds.textField(MODEL_CFG_EXPORT_FIELD, query=True, text=True).strip() if cmds.textField(MODEL_CFG_EXPORT_FIELD, exists=True) else ""
     export_model_cfg(path or None)
 
 
@@ -750,9 +666,6 @@ def _clear_selection_manager_state(message="Select a row to see details."):
     dock = _active_qt_dock()
     if dock is not None:
         dock.set_selection_details(message)
-        return
-    if cmds.text(SELECTION_MANAGER_DETAILS, exists=True):
-        cmds.text(SELECTION_MANAGER_DETAILS, edit=True, label=message)
 
 
 def _is_object_builder_set(node):
@@ -803,18 +716,7 @@ def _selected_selection_set():
     dock = _active_qt_dock()
     if dock is not None:
         return dock.selected_selection_set_node()
-    if not cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
-        return None
-    selected = cmds.textScrollList(SELECTION_MANAGER_LIST, query=True, selectItem=True) or []
-    if not selected:
-        return None
-    item = _selection_manager_items.get(selected[0])
-    set_node = item["node"] if item else None
-    if not _node_exists(set_node):
-        if selected[0] in _selection_manager_items:
-            del _selection_manager_items[selected[0]]
-        return None
-    return set_node
+    return None
 
 
 def _selection_set_details(set_node):
@@ -834,61 +736,12 @@ def _update_selection_details():
     dock = _active_qt_dock()
     if dock is not None:
         dock.set_selection_details(details)
-        return
-    if cmds.text(SELECTION_MANAGER_DETAILS, exists=True):
-        cmds.text(SELECTION_MANAGER_DETAILS, edit=True, label=details)
-
-
-def _refresh_lod_filter(items):
-    if not cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, exists=True):
-        return
-    current = cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, query=True, value=True)
-    cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, edit=True, deleteAllItems=True)
-    cmds.menuItem(label="All LODs", parent=SELECTION_MANAGER_LOD_FILTER)
-    lods = sorted({item["lod"] for item in items})
-    for lod in lods:
-        cmds.menuItem(label=lod, parent=SELECTION_MANAGER_LOD_FILTER)
-    if current in ["All LODs", *lods]:
-        cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, edit=True, value=current)
 
 
 def _refresh_selection_manager(rebuild_lods=True):
-    global _selection_manager_items
     dock = _active_qt_dock()
     if dock is not None:
         dock.refresh_selection_manager(rebuild_lods)
-        return
-    if not cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
-        return
-    items = _selection_sets()
-    selected_lod = _selected_lod_transform()
-    if selected_lod:
-        items = [i for i in items if i["lod"] == _lod_name_from_transform(selected_lod)]
-    if rebuild_lods:
-        _refresh_lod_filter(items)
-    lod_filter = cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, query=True, value=True) if cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, exists=True) else "All LODs"
-    type_filter = cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, query=True, value=True) if cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, exists=True) else "All Types"
-    search = (cmds.textField(SELECTION_MANAGER_SEARCH, query=True, text=True) if cmds.textField(SELECTION_MANAGER_SEARCH, exists=True) else "").lower()
-    selected = cmds.textScrollList(SELECTION_MANAGER_LIST, query=True, selectItem=True) or []
-    selected_label = selected[0] if selected else ""
-    cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, removeAll=True)
-    _selection_manager_items = {}
-    for item in items:
-        if lod_filter != "All LODs" and item["lod"] != lod_filter:
-            continue
-        if type_filter != "All Types" and item["kind"] != type_filter:
-            continue
-        searchable = f"{item['lod']} {item['kind']} {item['name']} {item['node']}".lower()
-        if search and search not in searchable:
-            continue
-        label = f"{item['lod']} | {item['kind']} | {item['name']} | {item['node']}"
-        _selection_manager_items[label] = item
-        cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, append=label)
-    if selected_label in _selection_manager_items:
-        cmds.textScrollList(SELECTION_MANAGER_LIST, edit=True, selectItem=selected_label)
-    else:
-        _clear_selection_manager_state()
-    _update_selection_details()
 
 
 def _select_set_members():
@@ -1221,15 +1074,6 @@ def _join_named_properties(properties):
     return ";".join(f"{name}={value}" for name, value in properties if name)
 
 
-def _option_menu_value(control):
-    if not cmds.optionMenu(control, exists=True):
-        return ""
-    items = cmds.optionMenu(control, query=True, itemListLong=True) or []
-    if not items:
-        return ""
-    return cmds.optionMenu(control, query=True, value=True)
-
-
 def _selected_named_property_lod():
     selected = _selected_lod_transform()
     if selected:
@@ -1237,75 +1081,13 @@ def _selected_named_property_lod():
     dock = _active_qt_dock()
     if dock is not None:
         return dock.selected_named_property_lod()
-    lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
-    if _node_exists(lod):
-        return lod
-    _refresh_named_property_lods()
-    lod = _named_property_lods.get(_option_menu_value(NAMED_PROPERTIES_LOD))
-    return lod if _node_exists(lod) else None
-
-
-def _refresh_named_property_lods():
-    global _named_property_lods
-    if not cmds.optionMenu(NAMED_PROPERTIES_LOD, exists=True):
-        return
-    current = _option_menu_value(NAMED_PROPERTIES_LOD)
-    cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, deleteAllItems=True)
-    _named_property_lods = {}
-    for lod in _lod_transforms():
-        label = _lod_label(lod)
-        _named_property_lods[label] = lod
-        cmds.menuItem(label=label, parent=NAMED_PROPERTIES_LOD)
-    labels = list(_named_property_lods)
-    if not labels:
-        cmds.menuItem(label="No Object Builder LODs", parent=NAMED_PROPERTIES_LOD, enable=False)
-    elif current in _named_property_lods:
-        cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=current)
-    else:
-        cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=labels[0])
+    return None
 
 
 def _refresh_named_properties(rebuild_lods=False):
-    global _named_property_items
     dock = _active_qt_dock()
     if dock is not None:
         dock.refresh_named_properties()
-        return
-    if rebuild_lods:
-        _refresh_named_property_lods()
-    if not cmds.textScrollList(NAMED_PROPERTIES_LIST, exists=True):
-        return
-    cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, removeAll=True)
-    _named_property_items = {}
-    lod = _selected_named_property_lod()
-    if not lod:
-        if cmds.textField(NAMED_PROPERTIES_NAME, exists=True):
-            cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text="")
-        if cmds.textField(NAMED_PROPERTIES_VALUE, exists=True):
-            cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text="")
-        return
-    for label, node in _named_property_lods.items():
-        if node == lod and _option_menu_value(NAMED_PROPERTIES_LOD) != label:
-            cmds.optionMenu(NAMED_PROPERTIES_LOD, edit=True, value=label)
-            break
-    raw = _safe_get_attr(lod, "a3obProperties", "") or ""
-    for name, value in _split_named_properties(raw):
-        label = f"{name} = {value}"
-        _named_property_items[label] = (name, value)
-        cmds.textScrollList(NAMED_PROPERTIES_LIST, edit=True, append=label)
-
-
-def _select_named_property():
-    dock = _active_qt_dock()
-    if dock is not None:
-        dock.select_named_property()
-        return
-    selected = cmds.textScrollList(NAMED_PROPERTIES_LIST, query=True, selectItem=True) or []
-    if not selected:
-        return
-    name, value = _named_property_items.get(selected[0], ("", ""))
-    cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text=name)
-    cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text=value)
 
 
 def _set_named_property_value(name, value):
@@ -1332,19 +1114,15 @@ def _set_named_property_value(name, value):
 
 def _commit_named_property_fields(*_):
     dock = _active_qt_dock()
-    if dock is not None:
-        name = dock.named_property_name()
-        value = dock.named_property_value()
-    else:
-        name = cmds.textField(NAMED_PROPERTIES_NAME, query=True, text=True).strip()
-        value = cmds.textField(NAMED_PROPERTIES_VALUE, query=True, text=True).strip()
-    _set_named_property_value(name, value)
+    if dock is None:
+        return
+    _set_named_property_value(dock.named_property_name(), dock.named_property_value())
 
 
 def _remove_named_property():
     lod = _selected_named_property_lod()
     dock = _active_qt_dock()
-    name = dock.named_property_name() if dock is not None else cmds.textField(NAMED_PROPERTIES_NAME, query=True, text=True).strip()
+    name = dock.named_property_name() if dock is not None else ""
     if not lod or not name:
         cmds.warning("Select a named property on a live LOD to remove")
         _refresh_named_properties(True)
@@ -1355,45 +1133,9 @@ def _remove_named_property():
         return
     properties = [(key, val) for key, val in _split_named_properties(_safe_get_attr(lod, "a3obProperties", "") or "") if key != name]
     cmds.setAttr(lod + ".a3obProperties", _join_named_properties(properties), type="string")
-    dock = _active_qt_dock()
     if dock is not None:
         dock.clear_named_property_fields()
-    else:
-        cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text="")
-        cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text="")
     _refresh_named_properties()
-
-
-def _apply_common_named_property(*_):
-    dock = _active_qt_dock()
-    selected = dock.named_property_preset() if dock is not None else _option_menu_value(NAMED_PROPERTIES_COMMON)
-    for name, value in COMMON_NAMED_PROPERTIES:
-        label = f"{name} = {value}"
-        if selected == label:
-            if dock is not None:
-                dock.set_named_property_fields(name, value)
-            else:
-                cmds.textField(NAMED_PROPERTIES_NAME, edit=True, text=name)
-                cmds.textField(NAMED_PROPERTIES_VALUE, edit=True, text=value)
-            _set_named_property_value(name, value)
-            return
-
-
-def _build_named_properties_ui():
-    _card("Named Properties", "Select a LOD, choose a preset or edit key/value pairs inline.")
-    _labeled_row("LOD", lambda: cmds.optionMenu(NAMED_PROPERTIES_LOD, changeCommand=lambda *_: _refresh_named_properties(False)))
-    _labeled_row("Preset", lambda: cmds.optionMenu(NAMED_PROPERTIES_COMMON, changeCommand=_apply_common_named_property))
-    for name, value in COMMON_NAMED_PROPERTIES:
-        cmds.menuItem(label=f"{name} = {value}", parent=NAMED_PROPERTIES_COMMON)
-    cmds.textScrollList(NAMED_PROPERTIES_LIST, allowMultiSelection=False, height=96, selectCommand=lambda *_: _select_named_property())
-    _labeled_row("Name", lambda: cmds.textField(NAMED_PROPERTIES_NAME, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields))
-    _labeled_row("Value", lambda: cmds.textField(NAMED_PROPERTIES_VALUE, changeCommand=_commit_named_property_fields, enterCommand=_commit_named_property_fields))
-    _action_row([
-        ("Add / Update", _commit_named_property_fields, "Commit the current name/value pair."),
-        ("Remove", _remove_named_property, "Remove the selected named property."),
-    ], columns=2)
-    _end_card()
-    _refresh_named_properties(True)
 
 
 def _mesh_shapes_from_selection():
@@ -1447,52 +1189,16 @@ def _material_metadata_label(item):
 
 
 def _refresh_material_metadata():
-    global _material_metadata_items
     dock = _active_qt_dock()
     if dock is not None:
         dock.refresh_material_metadata()
-        return
-    if not cmds.textScrollList(MATERIAL_METADATA_LIST, exists=True):
-        return
-    cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, removeAll=True)
-    _material_metadata_items = {}
-    items = _material_nodes_for_selection()
-    if not items:
-        cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, append="Select a mesh, LOD, or faces to edit its DayZ materials")
-        return
-    for item in items:
-        label = _material_metadata_label(item)
-        _material_metadata_items[label] = item
-        cmds.textScrollList(MATERIAL_METADATA_LIST, edit=True, append=label)
 
 
 def _selected_material_metadata_item():
     dock = _active_qt_dock()
     if dock is not None:
         return dock.selected_material_metadata_item()
-    selected = cmds.textScrollList(MATERIAL_METADATA_LIST, query=True, selectItem=True) or []
-    if not selected:
-        return None
-    item = _material_metadata_items.get(selected[0])
-    if not item:
-        return None
-    if not _node_exists(item["material_node"]) and not _valid_nodes(item["shading_groups"]):
-        _refresh_material_metadata()
-        return None
-    item["shading_groups"] = _valid_nodes(item["shading_groups"])
-    return item
-
-
-def _select_material_metadata():
-    dock = _active_qt_dock()
-    if dock is not None:
-        dock.select_material_metadata()
-        return
-    item = _selected_material_metadata_item()
-    if not item:
-        return
-    cmds.textField(MATERIAL_METADATA_TEXTURE, edit=True, text=item["texture"])
-    cmds.textField(MATERIAL_METADATA_MATERIAL, edit=True, text=item["material"])
+    return None
 
 
 def _set_material_metadata_on_node(node, texture, material):
@@ -1510,12 +1216,10 @@ def _persist_selected_material_metadata():
     if not item:
         return None
     dock = _active_qt_dock()
-    if dock is not None:
-        texture = _strip_drive_letter(dock.material_texture_path())
-        material = _strip_drive_letter(dock.material_rvmat_path())
-    else:
-        texture = _strip_drive_letter(cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True).strip())
-        material = _strip_drive_letter(cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True).strip())
+    if dock is None:
+        return None
+    texture = _strip_drive_letter(dock.material_texture_path())
+    material = _strip_drive_letter(dock.material_rvmat_path())
     changed = False
     all_targets = set(item["shading_groups"])
     if _node_exists(item["material_node"]):
@@ -1532,108 +1236,16 @@ def _persist_selected_material_metadata():
     return item
 
 
-def _commit_selected_material_metadata(*_):
-    if _persist_selected_material_metadata() is None:
-        return
-    _refresh_material_metadata()
-
-
-def _assign_new_material_metadata_to_selection():
-    dock = _active_qt_dock()
-    if dock is not None:
-        texture = dock.material_texture_path()
-        material = dock.material_rvmat_path()
-    else:
-        texture = _normalize_dayz_path(cmds.textField(MATERIAL_METADATA_TEXTURE, query=True, text=True))
-        material = _normalize_dayz_path(cmds.textField(MATERIAL_METADATA_MATERIAL, query=True, text=True))
-    selection = cmds.ls(selection=True, flatten=True) or []
-    if not selection:
-        cmds.warning("Select mesh faces before assigning a new DayZ material")
-        return
-    cmds.undoInfo(openChunk=True, chunkName="Set Material")
-    try:
-        cmds.a3obSetMaterial(texture=texture, material=material)
-        _refresh_material_metadata()
-    finally:
-        cmds.undoInfo(closeChunk=True)
-
-
-def _clear_selected_material_metadata():
-    item = _selected_material_metadata_item()
-    if not item:
-        cmds.warning("Select a Maya material row to clear")
-        return
-    changed = False
-    for node in _valid_nodes([item["material_node"]] + item["shading_groups"]):
-        if _attr_exists(node, "a3obTexture"):
-            cmds.setAttr(node + ".a3obTexture", "", type="string")
-            changed = True
-        if _attr_exists(node, "a3obMaterial"):
-            cmds.setAttr(node + ".a3obMaterial", "", type="string")
-            changed = True
-    if not changed:
-        cmds.warning("Material metadata target was deleted")
-    _refresh_material_metadata()
-
-
-def _build_material_metadata_ui():
-    _card("DayZ Material / Texture Metadata", "Select a material row, edit texture/material paths, then apply to faces or clear the highlighted row.")
-    cmds.textScrollList(MATERIAL_METADATA_LIST, allowMultiSelection=False, height=150, selectCommand=lambda *_: _select_material_metadata())
-    _path_row("Texture", MATERIAL_METADATA_TEXTURE, "Select texture path", "Texture (*.paa)", change_command=_commit_selected_material_metadata)
-    _path_row("Material", MATERIAL_METADATA_MATERIAL, "Select material path", "Material (*.rvmat)", change_command=_commit_selected_material_metadata)
-    _action_row([
-        ("Apply to Faces", _assign_new_material_metadata_to_selection, "Assign the current metadata to selected faces."),
-        ("Clear Row", _clear_selected_material_metadata, "Clear Object Builder metadata on the selected material row."),
-    ], columns=2)
-    _end_card()
-    _refresh_material_metadata()
-
-
-def _build_selection_manager_ui():
-    _card("Selections", "Filter, inspect, and edit Object Builder selections, proxies, and flag sets.")
-    _labeled_row("LOD", lambda: cmds.optionMenu(SELECTION_MANAGER_LOD_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False)))
-    cmds.menuItem(label="All LODs", parent=SELECTION_MANAGER_LOD_FILTER)
-    _labeled_row("Type", lambda: cmds.optionMenu(SELECTION_MANAGER_TYPE_FILTER, changeCommand=lambda *_: _refresh_selection_manager(False)))
-    for label in ("All Types", "Selection", "Proxy", "Vertex Flag", "Face Flag"):
-        cmds.menuItem(label=label, parent=SELECTION_MANAGER_TYPE_FILTER)
-    _labeled_row("Search", lambda: cmds.textField(SELECTION_MANAGER_SEARCH, changeCommand=lambda *_: _refresh_selection_manager(False), enterCommand=lambda *_: _refresh_selection_manager(False)))
-    cmds.textScrollList(SELECTION_MANAGER_LIST, allowMultiSelection=False, height=155, selectCommand=lambda *_: _update_selection_details(), doubleClickCommand=lambda *_: _select_set_members())
-    cmds.text(SELECTION_MANAGER_DETAILS, label="Select a row to see details.", align="left", wordWrap=True)
-    _action_row([
-        ("Select", _select_set_members, "Select live members of the highlighted set."),
-        ("Rename", _rename_selection_set, "Rename the Object Builder selection."),
-        ("Create", _create_selection_set, "Create a selection set from selected components."),
-        ("Find", find_components_from_ui, "Find closed mesh components and create Component## sets."),
-    ], columns=4, height=26)
-    _action_row([
-        ("Add", _add_to_selection_set, "Add selected components to the highlighted set."),
-        ("Remove", _remove_from_selection_set, "Remove selected components from the highlighted set."),
-        ("Delete", _delete_selection_set, "Delete the highlighted Object Builder set."),
-        ("Clear OB", _clear_all_object_builder_sets, "Clear all Object Builder selection sets."),
-    ], columns=4, height=26)
-    _end_card()
-
-
-def selection_manager():
-    open_dock()
 
 
 def _refresh_context_ui():
     dock = _active_qt_dock()
-    if dock is not None:
-        dock.refresh_lod_assignment()
-        dock.refresh_named_properties()
-        dock.refresh_material_metadata()
-        dock.refresh_selection_manager(True)
+    if dock is None:
         return
-    if cmds.textScrollList(NAMED_PROPERTIES_LIST, exists=True):
-        _refresh_named_properties()
-    if cmds.textScrollList(MATERIAL_METADATA_LIST, exists=True):
-        _refresh_material_metadata()
-    if cmds.textScrollList(SELECTION_MANAGER_LIST, exists=True):
-        _refresh_selection_manager(False)
-    if cmds.text(LOD_CONTEXT_TEXT, exists=True):
-        _refresh_lod_assignment_ui()
+    dock.refresh_lod_assignment()
+    dock.refresh_named_properties()
+    dock.refresh_material_metadata()
+    dock.refresh_selection_manager(True)
 
 
 def _install_context_refresh_job(parent):
@@ -1646,224 +1258,6 @@ def _install_context_refresh_job(parent):
         job = cmds.scriptJob(event=[event, _refresh_context_ui], parent=parent, protected=True)
         _ui_script_jobs[event] = job
 
-
-
-def _action_button(label, command, height=32, annotation=""):
-    kwargs = {"label": label, "height": height, "command": lambda *_: command()}
-    if annotation:
-        kwargs["annotation"] = annotation
-    return cmds.button(**kwargs)
-
-
-def _icon_action(label, command, image="", annotation=""):
-    if image:
-        try:
-            return cmds.iconTextButton(style="iconAndTextVertical", image1=image, label=label, height=48, command=lambda *_: command(), annotation=annotation or label)
-        except RuntimeError:
-            pass
-    return _action_button(label, command, height=32, annotation=annotation)
-
-
-def _button_stack(items):
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=4)
-    for item in items:
-        label, command = item[:2]
-        annotation = item[2] if len(item) > 2 else ""
-        _action_button(label, command, annotation=annotation)
-    cmds.setParent("..")
-
-
-def _compact_button_stack(items):
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=3)
-    for item in items:
-        label, command = item[:2]
-        annotation = item[2] if len(item) > 2 else ""
-        cmds.button(label=label, height=28, command=lambda *_, fn=command: fn(), annotation=annotation)
-    cmds.setParent("..")
-
-
-def _action_row(items, columns=2, height=30):
-    if not items:
-        return
-    columns = max(1, min(columns, len(items)))
-    cmds.rowColumnLayout(numberOfColumns=columns, columnSpacing=[(index + 1, 4) for index in range(columns)], rowSpacing=[(1, 4), (2, 4), (3, 4), (4, 4)])
-    for item in items:
-        label, command = item[:2]
-        annotation = item[2] if len(item) > 2 else ""
-        cmds.button(label=label, width=92, height=height, command=lambda *_, fn=command: fn(), annotation=annotation)
-    cmds.setParent("..")
-
-
-def _quick_action_bar(items):
-    cmds.frameLayout(label="Quick Actions", collapsable=True, collapse=False, marginWidth=6, marginHeight=4)
-    cmds.rowColumnLayout(numberOfColumns=3, columnSpacing=[(1, 4), (2, 4), (3, 4)], rowSpacing=[(1, 4), (2, 4)])
-    for item in items:
-        label, command = item[:2]
-        annotation = item[2] if len(item) > 2 else ""
-        cmds.button(label=label, width=112, height=26, command=lambda *_, fn=command: fn(), annotation=annotation)
-    cmds.setParent("..")
-    cmds.setParent("..")
-
-
-def _button_pair(items):
-    _action_row(items, columns=2)
-
-
-def _two_column_buttons(items):
-    _action_row(items, columns=2)
-
-
-def _full_width_button(label, command):
-    return _action_button(label, command)
-
-
-def _browse_path(field, mode, caption, file_filter=""):
-    selected = cmds.fileDialog2(fileMode=mode, caption=caption, fileFilter=file_filter) if file_filter else cmds.fileDialog2(fileMode=mode, caption=caption)
-    if selected and cmds.textField(field, exists=True):
-        path = _normalize_dayz_path(selected[0])
-        cmds.textField(field, edit=True, text=path)
-        return path
-    return ""
-
-
-def _clear_text_field(field):
-    if cmds.textField(field, exists=True):
-        cmds.textField(field, edit=True, text="")
-
-
-def _path_row(label, field, browse_caption, file_filter="", folder=False, save=False, change_command=None):
-    cmds.rowLayout(numberOfColumns=4, columnWidth4=(96, 220, 34, 34), adjustableColumn=2)
-    cmds.text(label=label, align="right")
-    text_kwargs = {"text": ""}
-    if change_command:
-        text_kwargs["changeCommand"] = change_command
-        text_kwargs["enterCommand"] = change_command
-    cmds.textField(field, **text_kwargs)
-    mode = 3 if folder else (0 if save else 1)
-    cmds.button(label="...", annotation=browse_caption, command=lambda *_: _browse_path(field, mode, browse_caption, file_filter))
-    cmds.button(label="X", annotation="Clear path", command=lambda *_: _clear_text_field(field))
-    cmds.setParent("..")
-
-
-def _card(label, subtitle="", collapse=False):
-    _section(label, subtitle, collapse=collapse)
-
-
-def _end_card():
-    _end_section()
-
-
-def _labeled_row(label, control_builder):
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=(96, 260), adjustableColumn=2)
-    cmds.text(label=label, align="right")
-    result = control_builder()
-    cmds.setParent("..")
-    return result
-
-
-def _section(label, subtitle="", collapse=False):
-    cmds.frameLayout(label=label, collapsable=True, collapse=collapse, marginWidth=10, marginHeight=8)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=7)
-    if subtitle:
-        cmds.text(label=subtitle, align="left", wordWrap=True)
-
-
-def _end_section():
-    cmds.setParent("..")
-    cmds.setParent("..")
-
-
-def _start_tab():
-    tab = cmds.scrollLayout(childResizable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
-    return tab
-
-
-def _end_tab():
-    cmds.setParent("..")
-    cmds.setParent("..")
-
-
-def _build_lod_assignment_ui():
-    _card("LOD Assignment", "Choose an Object Builder LOD type, then apply it to the current transform or create an empty LOD container.")
-    cmds.text(LOD_CONTEXT_TEXT, label="Target: No Object Builder LOD selected.", align="left", wordWrap=True)
-    _labeled_row("LOD type", lambda: cmds.optionMenu(LOD_TYPE_MENU, changeCommand=_refresh_lod_assignment_ui))
-    for definition in LOD_DEFINITIONS:
-        cmds.menuItem(label=definition["label"], parent=LOD_TYPE_MENU)
-    _labeled_row("Resolution", lambda: cmds.intField(LOD_RESOLUTION_FIELD, minValue=0, value=1, changeCommand=_refresh_lod_assignment_ui))
-    cmds.text(LOD_PREVIEW_TEXT, label="Will assign: Resolution 1", align="left", wordWrap=True)
-    _action_row([
-        ("Assign", assign_lod_to_selection, "Assign the selected LOD type to the current selection."),
-        ("Create Empty", create_empty_lod, "Create a new empty LOD transform with the selected type."),
-    ], columns=2)
-    _end_card()
-    _refresh_lod_assignment_ui()
-
-    _card("Auto LOD", "Generate Maya-native DayZ LODs from the selected mesh using the imported Blender addon defaults.")
-    _labeled_row("Preset", lambda: cmds.optionMenu(AUTO_LOD_PRESET_MENU))
-    for label in ("QUADS", "TRIS", "CUSTOM"):
-        cmds.menuItem(label=label, parent=AUTO_LOD_PRESET_MENU)
-    _labeled_row("First LOD", lambda: cmds.optionMenu(AUTO_LOD_FIRST_MENU))
-    for label in ("LOD1", "LOD0"):
-        cmds.menuItem(label=label, parent=AUTO_LOD_FIRST_MENU)
-    cmds.checkBox(AUTO_LOD_RESOLUTION_CHECK, label="Resolution LODs", value=True)
-    cmds.checkBox(AUTO_LOD_GEOMETRY_CHECK, label="Geometry LOD", value=True)
-    cmds.checkBox(AUTO_LOD_MEMORY_CHECK, label="Memory LOD", value=False)
-    cmds.checkBox(AUTO_LOD_FIRE_CHECK, label="Fire Geometry LOD", value=False)
-    cmds.checkBox(AUTO_LOD_VIEW_CHECK, label="View Geometry LOD", value=False)
-    _labeled_row("Geometry", lambda: cmds.optionMenu(AUTO_LOD_GEOMETRY_TYPE_MENU))
-    for label in ("BOX", "NONE"):
-        cmds.menuItem(label=label, parent=AUTO_LOD_GEOMETRY_TYPE_MENU)
-    _labeled_row("Fire quality", lambda: cmds.intField(AUTO_LOD_FIRE_QUALITY_FIELD, minValue=1, maxValue=10, value=2))
-    _action_row([("Generate Auto LOD", generate_auto_lods_from_ui, "Generate Resolution, Geometry, Memory, Fire, and View LODs from the selected mesh.")], columns=1)
-    _end_card()
-
-    _card("Memory Points", "Add Memory Point creates a named locator. Add Point to Selection adds a second vertex to an existing point (auto-promotes it to a group container).")
-    _action_row([
-        ("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."),
-        ("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."),
-    ], columns=2)
-    _end_card()
-
-
-def _build_metadata_tools_ui():
-    _card("Mass", "Apply or clear vertex mass metadata on the current selection.")
-    _labeled_row("Value", lambda: cmds.floatField(MASS_VALUE_FIELD, value=1.0, precision=3))
-    _labeled_row("Mode", lambda: cmds.optionMenu(MASS_MODE_MENU))
-    cmds.menuItem(label="All vertices", parent=MASS_MODE_MENU)
-    cmds.menuItem(label="Selected vertices", parent=MASS_MODE_MENU)
-    _action_row([
-        ("Apply", apply_mass_from_ui, "Apply mass using the selected mode."),
-        ("Clear", clear_mass_from_ui, "Clear mass metadata from the current selection."),
-    ], columns=2)
-    _end_card()
-
-    _card("Flags", "Create Object Builder face or vertex flag sets from the current selection.")
-    _labeled_row("Component", lambda: cmds.optionMenu(FLAG_COMPONENT_MENU))
-    cmds.menuItem(label="Face", parent=FLAG_COMPONENT_MENU)
-    cmds.menuItem(label="Vertex", parent=FLAG_COMPONENT_MENU)
-    _labeled_row("Value", lambda: cmds.intField(FLAG_VALUE_FIELD, value=1))
-    _labeled_row("Set name", lambda: cmds.textField(FLAG_NAME_FIELD, text="a3ob_flag"))
-    _action_row([("Apply Flag", apply_flag_from_ui, "Create or update a flag set from the current selection.")], columns=1)
-    _end_card()
-
-    _card("Proxy", "Create or update proxy metadata with a visible path picker.")
-    _path_row("Path", PROXY_PATH_FIELD, "Select proxy P3D", "P3D (*.p3d)")
-    _labeled_row("Index", lambda: cmds.intField(PROXY_INDEX_FIELD, minValue=0, value=1))
-    cmds.checkBox(PROXY_FROM_SELECTION_CHECK, label="Create from selected components", value=True)
-    _action_row([("Create Proxy", create_proxy_from_ui, "Create or update the proxy selection metadata.")], columns=1)
-    _end_card()
-
-    _build_named_properties_ui()
-
-
-def _build_validation_ui():
-    _card("Validation", "Check Object Builder LODs before export. Scene checks every LOD; Selection checks only selected LODs/components.")
-    _action_row([
-        ("Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
-        ("Selection", _validate_selection_no_flush, "Validate only selected Object Builder LODs."),
-    ], columns=2)
-    _end_card()
 
 
 def _qt_button(label, callback, tooltip="", icon=""):
@@ -2736,71 +2130,6 @@ def _delete_qt_dock():
     _qt_dock_widget = None
 
 
-def _build_dock_contents():
-    _ensure_script_path()
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-    _quick_action_bar([
-        ("Import P3D", import_p3d, "Open a P3D through Maya's native Arma P3D importer."),
-        ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter."),
-        ("Import CFG", import_model_cfg, "Import a model.cfg skeleton file."),
-        ("Export CFG", export_model_cfg, "Export selected/root skeleton joints to model.cfg."),
-        ("Validate Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
-        ("Validate Sel", _validate_selection_no_flush, "Validate selected Object Builder LODs."),
-    ])
-    tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
-
-    lod_tab = _start_tab()
-    cmds.text(label="MayaObjectBuilder", align="center", height=28)
-    _build_lod_assignment_ui()
-    _build_validation_ui()
-    _end_tab()
-
-    files_tab = _start_tab()
-    _card("P3D", "Launch Maya's native Arma P3D import/export. Detailed P3D options remain in the file dialog option panel.")
-    _action_row([
-        ("Import P3D", import_p3d, "Import a P3D file through the native translator."),
-        ("Export P3D", export_p3d, "Export the scene through the native translator."),
-    ], columns=2)
-    _end_card()
-    _card("model.cfg", "Pick explicit config paths when you want fast skeleton import/export without hunting through menus.")
-    _path_row("Import", MODEL_CFG_IMPORT_FIELD, "Select model.cfg to import", "Config (*.cfg)")
-    _path_row("Export", MODEL_CFG_EXPORT_FIELD, "Choose model.cfg export path", "Config (*.cfg)", save=True)
-    _action_row([
-        ("Import", import_model_cfg_from_ui, "Import the selected model.cfg path."),
-        ("Export", export_model_cfg_from_ui, "Export to the selected model.cfg path."),
-    ], columns=2)
-    _end_card()
-    _end_tab()
-
-    metadata_tab = _start_tab()
-    _build_metadata_tools_ui()
-    _end_tab()
-
-    materials_tab = _start_tab()
-    _build_material_metadata_ui()
-    _end_tab()
-
-    selections_tab = _start_tab()
-    _build_selection_manager_ui()
-    _end_tab()
-
-    validation_tab = _start_tab()
-    _build_validation_ui()
-    _end_tab()
-
-    cmds.tabLayout(tabs, edit=True, tabLabel=[
-        (lod_tab, "LOD"),
-        (files_tab, "Files"),
-        (metadata_tab, "Metadata"),
-        (materials_tab, "Materials"),
-        (selections_tab, "Selections"),
-        (validation_tab, "Validation"),
-    ])
-    cmds.setParent("..")
-    cmds.setParent("..")
-    _refresh_selection_manager()
-
-
 def open_dock():
     if cmds.about(batch=True):
         return None
@@ -2813,11 +2142,9 @@ def open_dock():
         if cmds.workspaceControl(target, exists=True):
             cmds.workspaceControl(DOCK_NAME, edit=True, tabToControl=(target, -1))
             break
-    if QT_AVAILABLE and _build_qt_dock(control):
-        _install_context_refresh_job(control)
+    if not (QT_AVAILABLE and _build_qt_dock(control)):
+        cmds.warning("MayaObjectBuilder requires PySide6; UI could not be built.")
         return control
-    cmds.setParent(control)
-    _build_dock_contents()
     _install_context_refresh_job(control)
     return control
 
