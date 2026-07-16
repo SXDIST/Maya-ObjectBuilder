@@ -9,7 +9,7 @@ import maya.api.OpenMaya as om
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "build" / "Debug" / "MayaObjectBuilder.mll"
+PLUGIN = ROOT / "plug-ins" / "MayaObjectBuilder.py"
 INPUTS = [
     ROOT / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d" / "sample_2_crate.p3d",
     ROOT / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d" / "sample_1_character.p3d",
@@ -17,6 +17,14 @@ INPUTS = [
 OUTDIR = ROOT / "build" / "mayapy-workflow"
 DAYZ_OUTDIR = ROOT / "build" / "dayz-p3d-workflow"
 UI_SCRIPT = ROOT / "scripts" / "objectBuilderMenu.py"
+
+
+def _name(result):
+    # Python API 2.0 command results come back from cmds as a 1-element list under
+    # mayapy standalone (unlike the former C++ plugin's scalar string); unwrap it.
+    if isinstance(result, (list, tuple)):
+        return result[0] if result else None
+    return result
 
 
 def optional_dayz_inputs():
@@ -262,7 +270,7 @@ def assert_generated_metadata():
 
 def assert_stale_selection_ui_refresh():
     cmds.file(new=True, force=True)
-    lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="stale_ui_lod")
+    lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name="stale_ui_lod"))
     mesh = cmds.polyPlane(name="stale_ui_mesh", subdivisionsX=1, subdivisionsY=1)[0]
     cmds.parent(mesh, lod)
     cmds.select(mesh + ".f[0]")
@@ -289,30 +297,30 @@ def assert_stale_selection_ui_refresh():
 
 def assert_ui_redesign_helpers_load():
     ui = runpy.run_path(str(UI_SCRIPT))
-    for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_quick_action_bar", "_action_row", "_path_row", "_labeled_row", "import_model_cfg_from_ui", "export_model_cfg_from_ui", "generate_auto_lods_from_ui"):
+    for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_qt_button", "_qt_icon",
+                 "_CollapsibleSection", "_panel_optionvar_key", "import_model_cfg_from_ui",
+                 "export_model_cfg_from_ui", "generate_auto_lods_from_ui", "open_dock",
+                 "show_plugin_ui", "hide_plugin_ui", "_active_qt_dock", "_refresh_context_ui"):
         if name not in ui:
             raise RuntimeError(f"Missing redesigned UI helper: {name}")
     if ui["_normalize_dayz_path"](r"P:\\Mods\\MyMod\\data\\tex_ca.paa") != r"Mods\MyMod\data\tex_ca.paa":
         raise RuntimeError("DayZ path helper did not normalize Windows paths")
     dock_class = ui["MayaObjectBuilderDock"]
-    for name in ("refresh_named_properties", "refresh_material_metadata", "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
+    # accordion section builders + reused panel builders + data-refresh methods
+    for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
+                 "_build_auto_lod_section", "_build_mass_flags_section", "_build_proxies_section",
+                 "_build_memory_points_section", "_build_skeleton_section",
+                 "_build_named_properties_tab", "_build_materials_tab", "_build_selections_tab",
+                 "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
+                 "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
         if not hasattr(dock_class, name):
             raise RuntimeError(f"Missing Qt dock method: {name}")
-
-    window = "MayaObjectBuilderDockBuildSmokeWindow"
-    if cmds.window(window, exists=True):
-        cmds.deleteUI(window)
-    window = cmds.window(window, title="MayaObjectBuilder UI Smoke")
-    try:
-        cmds.columnLayout(adjustableColumn=True)
-        ui["_build_dock_contents"]()
-        cmds.showWindow(window)
-    finally:
-        if cmds.window(window, exists=True):
-            cmds.deleteUI(window)
-        ui["_delete_qt_dock"]()
+    # panel optionVar key is derived from the panel title
+    if ui["_panel_optionvar_key"]("Mass & Flags") != "MayaObjectBuilder_panel_Mass_Flags_expanded":
+        raise RuntimeError("Panel optionVar key helper changed unexpectedly")
+    # routing helpers must be safe to call with no dock built (Qt-only path, early return)
     if ui["_active_qt_dock"]() is not None:
-        raise RuntimeError("Qt dock wrapper remained active after UI smoke cleanup")
+        raise RuntimeError("Qt dock wrapper unexpectedly active before build")
     ui["_refresh_context_ui"]()
     print("OK redesigned UI builds without layout errors")
 
@@ -343,7 +351,7 @@ def assert_selection_manager_clear_all():
 
 def create_generated_fixture(path):
     cmds.file(new=True, force=True)
-    lod = cmds.a3obCreateLOD(lodType=1, resolution=25, name="generated_dayz_lod")
+    lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=25, name="generated_dayz_lod"))
     mesh_transform = cmds.polyPlane(name="generated_dayz_mesh", subdivisionsX=1, subdivisionsY=1)[0]
     mesh_shape = cmds.listRelatives(mesh_transform, shapes=True, fullPath=True)[0]
     cmds.parent(mesh_shape, lod, shape=True, relative=True)
@@ -509,7 +517,7 @@ def assert_selected_export(selection, outdir, name):
 
 def assert_find_components():
     cmds.file(new=True, force=True)
-    lod = cmds.a3obCreateLOD(lodType=6, resolution=0, name="components_lod")
+    lod = _name(cmds.a3obCreateLOD(lodType=6, resolution=0, name="components_lod"))
     cube = cmds.polyCube(name="closed_component_cube", width=1, height=1, depth=1)[0]
     plane = cmds.polyPlane(name="open_component_plane", subdivisionsX=1, subdivisionsY=1)[0]
     cmds.setAttr(plane + ".translateX", 3)
@@ -562,7 +570,7 @@ def assert_export_scale_units(outdir):
         cmds.file(new=True, force=True)
         cube = cmds.polyCube(name="scale_units_cube", width=100, height=100, depth=100)[0]
         cmds.select(cube, replace=True)
-        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="scale_units_lod")
+        lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name="scale_units_lod"))
         cmds.select(lod, replace=True)
         out = outdir / "scale_units_centimeter_scene.p3d"
         cmds.file(rename=str(out))
@@ -587,7 +595,7 @@ def assert_export_transform_bake(outdir):
     try:
         cmds.currentUnit(linear="cm")
         cmds.file(new=True, force=True)
-        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="transform_bake_lod")
+        lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name="transform_bake_lod"))
         cube = cmds.polyCube(name="transform_bake_cube", width=100, height=100, depth=100)[0]
         cube_shape = cmds.listRelatives(cube, shapes=True, fullPath=True)[0]
         cmds.parent(cube_shape, lod, shape=True, relative=True)
@@ -638,10 +646,10 @@ def assert_selected_export_modes(outdir):
     ]
     for selection, name in cases:
         cmds.file(new=True, force=True)
-        first_lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_first_lod")
+        first_lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_first_lod"))
         first_mesh = cmds.polyPlane(name=f"{name}_first_mesh", subdivisionsX=1, subdivisionsY=1)[0]
         cmds.parent(first_mesh, first_lod)
-        second_lod = cmds.a3obCreateLOD(lodType=1, resolution=1, name=f"{name}_second_lod")
+        second_lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=1, name=f"{name}_second_lod"))
         second_mesh = cmds.polyPlane(name=f"{name}_second_mesh", subdivisionsX=1, subdivisionsY=1)[0]
         cmds.parent(second_mesh, second_lod)
         selection = selection.format(lod=first_lod, mesh=first_mesh)
@@ -656,7 +664,7 @@ def assert_selection_set_export_modes(outdir):
     ]
     for selection, name, expected_vertices in cases:
         cmds.file(new=True, force=True)
-        lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_lod")
+        lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name=f"{name}_lod"))
         mesh = cmds.polyPlane(name=f"{name}_mesh", subdivisionsX=1, subdivisionsY=1)[0]
         cmds.parent(mesh, lod)
         cmds.select(selection.format(mesh=mesh), replace=True)
@@ -719,7 +727,7 @@ def main():
         raise RuntimeError(f"Missing commands: {sorted(missing)}")
 
     cmds.file(new=True, force=True)
-    lod = cmds.a3obCreateLOD(lodType=1, resolution=0, name="workflow_lod")
+    lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name="workflow_lod"))
     mesh = cmds.polyPlane(name="workflow_mesh", subdivisionsX=1, subdivisionsY=1)[0]
     cmds.parent(mesh, lod)
     cmds.select(mesh + ".f[0]")
