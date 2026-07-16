@@ -42,17 +42,22 @@ Two layers, split by whether they need Maya:
   the `LodResolution` signature codec, coordinate + UV conventions), `model.cfg` parser/writer in
   `model_cfg.py`.
 - **`scripts/a3ob/mayabridge/`** — the Maya glue (`maya.api.OpenMaya` = API 2.0). `attributes.py`
-  (the single `a3ob*` attribute schema + helpers), `mesh_import.py` / `mesh_export.py` (Maya DAG ↔
-  MLOD conversion), `commands.py` (the nine `a3ob*` `MPxCommand`s), `model_cfg_commands.py` (skeleton
-  import/export), `translator.py` (import/export bodies + option parsing).
+  (the single `a3ob*` attribute schema + helpers); `import_/` and `export/` packages (Maya DAG ↔ MLOD
+  conversion — `import_/{convert,builders,importer}`, `export/{parse,taggs,exporter}`, with
+  `mesh_import.py`/`mesh_export.py` kept as re-export facades); `commands/` package (one module per
+  `a3ob*` `MPxCommand` + shared `helpers.py`; `__init__` re-exports the classes and the `COMMANDS`
+  list); `model_cfg_commands.py` (skeleton import/export); `translator.py` (import/export bodies +
+  option parsing).
 
-- **`scripts/a3ob/ui/`** — UI support package extracted from the dock monolith. `constants.py`
-  (pure data tables: `LOD_DEFINITIONS`, `LOD_TYPE_NAMES`, `KNOWN_NAMED_PROPS`, `UI_MARGIN/SPACING`,
-  `RESOLUTION_LOD_TYPE`/`MEMORY_LOD_TYPE`, no deps) and `scene_ops.py` (Qt-free Maya-scene helpers:
-  attr/path utils, LOD-transform helpers, selection-set reads, memory-LOD and material helpers).
-  `objectBuilderMenu.py` imports both and re-exports the `scene_ops` names so the runpy-based mayapy
-  tests keep reaching them. Dock routers stay in `objectBuilderMenu.py` (they depend on the live
-  dock singleton), so `scene_ops` never imports the dock — no import cycle.
+- **`scripts/a3ob/ui/`** — the dock UI package (split from the former `objectBuilderMenu.py`
+  monolith). `_qt.py` (guarded PySide6/shiboken/OpenMayaUI import layer), `widgets.py` (Qt helpers +
+  `_CollapsibleSection`), `dock.py` (`MayaObjectBuilderDock` widget), `actions.py` (action wrappers +
+  scene business logic), `entry.py` (menu/dock lifecycle/install + singletons), `constants.py` (pure
+  data tables), `scene_ops.py`→`scene/` package (Qt-free scene helpers by domain: attrs/lods/
+  selections/materials/memory), `autolod/` package (auto-LOD generators). The
+  `actions ↔ entry ↔ dock` cycle is broken by a lazy dock import inside `entry._build_qt_dock`;
+  `objectBuilderMenu.py` is a thin facade re-exporting everything the plugin and the runpy-based
+  mayapy tests reach.
 
 - **`plug-ins/MayaObjectBuilder.py`** — the main scripted plugin (API 2.0). Registers the eleven
   `a3ob*` commands, sources the MEL option box, opens the Python dock UI, and loads/unloads the
@@ -62,10 +67,9 @@ Two layers, split by whether they need Maya:
   `MPxFileTranslator` exists only in API 1.0, while the commands need API 2.0, so the two cannot
   register from a single plugin — hence the split. The main plugin auto-loads this one, so users
   deal with a single "MayaObjectBuilder" plugin.
-- **`scripts/objectBuilderMenu.py`** — the Qt dock/menu UI (accordion-panel dock via
-  `MayaObjectBuilderDock`) and command-wrapper layer. Drives everything through `cmds.a3ob*` and the
-  file translator; imports data/scene helpers from `a3ob.ui.constants` / `a3ob.ui.scene_ops`.
-- **`scripts/objectBuilderAutoLOD.py`** — the auto-LOD generator.
+- **`scripts/objectBuilderMenu.py`** — thin facade over the `a3ob.ui` package (see above), kept so
+  the plugin and the runpy-based mayapy tests keep importing UI names from this path.
+- **`scripts/objectBuilderAutoLOD.py`** — facade over `a3ob.ui.autolod` (auto-LOD generator).
 - **`scripts/mayaObjectBuilderP3DOptions.mel`** — Maya File > Import/Export option box.
 - **`scripts/dev_install.py`** — writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at
   this repo (edit-in-place local install). `install/` holds the drag-into-Maya end-user installer.
@@ -83,14 +87,14 @@ Two layers, split by whether they need Maya:
 
 | Task | Primary files/functions |
 |------|--------------------------|
-| P3D export | `scripts/a3ob/mayabridge/mesh_export.py`, especially `_export_mesh_lod()` and `_add_uvset_taggs()` |
-| P3D import | `scripts/a3ob/mayabridge/mesh_import.py`, especially `apply_uvs()`, `apply_normals()`, `MayaMeshImport._assign_materials()` |
+| P3D export | `scripts/a3ob/mayabridge/export/` (`exporter.py` `_export_mesh_lod()`, `taggs.py` `_add_uvset_taggs()`) |
+| P3D import | `scripts/a3ob/mayabridge/import_/` (`importer.py` `MayaMeshImport`, `convert.py` `apply_uvs()`/`apply_normals()`, `builders.py`) |
 | P3D binary format | `scripts/a3ob/formats/p3d.py`, especially `LOD.read/write`, the `*TaggData` classes, `LodResolution` |
 | P3D translator | `scripts/a3ob/mayabridge/translator.py` (`do_read`/`do_write`) + `plug-ins/MayaObjectBuilderTranslator.py` |
-| `a3ob*` commands | `scripts/a3ob/mayabridge/commands.py`; validation is in `ValidateCommand`, components in `closed_face_islands()` |
+| `a3ob*` commands | `scripts/a3ob/mayabridge/commands/` (one module per command; `ValidateCommand` in `validate.py`, `closed_face_islands()` in `helpers.py`); `__init__` exports `COMMANDS` |
 | `model.cfg` | `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py` |
 | Attribute schema | `scripts/a3ob/mayabridge/attributes.py` (long+short `a3ob*` names) |
-| UI dock/menu | `scripts/objectBuilderMenu.py`, especially `show_plugin_ui()` and `MayaObjectBuilderDock` |
+| UI dock/menu | `scripts/a3ob/ui/dock.py` (`MayaObjectBuilderDock`), `entry.py` (`show_plugin_ui()`); `objectBuilderMenu.py` is a facade |
 | Command registration | `plug-ins/MayaObjectBuilder.py`, `initializePlugin()` / `uninitializePlugin()` |
 | Format reference | `Arma3ObjectBuilder-master/Arma3ObjectBuilder/io/data_p3d.py` (read-only) |
 
