@@ -1985,39 +1985,66 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.refresh_lod_assignment()
 
     def _build_ui(self):
-        layout = qt_widgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-        layout.addWidget(self._build_quick_actions())
+        outer = qt_widgets.QVBoxLayout(self)
+        outer.setContentsMargins(UI_MARGIN, UI_MARGIN, UI_MARGIN, UI_MARGIN)
+        outer.setSpacing(UI_SPACING)
+        outer.addWidget(self._build_quick_actions())
 
-        tabs = qt_widgets.QTabWidget()
-        tabs.addTab(self._build_lod_tab(), "LOD")
-        tabs.addTab(self._build_files_tab(), "Files")
-        tabs.addTab(self._build_metadata_tab(), "Metadata")
-        tabs.addTab(self._build_validation_tab(), "Validation")
-        layout.addWidget(tabs)
+        body = qt_widgets.QWidget()
+        body_layout = qt_widgets.QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        panels = [
+            ("LOD Properties", self._build_lod_properties_section(), False),
+            ("Auto LOD", self._build_auto_lod_section(), True),
+            ("Mass & Flags", self._build_mass_flags_section(), True),
+            ("Named Properties", self._build_named_properties_tab(), True),
+            ("Materials", self._build_materials_tab(), True),
+            ("Selections", self._build_selections_tab(), True),
+            ("Proxies", self._build_proxies_section(), True),
+            ("Memory Points", self._build_memory_points_section(), True),
+            ("Skeleton (model.cfg)", self._build_skeleton_section(), True),
+            ("Validation", self._build_validation_tab(), True),
+        ]
+        self.memory_points_group = None
+        for title, widget, collapsed in panels:
+            section = _CollapsibleSection(title, collapsed=collapsed)
+            section.body_layout.addWidget(widget)
+            body_layout.addWidget(section)
+            if title == "Memory Points":
+                self.memory_points_group = section
+        body_layout.addStretch()
+
+        scroll = qt_widgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(qt_widgets.QScrollArea.NoFrame)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
 
     def _build_quick_actions(self):
         group = qt_widgets.QGroupBox("Quick Actions")
         layout = qt_widgets.QGridLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(UI_MARGIN, UI_MARGIN, UI_MARGIN, UI_MARGIN)
+        layout.setSpacing(UI_SPACING)
         actions = [
-            ("Import P3D", import_p3d, "Open a P3D through Maya's native Arma P3D importer."),
-            ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter."),
-            ("Import CFG", import_model_cfg_from_ui, "Import a model.cfg skeleton file."),
-            ("Export CFG", export_model_cfg_from_ui, "Export selected/root skeleton joints to model.cfg."),
-            ("Validate Scene", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene."),
-            ("Validate Sel", _validate_selection_no_flush, "Validate selected Object Builder LODs."),
+            ("Import P3D", import_p3d, "Open a P3D through Maya's native Arma P3D importer.", ":/fileOpen.png"),
+            ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter.", ":/fileSave.png"),
+            ("Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh using the Auto LOD settings.", ":/polyReduce.png"),
+            ("Validate", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene.", ":/confirm.png"),
         ]
-        for index, (label, callback, tooltip) in enumerate(actions):
-            layout.addWidget(_qt_button(label, callback, tooltip), index // 3, index % 3)
+        for index, (label, callback, tooltip, icon) in enumerate(actions):
+            button = _qt_button(label, callback, tooltip, icon)
+            button.setMinimumHeight(30)
+            layout.addWidget(button, index // 2, index % 2)
         return group
 
-    def _build_lod_tab(self):
+    def _build_lod_properties_section(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
+
         self.lod_toggle = qt_widgets.QCheckBox("DayZ LOD")
         self.lod_toggle.setToolTip("Mark/unmark the selected mesh as a DayZ LOD")
         self.lod_toggle.toggled.connect(self._on_lod_toggle_changed)
@@ -2036,13 +2063,17 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
 
         self.lod_resolution = qt_widgets.QSpinBox()
         self.lod_resolution.setMinimum(0)
+        self.lod_resolution.setMaximum(1000000)
         self.lod_resolution.setValue(1)
         self.lod_resolution.valueChanged.connect(self._on_lod_controls_changed)
         form.addRow("Resolution", self.lod_resolution)
         layout.addLayout(form)
+        return widget
 
-        auto_group = _CollapsibleSection("Auto LOD", collapsed=True)
-        auto_layout = qt_widgets.QFormLayout()
+    def _build_auto_lod_section(self):
+        widget = qt_widgets.QWidget()
+        auto_layout = qt_widgets.QFormLayout(widget)
+        auto_layout.setContentsMargins(0, 0, 0, 0)
         self.auto_lod_preset = qt_widgets.QComboBox()
         self.auto_lod_preset.addItems(["QUADS", "TRIS", "CUSTOM"])
         self.auto_lod_first = qt_widgets.QComboBox()
@@ -2069,51 +2100,30 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         auto_layout.addRow("Geometry", self.auto_lod_geometry_type)
         auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
         auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
-        auto_group.body_layout.addLayout(auto_layout)
-        layout.addWidget(auto_group)
+        return widget
 
-        self.memory_points_group = _CollapsibleSection("Memory Points", collapsed=False)
+    def _build_memory_points_section(self):
+        widget = qt_widgets.QWidget()
+        layout = qt_widgets.QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
         memory_hint = qt_widgets.QLabel(
             "Add Memory Point — creates a new named locator (one vertex). "
             "Add Point to Selection — select an existing memory point and click this to add a second vertex; "
             "the first click auto-converts it to a named group with two point locators inside."
         )
         memory_hint.setWordWrap(True)
-        self.memory_points_group.body_layout.addWidget(memory_hint)
+        layout.addWidget(memory_hint)
         mem_buttons = qt_widgets.QHBoxLayout()
         mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
         mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
-        self.memory_points_group.body_layout.addLayout(mem_buttons)
-        layout.addWidget(self.memory_points_group)
+        layout.addLayout(mem_buttons)
+        return widget
 
-        named_sec = _CollapsibleSection("Named Properties", collapsed=True)
-        named_sec.body_layout.addWidget(self._build_named_properties_tab())
-        layout.addWidget(named_sec)
-
-        materials_sec = _CollapsibleSection("Materials", collapsed=True)
-        materials_sec.body_layout.addWidget(self._build_materials_tab())
-        layout.addWidget(materials_sec)
-
-        selections_sec = _CollapsibleSection("Selections", collapsed=True)
-        selections_sec.body_layout.addWidget(self._build_selections_tab())
-        layout.addWidget(selections_sec)
-
-        layout.addStretch()
-
-        scroll = qt_widgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(qt_widgets.QScrollArea.NoFrame)
-        scroll.setWidget(widget)
-        return scroll
-
-    def _build_files_tab(self):
+    def _build_skeleton_section(self):
         widget = qt_widgets.QWidget()
-        layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        cfg_group = qt_widgets.QGroupBox("model.cfg")
-        cfg_layout = qt_widgets.QFormLayout(cfg_group)
+        cfg_layout = qt_widgets.QFormLayout(widget)
+        cfg_layout.setContentsMargins(0, 0, 0, 0)
         self.model_cfg_import = self._path_picker("Import path", "Select model.cfg", 1, "Config (*.cfg)")
         self.model_cfg_export = self._path_picker("Export path", "Export model.cfg", 0, "Config (*.cfg)")
         cfg_layout.addRow("Import", self.model_cfg_import)
@@ -2122,8 +2132,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         cfg_buttons.addWidget(_qt_button("Import CFG", import_model_cfg_from_ui))
         cfg_buttons.addWidget(_qt_button("Export CFG", export_model_cfg_from_ui))
         cfg_layout.addRow(cfg_buttons)
-        layout.addWidget(cfg_group)
-        layout.addStretch()
         return widget
 
     def _path_picker(self, label, caption, mode, file_filter):
@@ -2147,15 +2155,11 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         if selected:
             field.setText(_normalize_dayz_path(selected[0]))
 
-    def _build_metadata_tab(self):
+    def _build_mass_flags_section(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        hint = qt_widgets.QLabel("Apply Object Builder metadata to the current mesh or component selection.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
 
         mass_group = qt_widgets.QGroupBox("Mass")
         mass_layout = qt_widgets.QFormLayout(mass_group)
@@ -2186,9 +2190,12 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         flags_layout.addRow("Set name", self.flag_name_field)
         flags_layout.addRow(_qt_button("Apply Flag", apply_flag_from_ui))
         layout.addWidget(flags_group)
+        return widget
 
-        proxy_group = qt_widgets.QGroupBox("Proxy")
-        proxy_layout = qt_widgets.QFormLayout(proxy_group)
+    def _build_proxies_section(self):
+        widget = qt_widgets.QWidget()
+        proxy_layout = qt_widgets.QFormLayout(widget)
+        proxy_layout.setContentsMargins(0, 0, 0, 0)
         self.proxy_path_field = self._path_picker("Proxy path", "Select proxy P3D", 1, "Arma P3D (*.p3d)")
         self.proxy_index_field = qt_widgets.QSpinBox()
         self.proxy_index_field.setRange(0, 2147483647)
@@ -2199,16 +2206,13 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         proxy_layout.addRow("Index", self.proxy_index_field)
         proxy_layout.addRow(self.proxy_from_selection_check)
         proxy_layout.addRow(_qt_button("Create Proxy", create_proxy_from_ui))
-        layout.addWidget(proxy_group)
-
-        layout.addStretch()
         return widget
 
     def _build_named_properties_tab(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
 
         hint = qt_widgets.QLabel("Named properties are stored on the selected Object Builder LOD and exported into the P3D TAGG metadata.")
         hint.setWordWrap(True)
@@ -2243,8 +2247,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def _build_materials_tab(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
 
         hint = qt_widgets.QLabel("Pick a Maya material, then set its texture and rvmat paths. Edits save to the selected material instantly.")
         hint.setWordWrap(True)
@@ -2274,8 +2278,8 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def _build_selections_tab(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
 
         hint = qt_widgets.QLabel("Filter and maintain Object Builder selections, proxy sets, and face/vertex flag sets.")
         hint.setWordWrap(True)
@@ -2324,7 +2328,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def _build_validation_tab(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
         label = qt_widgets.QLabel("Check Object Builder LODs before export. Scene checks every LOD; Selection checks only selected LODs/components.")
         label.setWordWrap(True)
         layout.addWidget(label)
