@@ -73,21 +73,24 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
 
+        # on_expand re-queries the scene when a panel is opened, so live-scene panels
+        # (materials, selections, named properties) stay fresh even after changes that
+        # do not fire a SelectionChanged event (e.g. reassigning a material).
         panels = [
-            ("LOD Properties", self._build_lod_properties_section(), False),
-            ("Auto LOD", self._build_auto_lod_section(), True),
-            ("Mass & Flags", self._build_mass_flags_section(), True),
-            ("Named Properties", self._build_named_properties_tab(), True),
-            ("Materials", self._build_materials_tab(), True),
-            ("Selections", self._build_selections_tab(), True),
-            ("Proxies", self._build_proxies_section(), True),
-            ("Memory Points", self._build_memory_points_section(), True),
-            ("Skeleton (model.cfg)", self._build_skeleton_section(), True),
-            ("Validation", self._build_validation_tab(), True),
+            ("LOD Properties", self._build_lod_properties_section(), False, None),
+            ("Auto LOD", self._build_auto_lod_section(), True, None),
+            ("Mass & Flags", self._build_mass_flags_section(), True, None),
+            ("Named Properties", self._build_named_properties_tab(), True, self.refresh_named_properties),
+            ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
+            ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
+            ("Proxies", self._build_proxies_section(), True, None),
+            ("Memory Points", self._build_memory_points_section(), True, None),
+            ("Skeleton (model.cfg)", self._build_skeleton_section(), True, None),
+            ("Validation", self._build_validation_tab(), True, None),
         ]
         self.memory_points_group = None
-        for title, widget, collapsed in panels:
-            section = _CollapsibleSection(title, collapsed=collapsed)
+        for title, widget, collapsed, on_expand in panels:
+            section = _CollapsibleSection(title, collapsed=collapsed, on_expand=on_expand)
             section.body_layout.addWidget(widget)
             body_layout.addWidget(section)
             if title == "Memory Points":

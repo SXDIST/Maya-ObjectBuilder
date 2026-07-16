@@ -17,7 +17,12 @@ class MaterialsPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        layout.addWidget(_hint("Pick a material, set its texture / rvmat paths. Edits save instantly."))
+        head = qt_widgets.QHBoxLayout()
+        head.addWidget(_hint("Pick a material, set its texture / rvmat paths. Edits save instantly."), 1)
+        refresh = _icon_button(":/refresh.png", "↻", "Re-scan the current selection's materials")
+        refresh.clicked.connect(lambda: self.refresh_material_metadata())
+        head.addWidget(refresh)
+        layout.addLayout(head)
 
         self.material_list = qt_widgets.QListWidget()
         self.material_list.currentItemChanged.connect(lambda *_: self.select_material_metadata())

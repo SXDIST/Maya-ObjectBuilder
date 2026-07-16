@@ -76,9 +76,10 @@ def _panel_optionvar_key(title):
 
 
 class _CollapsibleSection(qt_widgets.QWidget):
-    def __init__(self, title, collapsed=False, parent=None):
+    def __init__(self, title, collapsed=False, parent=None, on_expand=None):
         super(_CollapsibleSection, self).__init__(parent)
         self._title = title
+        self._on_expand = on_expand  # called when the panel is expanded (e.g. to re-query the scene)
         self._key = _panel_optionvar_key(title)
         if cmds.optionVar(exists=self._key):
             collapsed = not bool(cmds.optionVar(query=self._key))
@@ -123,6 +124,8 @@ class _CollapsibleSection(qt_widgets.QWidget):
         self._body.setVisible(checked)
         self._btn.setText(("▼ " if checked else "▶ ") + self._title)
         cmds.optionVar(intValue=(self._key, 1 if checked else 0))
+        if checked and self._on_expand is not None:
+            self._on_expand()
 
 
 __all__ = [
