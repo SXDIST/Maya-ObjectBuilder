@@ -690,12 +690,24 @@ def assert_selection_set_export_modes(outdir):
     print("OK Object Builder selection sets export from mesh, face, and vertex selections")
 
 
+def assert_memory_lod_locators(context):
+    mem = [t for t in (cmds.ls(type="transform", long=True) or [])
+           if cmds.attributeQuery("a3obLodType", node=t, exists=True) and cmds.getAttr(t + ".a3obLodType") == 9]
+    if not mem:
+        raise RuntimeError(f"Memory LOD transform not found after import ({context})")
+    locators = cmds.listRelatives(mem[0], allDescendents=True, type="locator", fullPath=True) or []
+    if not locators:
+        raise RuntimeError(f"Memory LOD imported with no locator points ({context})")
+    print(f"OK Memory LOD imported {len(locators)} locator points ({context})")
+
+
 def roundtrip_file(path, outdir):
     cmds.file(new=True, force=True)
     cmds.file(str(path), i=True, type="Arma P3D", ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
     assert_import_hierarchy(path)
     if path.name == "sample_1_character.p3d":
         assert_y_up_character_orientation("p3d")
+        assert_memory_lod_locators("p3d")
     before = lod_counts()
     before_selections = selection_component_counts()
     cmds.a3obValidate()

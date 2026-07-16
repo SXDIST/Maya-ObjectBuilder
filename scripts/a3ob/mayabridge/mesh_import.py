@@ -380,7 +380,11 @@ def _create_single_locator(parent_name, name, selection_name, position):
     transform_obj = _name_to_object(transform_name)
     attr.set_string(transform_obj, A.SELECTION_NAME, selection_name)
     cmds.setAttr(transform_name + ".translate", position.x, position.y, position.z, type="double3")
-    cmds.createNode("locator", name=transform_name + "Shape", parent=transform_name)
+    # Build the shape name from the transform's leaf only: transform_name may come back as
+    # a full DAG path (with "|" and a namespace prefix) during File > Import, and appending
+    # "Shape" to that yields an illegal node name ("New name has no legal characters").
+    shape_leaf = _leaf(transform_name).rsplit(":", 1)[-1] + "Shape"
+    cmds.createNode("locator", name=shape_leaf, parent=transform_name)
 
 
 def create_locators_for_memory_lod(parent_transform_name, lod):
@@ -502,7 +506,10 @@ class MayaMeshImport:
 
         create_proxy_placeholders(transform_name, _leaf(transform_name), lod)
 
-        if not lod.faces and lod.resolution.lod == 9:
+        # Memory LODs carry their named points as single-vertex selections. Reconstruct
+        # them as locators whether or not the LOD also contains helper faces — otherwise
+        # points on a Memory LOD that happens to have geometry are silently dropped.
+        if lod.resolution.lod == 9:
             create_locators_for_memory_lod(transform_name, lod)
 
         set_lod_metadata(_name_to_object(transform_name), lod,
