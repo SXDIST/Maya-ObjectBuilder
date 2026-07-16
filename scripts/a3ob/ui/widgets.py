@@ -127,6 +127,9 @@ class _CollapsibleSection(qt_widgets.QWidget):
         if checked and self._on_expand is not None:
             self._on_expand()
 
+    def is_expanded(self):
+        return self._btn.isChecked()
+
 
 __all__ = [
     "_qt_icon",

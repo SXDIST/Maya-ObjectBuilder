@@ -58,8 +58,16 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         self.selection_list = None
         self.selection_details = None
         self.selection_mesh_context = None
+        self._live_sections = {}   # panel title -> _CollapsibleSection (for auto-refresh)
+        self._poll_snaps = {}      # panel title -> last scene snapshot
         self._build_ui()
         self.refresh_lod_assignment()
+        # Diff-based auto-refresh: keeps open live panels current after scene changes
+        # (e.g. reassigning a material) that don't fire a SelectionChanged event.
+        self._poll_timer = qt_core.QTimer(self)
+        self._poll_timer.setInterval(500)
+        self._poll_timer.timeout.connect(self._poll_live_panels)
+        self._poll_timer.start()
 
 
     def _build_ui(self):
@@ -95,6 +103,8 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
             body_layout.addWidget(section)
             if title == "Memory Points":
                 self.memory_points_group = section
+            if on_expand is not None:
+                self._live_sections[title] = section
         body_layout.addStretch()
 
         scroll = qt_widgets.QScrollArea()
@@ -103,6 +113,65 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
 
+    # ---- diff-based auto-refresh of open live panels -------------------------------
+
+    def _poll_live_panels(self):
+        """Cheap timer tick: refresh an open live panel only when its scene snapshot changed."""
+        if not self.isVisible():
+            return
+        self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
+                         defer=self._material_fields_focused())
+        self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
+        self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
+                         defer=self._named_fields_focused())
+
+    def _poll_panel(self, title, snapshot_fn, refresh_fn, defer=False):
+        section = self._live_sections.get(title)
+        if section is None or not section.is_expanded():
+            return
+        snap = snapshot_fn()
+        if snap == self._poll_snaps.get(title):
+            return
+        if defer:
+            return  # user is editing a field; leave the snapshot stale and retry next tick
+        self._poll_snaps[title] = snap
+        refresh_fn()
+
+    def _material_fields_focused(self):
+        for field in (_picker_field(self.material_texture), _picker_field(self.material_rvmat)):
+            if field is not None and field.hasFocus():
+                return True
+        return False
+
+    def _named_fields_focused(self):
+        for combo in (self.named_name_combo, self.named_value_combo):
+            if combo is None:
+                continue
+            if combo.hasFocus() or (combo.lineEdit() is not None and combo.lineEdit().hasFocus()):
+                return True
+        return False
+
+    def _materials_snapshot(self):
+        return tuple((i["shading_groups"][0], i["material_node"], i["texture"], i["material"])
+                     for i in _material_nodes_for_selection())
+
+    def _selections_snapshot(self):
+        lod = _selected_lod_transform()
+        label = _lod_name_from_transform(lod) if lod else None
+        rows = []
+        for node in cmds.ls(type="objectSet") or []:
+            if not _attr_exists(node, "a3obSelectionName"):
+                continue
+            rows.append((node,
+                         _safe_get_attr(node, "a3obSelectionName", "") or "",
+                         bool(_safe_get_attr(node, "a3obIsProxySelection", False)),
+                         _safe_get_attr(node, "a3obFlagComponent", "") or "",
+                         _set_member_count(node)))
+        return (label, tuple(sorted(rows)))
+
+    def _named_snapshot(self):
+        lod = self.selected_named_property_lod()
+        return _safe_get_attr(lod, "a3obProperties", "") if lod else ""
 
     def _build_quick_actions(self):
         group = qt_widgets.QGroupBox("Quick Actions")
