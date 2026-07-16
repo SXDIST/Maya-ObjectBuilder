@@ -7,13 +7,20 @@ import maya.cmds as cmds
 
 
 PLUGIN_NAME = "MayaObjectBuilder"
-PLUGIN_FILE = "MayaObjectBuilder.mll"
+PLUGIN_FILE = "MayaObjectBuilder.py"
+TRANSLATOR_PLUGIN_FILE = "MayaObjectBuilderTranslator.py"
 VERSION = "0.1.0"
 REQUIRED_PACKAGE_FILES = [
     Path("plug-ins") / PLUGIN_FILE,
+    Path("plug-ins") / TRANSLATOR_PLUGIN_FILE,
     Path("scripts") / "objectBuilderMenu.py",
     Path("scripts") / "objectBuilderAutoLOD.py",
     Path("scripts") / "mayaObjectBuilderP3DOptions.mel",
+    Path("scripts") / "a3ob" / "__init__.py",
+    Path("scripts") / "a3ob" / "formats" / "p3d.py",
+    Path("scripts") / "a3ob" / "mayabridge" / "commands.py",
+    Path("scripts") / "a3ob" / "ui" / "constants.py",
+    Path("scripts") / "a3ob" / "ui" / "scene_ops.py",
     Path("install") / "mayaObjectBuilderInstall.py",
     Path("install") / "install_maya.py",
     Path("README.md"),

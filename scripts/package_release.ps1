@@ -1,33 +1,25 @@
 param(
-    [string]$Version = "0.1.0",
-    [string]$Configuration = "Release",
-    [switch]$SkipBuild
+    [string]$Version = "0.1.0"
 )
 
 $ErrorActionPreference = "Stop"
 
+# Pure-Python release: no compilation. Stage plug-ins/ + scripts/ + install/ and zip.
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PackageName = "MayaObjectBuilder-v$Version-win64"
 $DistDir = Join-Path $RepoRoot "dist"
 $StageDir = Join-Path $DistDir $PackageName
 $ZipPath = Join-Path $DistDir "$PackageName.zip"
-$PluginPath = Join-Path $RepoRoot "build/$Configuration/MayaObjectBuilder.mll"
-
-if (-not $SkipBuild) {
-    cmake --build (Join-Path $RepoRoot "build") --config $Configuration
-    if ($LASTEXITCODE -ne 0) {
-        throw "Release build failed with exit code $LASTEXITCODE"
-    }
-}
-
-if (-not (Test-Path $PluginPath)) {
-    throw "Plugin binary not found: $PluginPath"
-}
 
 $RequiredFiles = @(
+    "plug-ins/MayaObjectBuilder.py",
+    "plug-ins/MayaObjectBuilderTranslator.py",
     "scripts/objectBuilderMenu.py",
     "scripts/objectBuilderAutoLOD.py",
     "scripts/mayaObjectBuilderP3DOptions.mel",
+    "scripts/a3ob/__init__.py",
+    "scripts/a3ob/ui/constants.py",
+    "scripts/a3ob/ui/scene_ops.py",
     "install/mayaObjectBuilderInstall.py",
     "install/install_maya.py",
     "README.md",
@@ -47,14 +39,19 @@ if (Test-Path $ZipPath) {
     Remove-Item $ZipPath -Force
 }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "plug-ins") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "scripts") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "install") | Out-Null
 
-Copy-Item $PluginPath (Join-Path $StageDir "plug-ins/MayaObjectBuilder.mll")
-Copy-Item (Join-Path $RepoRoot "scripts/objectBuilderMenu.py") (Join-Path $StageDir "scripts/objectBuilderMenu.py")
-Copy-Item (Join-Path $RepoRoot "scripts/objectBuilderAutoLOD.py") (Join-Path $StageDir "scripts/objectBuilderAutoLOD.py")
-Copy-Item (Join-Path $RepoRoot "scripts/mayaObjectBuilderP3DOptions.mel") (Join-Path $StageDir "scripts/mayaObjectBuilderP3DOptions.mel")
+# Copy plug-ins/ and scripts/ trees, excluding Python caches.
+$exclude = @("__pycache__", "*.pyc", "*.pyo")
+Copy-Item (Join-Path $RepoRoot "plug-ins") (Join-Path $StageDir "plug-ins") -Recurse -Exclude $exclude
+Copy-Item (Join-Path $RepoRoot "scripts") (Join-Path $StageDir "scripts") -Recurse -Exclude $exclude
+# Drop dev-only helpers and build scripts from the shipped scripts/ folder.
+foreach ($devFile in @("dev_install.py", "package_release.ps1", "launch_maya_debug.ps1")) {
+    $p = Join-Path $StageDir (Join-Path "scripts" $devFile)
+    if (Test-Path $p) { Remove-Item $p -Force }
+}
+Get-ChildItem -Path (Join-Path $StageDir "scripts") -Recurse -Include "__pycache__" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+
 Copy-Item (Join-Path $RepoRoot "install/mayaObjectBuilderInstall.py") (Join-Path $StageDir "install/mayaObjectBuilderInstall.py")
 Copy-Item (Join-Path $RepoRoot "install/install_maya.py") (Join-Path $StageDir "install/install_maya.py")
 Copy-Item (Join-Path $RepoRoot "README.md") (Join-Path $StageDir "README.md")
