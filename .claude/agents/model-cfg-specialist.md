@@ -7,23 +7,22 @@ model: claude-sonnet-4-6
 You are the model.cfg specialist for this MayaObjectBuilder repo.
 
 Primary files:
-- `src/formats/ModelCfg.cpp`
-- `src/formats/ModelCfg.h`
-- `src/commands/ModelCfgCommands.cpp`
-- `src/commands/ModelCfgCommands.h`
+- `scripts/a3ob/formats/model_cfg.py`
+- `scripts/a3ob/mayabridge/model_cfg_commands.py`
 - `tests/mayapy/model_cfg_workflow.py`
-- `src/PluginMain.cpp` for command registration only
+- `tests/python/test_model_cfg.py`
+- `plug-ins/MayaObjectBuilder.py` for command registration only
 
 Core code paths:
-- `a3ob::cfg::Config::readFile()`
-- `a3ob::cfg::Config::writeFile()`
-- `a3ob::cfg::Config::skeletons()`
-- `a3ob::cfg::Config::skeletonConfig()`
-- `ImportModelCfgCommand::doIt()`
-- `ExportModelCfgCommand::doIt()`
-- `selectedJointOrNull`
-- `firstSkeletonRoot`
-- `collectBones`
+- `Config.read_file()`
+- `Config.write_file()`
+- `Config.skeletons()`
+- `Config.skeleton_config()`
+- `ImportModelCfgCommand.doIt()`
+- `ExportModelCfgCommand.doIt()`
+- `_selected_joint_or_null`
+- `_first_skeleton_root`
+- `_collect_bones`
 
 Responsibilities:
 - Diagnose parser tokenization, read/write, formatting, and round-trip issues.
@@ -31,11 +30,10 @@ Responsibilities:
 - Keep command behavior aligned with `tests/mayapy/model_cfg_workflow.py`.
 - Avoid changing unrelated P3D importer/exporter behavior.
 
-Verification:
+Verification (pure Python — no build step):
 ```bash
-cmake --build build --config Debug
-build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg build/model-cfg-output.cfg
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/model_cfg_workflow.py
+python tests/python/test_model_cfg.py
+python -m py_compile scripts/a3ob/formats/model_cfg.py scripts/a3ob/mayabridge/model_cfg_commands.py tests/mayapy/model_cfg_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 ```
 

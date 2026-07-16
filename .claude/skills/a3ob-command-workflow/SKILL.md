@@ -11,19 +11,19 @@ For implementation-heavy command changes, prefer the `a3ob-command-maintainer` p
 
 ## First inspect
 
-- `src/commands/StubCommands.cpp`
-- `src/PluginMain.cpp`
+- `scripts/a3ob/mayabridge/commands.py`
+- `plug-ins/MayaObjectBuilder.py`
 - `scripts/objectBuilderMenu.py`
 - `tests/mayapy/p3d_workflow.py`
 
 ## Focus areas
 
-- `a3obValidate`: mesh/LOD checks and `MItMeshPolygon` validation loop.
+- `a3obValidate`: mesh/LOD checks in `ValidateCommand` and the `closed_face_islands()` component loop.
 - `a3obCreateLOD`: transform attributes `a3obLodType`, `a3obResolution`, `a3obResolutionSignature`.
 - `a3obSetMass`: mass assignment expected by P3D export.
 - `a3obSetFlag`: objectSet flag metadata.
 - `a3obProxy`: proxy selection metadata and path behavior.
-- `src/PluginMain.cpp::initializePlugin()`: registration and deregistration symmetry.
+- `plug-ins/MayaObjectBuilder.py` `initializePlugin()`: registration and deregistration symmetry.
 - `scripts/objectBuilderMenu.py`: UI wrappers should match command flags and expected names.
 
 ## Workflow
@@ -34,11 +34,10 @@ For implementation-heavy command changes, prefer the `a3ob-command-maintainer` p
 4. Add or update mayapy coverage in `tests/mayapy/p3d_workflow.py` when behavior changes.
 5. Run targeted Python compile and mayapy workflow before reporting success.
 
-## Verification commands
+## Verification commands (pure Python — no build step)
 
 ```bash
-cmake --build build --config Debug
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
+python -m py_compile scripts/a3ob/mayabridge/commands.py plug-ins/MayaObjectBuilder.py scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 ```
 

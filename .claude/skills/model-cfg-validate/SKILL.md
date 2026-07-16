@@ -11,37 +11,35 @@ For non-trivial parser or skeleton workflow issues, prefer the `model-cfg-specia
 
 ## First inspect
 
-- `src/formats/ModelCfg.cpp`
-- `src/formats/ModelCfg.h`
-- `src/commands/ModelCfgCommands.cpp`
-- `src/commands/ModelCfgCommands.h`
+- `scripts/a3ob/formats/model_cfg.py`
+- `scripts/a3ob/mayabridge/model_cfg_commands.py`
 - `tests/mayapy/model_cfg_workflow.py`
-- `src/PluginMain.cpp` only if command registration is implicated.
+- `tests/python/test_model_cfg.py`
+- `plug-ins/MayaObjectBuilder.py` only if command registration is implicated.
 
 ## Core code paths
 
-- `a3ob::cfg::Config::readFile()`
-- `a3ob::cfg::Config::writeFile()`
-- `a3ob::cfg::Config::skeletons()`
-- `a3ob::cfg::Config::skeletonConfig()`
-- `ImportModelCfgCommand::doIt()`
-- `ExportModelCfgCommand::doIt()`
-- Joint helpers such as `selectedJointOrNull`, `firstSkeletonRoot`, and `collectBones`.
+- `Config.read_file()`
+- `Config.write_file()`
+- `Config.skeletons()`
+- `Config.skeleton_config()`
+- `ImportModelCfgCommand.doIt()`
+- `ExportModelCfgCommand.doIt()`
+- Joint helpers such as `_selected_joint_or_null`, `_first_skeleton_root`, and `_collect_bones`.
 
-## Commands
+## Commands (pure Python — no build step)
 
 ```bash
-cmake --build build --config Debug
-build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg build/model-cfg-output.cfg
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/model_cfg_workflow.py
+python tests/python/test_model_cfg.py
+python -m py_compile scripts/a3ob/formats/model_cfg.py scripts/a3ob/mayabridge/model_cfg_commands.py tests/mayapy/model_cfg_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 ```
 
 ## Debug flow
 
 1. Decide whether the failure is pure parser/writer or Maya command workflow.
-2. For parser/writer failures, start with `ModelCfg.cpp` and the C++ test.
-3. For Maya failures, start with `ModelCfgCommands.cpp` and `tests/mayapy/model_cfg_workflow.py`.
+2. For parser/writer failures, start with `model_cfg.py` and `tests/python/test_model_cfg.py`.
+3. For Maya failures, start with `model_cfg_commands.py` and `tests/mayapy/model_cfg_workflow.py`.
 4. Keep output stable unless the test explicitly expects a formatting change.
 5. Re-run the model.cfg command sequence before reporting success.
 

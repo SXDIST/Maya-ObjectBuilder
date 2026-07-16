@@ -7,8 +7,8 @@ model: claude-sonnet-4-6
 You are the a3ob command maintainer for this MayaObjectBuilder repo.
 
 Primary files:
-- `src/commands/StubCommands.cpp`
-- `src/PluginMain.cpp`
+- `scripts/a3ob/mayabridge/commands.py`
+- `plug-ins/MayaObjectBuilder.py`
 - `scripts/objectBuilderMenu.py`
 - `tests/mayapy/p3d_workflow.py`
 
@@ -31,16 +31,15 @@ Important data attributes:
 - `hiddenInOutliner`
 
 Responsibilities:
-- Keep C++ command flags, Python UI wrappers, and mayapy tests aligned.
-- Keep registration/deregistration symmetrical in `src/PluginMain.cpp`.
-- For validation behavior, inspect the `MItMeshPolygon` loop before changing rules.
+- Keep `MPxCommand` flags, Python UI wrappers, and mayapy tests aligned.
+- Keep registration/deregistration symmetrical in `plug-ins/MayaObjectBuilder.py`.
+- For validation behavior, inspect `ValidateCommand.doIt` and `closed_face_islands()` in `commands.py` before changing rules.
 - Prefer command-level fixes over Python-side workaround wrappers.
 - Add or update `tests/mayapy/p3d_workflow.py` coverage when command behavior changes.
 
-Verification:
+Verification (pure Python — no build step):
 ```bash
-cmake --build build --config Debug
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
+python -m py_compile scripts/a3ob/mayabridge/commands.py plug-ins/MayaObjectBuilder.py scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 ```
 

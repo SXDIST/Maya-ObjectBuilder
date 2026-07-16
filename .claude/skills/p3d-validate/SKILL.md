@@ -1,6 +1,6 @@
 ---
 name: p3d-validate
-description: Run the full MayaObjectBuilder validation checklist: Debug build, P3D roundtrip, model.cfg test, py_compile, and Maya 2027 mayapy workflows.
+description: Run the full MayaObjectBuilder validation checklist: P3D roundtrip, model.cfg test, py_compile, and Maya 2027 mayapy workflows.
 ---
 
 # p3d-validate
@@ -12,7 +12,7 @@ This is a procedural workflow. Prefer the `validation-runner` project subagent w
 ## Rules
 
 - Run from the repo root.
-- Do not change CMake generator settings.
+- The plugin is pure Python — there is no build step.
 - Do not edit `Arma3ObjectBuilder-master/`; it is reference/test input only.
 - Report concise pass/fail status per command, then the first relevant failure.
 - If a command fails, stop unless the next command is needed to isolate the failure.
@@ -20,19 +20,17 @@ This is a procedural workflow. Prefer the `validation-runner` project subagent w
 ## Commands
 
 ```bash
-cmake --build build --config Debug
-build/Debug/p3d_roundtrip.exe Arma3ObjectBuilder-master/tests/inputs/p3d build/p3d-roundtrip
-build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg build/model-cfg-output.cfg
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py tests/mayapy/model_cfg_workflow.py
+python tests/python/test_p3d_roundtrip.py
+python tests/python/test_model_cfg.py
+python -m py_compile plug-ins/*.py scripts/objectBuilderMenu.py scripts/objectBuilderAutoLOD.py scripts/dev_install.py $(git ls-files 'scripts/a3ob/*.py') tests/mayapy/*.py tests/python/*.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 ```
 
 ## Common failures
 
-- Build failure: inspect the changed C++ file first, then `src/PluginMain.cpp` if registration broke.
-- `p3d_roundtrip` failure: inspect `src/formats/P3D.cpp`, `src/formats/P3D.h`, `src/maya/MayaMeshExport.cpp`, `src/maya/MayaMeshImport.cpp`.
-- `model_cfg_test` failure: inspect `src/formats/ModelCfg.cpp` and `src/commands/ModelCfgCommands.cpp`.
+- `test_p3d_roundtrip` failure: inspect `scripts/a3ob/formats/p3d.py`, `scripts/a3ob/formats/binary.py`, `scripts/a3ob/mayabridge/mesh_export.py`, `scripts/a3ob/mayabridge/mesh_import.py`.
+- `test_model_cfg` failure: inspect `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py`.
 - `py_compile` failure: inspect the exact Python file and line from the traceback.
 - `mayapy` workflow failure: preserve the traceback and inspect the workflow assertion before changing plugin code.
 

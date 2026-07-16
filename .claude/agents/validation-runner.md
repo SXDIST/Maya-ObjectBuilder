@@ -10,12 +10,11 @@ Your job is to run known commands, summarize results, and preserve the first mea
 
 Run from repo root.
 
-Canonical full checklist:
+Canonical full checklist (pure Python — no build step):
 ```bash
-cmake --build build --config Debug
-build/Debug/p3d_roundtrip.exe Arma3ObjectBuilder-master/tests/inputs/p3d build/p3d-roundtrip
-build/Debug/model_cfg_test.exe Arma3ObjectBuilder-master/tests/inputs/model.cfg build/model-cfg-output.cfg
-python -m py_compile scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py tests/mayapy/model_cfg_workflow.py
+python tests/python/test_p3d_roundtrip.py
+python tests/python/test_model_cfg.py
+python -m py_compile plug-ins/*.py scripts/objectBuilderMenu.py scripts/objectBuilderAutoLOD.py scripts/dev_install.py $(git ls-files 'scripts/a3ob/*.py') tests/mayapy/*.py tests/python/*.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
 ```
@@ -24,7 +23,7 @@ Rules:
 - Stop on failure unless the user explicitly asks to continue collecting failures.
 - Keep output short: command, PASS/FAIL, key error line, next file to inspect.
 - Do not edit `Arma3ObjectBuilder-master/`.
-- Do not change build generator settings.
+- Do not change the dev-install/module setup.
 - If Maya is locked by a running process, report the process issue instead of deleting or forcing anything unless the user asked.
 
 Output format:

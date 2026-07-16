@@ -33,8 +33,9 @@ powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <v
 
 ## Release flow when prerequisites exist
 
+The plugin is pure Python — packaging is a plain file copy plus zip, with no build step.
+
 ```bash
-cmake --build build --config Release
 powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <version>
 ```
 
