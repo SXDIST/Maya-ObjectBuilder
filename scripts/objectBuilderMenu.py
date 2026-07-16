@@ -36,23 +36,13 @@ def _qt_icon(name):
     return icon if not icon.isNull() else qt_gui.QIcon()
 
 
-SCRIPT_PATH = Path(globals().get("__file__", r"C:\Users\targaryen\source\repos\maya\dayz-object-builder\scripts\objectBuilderMenu.py")).resolve()
+SCRIPT_PATH = Path(globals().get("__file__") or "objectBuilderMenu.py").resolve()
 MENU_NAME = "MayaObjectBuilderMenu"
 PLUGIN_NAME = "MayaObjectBuilder"
 TRANSLATOR_NAME = "Arma P3D"
 DOCK_NAME = "MayaObjectBuilderWorkspaceControl"
 _ui_script_jobs = {}  # event_name -> scriptJob id
 _qt_dock_widget = None
-
-COMMON_NAMED_PROPERTIES = [
-    ("lodnoshadow", "1"),
-    ("autocenter", "0"),
-    ("buoyancy", "1"),
-    ("class", "house"),
-    ("forcenotalpha", "1"),
-    ("map", "house"),
-    ("prefershadowvolume", "1"),
-]
 
 KNOWN_NAMED_PROPS = {
     "animated": [],
@@ -217,7 +207,6 @@ LOD_DEFINITIONS = [
     {"type": 32, "label": "Navigation", "has_resolution": False, "default_resolution": 0},
 ]
 LOD_TYPE_NAMES = {definition["type"]: definition["label"] for definition in LOD_DEFINITIONS}
-LOD_DEFINITIONS_BY_LABEL = {definition["label"]: definition for definition in LOD_DEFINITIONS}
 
 
 def _plugin_path():
@@ -428,38 +417,6 @@ def generate_auto_lods_from_ui():
     generated = _auto_lod_module().generate_auto_lods(dock.auto_lod_settings())
     if generated:
         _refresh_context_ui()
-
-
-def set_mass():
-    load_plugin()
-    action = cmds.confirmDialog(title="Set Mass", message="Set or clear mass values?", button=["Set", "Clear", "Cancel"], defaultButton="Set", cancelButton="Cancel", dismissString="Cancel")
-    if action == "Clear":
-        cmds.a3obSetMass(clear=True)
-    elif action == "Set":
-        value = _prompt("Set Mass", "Mass value:", "1.0")
-        if value is not None:
-            mode = cmds.confirmDialog(title="Set Mass", message="Apply only to selected vertices?", button=["Selected", "All", "Cancel"], defaultButton="All", cancelButton="Cancel", dismissString="Cancel")
-            if mode != "Cancel":
-                cmds.a3obSetMass(value=float(value), selectedComponents=(mode == "Selected"))
-
-
-def set_material():
-    load_plugin()
-    open_dock()
-
-
-def set_flag():
-    load_plugin()
-    component = cmds.confirmDialog(title="Set Flag", message="Component type:", button=["Face", "Vertex", "Cancel"], defaultButton="Face", cancelButton="Cancel", dismissString="Cancel")
-    if component == "Cancel":
-        return
-    value = _prompt("Set Flag", "Flag value:", "1")
-    if value is None:
-        return
-    name = _prompt("Set Flag", "Set name:", "a3ob_flag")
-    if name is None:
-        return
-    cmds.a3obSetFlag(component=component.lower(), value=int(value), name=name)
 
 
 def apply_mass_from_ui():
@@ -1336,7 +1293,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.lod_type_combo = None
         self.lod_resolution = None
         self.lod_context = None
-        self.lod_preview = None
         self.memory_points_group = None
         self.auto_lod_preset = None
         self.auto_lod_first = None
@@ -1357,12 +1313,9 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.proxy_path_field = None
         self.proxy_index_field = None
         self.proxy_from_selection_check = None
-        self.named_lod_combo = None
-        self.named_preset_combo = None
         self.named_list = None
         self.named_name_combo = None
         self.named_value_combo = None
-        self.named_lods = {}
         self.named_items = {}
         self.material_list = None
         self.material_texture = None
@@ -1733,16 +1686,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.addStretch()
         return widget
 
-    def _placeholder_tab(self, title, message):
-        widget = qt_widgets.QWidget()
-        layout = qt_widgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        label = qt_widgets.QLabel(message)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        layout.addStretch()
-        return widget
-
     def selected_lod_definition(self):
         index = self.lod_type_combo.currentIndex() if self.lod_type_combo is not None else 0
         lod_type = self.lod_type_combo.itemData(index) if self.lod_type_combo is not None else LOD_DEFINITIONS[0]["type"]
@@ -1813,9 +1756,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
     def named_property_value(self):
         return self.named_value_combo.currentText().strip() if self.named_value_combo is not None else ""
 
-    def named_property_preset(self):
-        return ""
-
     def set_named_property_fields(self, name, value):
         if self.named_name_combo is not None:
             self.named_name_combo.blockSignals(True)
@@ -1839,9 +1779,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         if values:
             self.named_value_combo.addItems(values)
         self.named_value_combo.blockSignals(False)
-
-    def refresh_named_property_lods(self):
-        pass
 
     def refresh_named_properties(self):
         if self.named_list is None:
@@ -2036,8 +1973,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         target = selected_lod or "No LOD selected."
         if self.lod_context is not None:
             self.lod_context.setText(f"Target: {target}")
-        if self.lod_preview is not None:
-            self.lod_preview.setText(f"Will assign: {_lod_assignment_label(definition)}")
         if not self._syncing_from_selection and is_lod:
             load_plugin()
             resolution = _lod_resolution_value(definition)
@@ -2063,9 +1998,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         else:
             self.memory_points_group.setVisible(False)
 
-    def _sync_named_lod_combo(self):
-        self.refresh_named_properties()
-
     def refresh_lod_assignment(self, *_):
         selected_lod = _selected_lod_transform()
         if self.lod_toggle is not None:
@@ -2090,7 +2022,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
                     self.lod_resolution.blockSignals(False)
             self._on_lod_controls_changed()
             self._update_memory_points_visibility()
-            self._sync_named_lod_combo()
+            self.refresh_named_properties()
         finally:
             self._syncing_from_selection = False
 
@@ -2185,29 +2117,6 @@ def hide_plugin_ui():
     if cmds.menu(MENU_NAME, exists=True):
         cmds.deleteUI(MENU_NAME)
     _remove_legacy_shelf_button()
-
-
-def create_proxy():
-    load_plugin()
-    path = _prompt("Create Proxy", "Proxy path:")
-    if not path:
-        return
-    index = _prompt("Create Proxy", "Proxy index:", "1")
-    if index is None:
-        return
-    mode = cmds.confirmDialog(title="Create Proxy", message="Create proxy selection from selected components?", button=["Yes", "No", "Cancel"], defaultButton="Yes", cancelButton="Cancel", dismissString="Cancel")
-    if mode == "Cancel":
-        return
-    cmds.a3obProxy(path=path, index=int(index), fromSelection=(mode == "Yes"), update=True)
-
-
-def validate():
-    load_plugin()
-    mode = cmds.confirmDialog(title="Validate", message="Validate selected LODs only?", button=["Selection", "All", "Cancel"], defaultButton="All", cancelButton="Cancel", dismissString="Cancel")
-    if mode == "Selection":
-        _validate_selection_no_flush()
-    elif mode == "All":
-        _validate_scene_no_flush()
 
 
 def install():
