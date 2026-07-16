@@ -5,7 +5,7 @@ import maya.standalone
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "build" / "Debug" / "MayaObjectBuilder.mll"
+PLUGIN = ROOT / "plug-ins" / "MayaObjectBuilder.py"
 INPUT = ROOT / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "model.cfg"
 OUTPUT = ROOT / "build" / "model-cfg-workflow.cfg"
 

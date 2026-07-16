@@ -153,6 +153,8 @@ def _parent(node, parent):
 def _mark_lod(transform, lod_type, resolution=0):
     cmds.select(transform, replace=True)
     result = cmds.a3obCreateLOD(lodType=lod_type, resolution=resolution, name=transform)
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else None
     return result or transform
 
 
@@ -171,7 +173,9 @@ def _set_named_properties(lod, properties):
         return
     cmds.select(lod, replace=True)
     for name, value in properties:
-        cmds.a3obNamedProperty(set=(name, value))
+        # The a3obNamedProperty -set flag takes a single "key=value" string
+        # (OpenMaya 2.0 flags accept only one argument; long alias is -setproperty).
+        cmds.a3obNamedProperty(s="%s=%s" % (name, value))
 
 
 def _source_bbox(source):
@@ -409,18 +413,32 @@ def generate_auto_lods(settings=None):
 
     generated = []
 
+    # Resolution generation renames/consumes the source into LOD1, so preserve a
+    # snapshot of the original geometry for the geometry/view/fire/memory generators
+    # (which only read its bounding box) when both families are requested.
+    geometry_source = source
+    geometry_snapshot = None
+    needs_geometry_source = settings["geometry"] or settings["view_geometry"] or settings["fire_geometry"] or settings["memory"]
+    if settings["resolution"] and needs_geometry_source:
+        geometry_snapshot = cmds.duplicate(source, name="__auto_lod_geometry_source", returnRootsOnly=True)[0]
+        cmds.setAttr(geometry_snapshot + ".visibility", False)
+        geometry_source = geometry_snapshot
+
     if settings["resolution"]:
         generated.extend(_generate_resolution_lods(source, settings, _group("visuals")))
     if settings["geometry"] or settings["view_geometry"] or settings["fire_geometry"]:
         geometries = _group("geometries")
         if settings["geometry"]:
-            generated.append(_generate_geometry_lod(source, settings, geometries))
+            generated.append(_generate_geometry_lod(geometry_source, settings, geometries))
         if settings["view_geometry"]:
-            generated.append(_generate_view_geometry_lod(source, settings, geometries))
+            generated.append(_generate_view_geometry_lod(geometry_source, settings, geometries))
         if settings["fire_geometry"]:
-            generated.append(_generate_fire_geometry_lod(source, settings, geometries))
+            generated.append(_generate_fire_geometry_lod(geometry_source, settings, geometries))
     if settings["memory"]:
-        generated.append(_generate_memory_lod(source, settings, _group("point_clouds")))
+        generated.append(_generate_memory_lod(geometry_source, settings, _group("point_clouds")))
+
+    if geometry_snapshot and cmds.objExists(geometry_snapshot):
+        cmds.delete(geometry_snapshot)
 
     generated = [node for node in generated if node and cmds.objExists(node)]
     if generated:
