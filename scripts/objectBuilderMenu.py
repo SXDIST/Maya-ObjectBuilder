@@ -13,6 +13,7 @@ try:
     qt_is_valid = shiboken.isValid
     qt_widgets = importlib.import_module("PySide6.QtWidgets")
     qt_core = importlib.import_module("PySide6.QtCore")
+    qt_gui = importlib.import_module("PySide6.QtGui")
     QT_AVAILABLE = True
 except ImportError:
     omui = None
@@ -20,7 +21,19 @@ except ImportError:
     qt_is_valid = None
     qt_widgets = None
     qt_core = None
+    qt_gui = None
     QT_AVAILABLE = False
+
+
+UI_MARGIN = 8
+UI_SPACING = 6
+
+
+def _qt_icon(name):
+    if not QT_AVAILABLE or qt_gui is None or not name:
+        return qt_gui.QIcon() if qt_gui is not None else None
+    icon = qt_gui.QIcon(name)
+    return icon if not icon.isNull() else qt_gui.QIcon()
 
 
 SCRIPT_PATH = Path(globals().get("__file__", r"C:\Users\targaryen\source\repos\maya\dayz-object-builder\scripts\objectBuilderMenu.py")).resolve()
@@ -248,15 +261,9 @@ LOD_DEFINITIONS_BY_LABEL = {definition["label"]: definition for definition in LO
 
 
 def _plugin_path():
-    candidates = [
-        SCRIPT_PATH.parent.parent / "plug-ins" / "MayaObjectBuilder.mll",
-        SCRIPT_PATH.parents[1] / "build" / "Release" / "MayaObjectBuilder.mll",
-        SCRIPT_PATH.parents[1] / "build" / "Debug" / "MayaObjectBuilder.mll",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    return candidates[0]
+    # Pure-Python plugin: plug-ins/ is a sibling of scripts/ both in the repo and in
+    # the installed Documents/maya/MayaObjectBuilder/ layout.
+    return SCRIPT_PATH.parent.parent / "plug-ins" / "MayaObjectBuilder.py"
 
 
 def _ensure_script_path():
@@ -280,7 +287,7 @@ def load_plugin():
     if path.exists():
         cmds.loadPlugin(str(path))
     else:
-        selected = cmds.fileDialog2(fileMode=1, caption="Load MayaObjectBuilder.mll")
+        selected = cmds.fileDialog2(fileMode=1, caption="Load MayaObjectBuilder.py")
         if selected:
             cmds.loadPlugin(selected[0])
 
@@ -1859,43 +1866,71 @@ def _build_validation_ui():
     _end_card()
 
 
-def _qt_button(label, callback, tooltip=""):
+def _qt_button(label, callback, tooltip="", icon=""):
     button = qt_widgets.QPushButton(label)
+    if icon:
+        qicon = _qt_icon(icon)
+        if qicon is not None and not qicon.isNull():
+            button.setIcon(qicon)
     if tooltip:
         button.setToolTip(tooltip)
     button.clicked.connect(callback)
     return button
 
 
+def _panel_optionvar_key(title):
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
+    return "MayaObjectBuilder_panel_%s_expanded" % slug
+
+
 class _CollapsibleSection(qt_widgets.QWidget):
     def __init__(self, title, collapsed=False, parent=None):
         super(_CollapsibleSection, self).__init__(parent)
         self._title = title
+        self._key = _panel_optionvar_key(title)
+        if cmds.optionVar(exists=self._key):
+            collapsed = not bool(cmds.optionVar(query=self._key))
+
+        header = qt_widgets.QFrame()
+        header.setAutoFillBackground(True)
+        if qt_gui is not None:
+            pal = header.palette()
+            pal.setColor(qt_gui.QPalette.Window, pal.color(qt_gui.QPalette.Mid))
+            header.setPalette(pal)
+        header_layout = qt_widgets.QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 4, 8, 4)
+        header_layout.setSpacing(6)
+
         self._btn = qt_widgets.QPushButton(("▶ " if collapsed else "▼ ") + title)
         self._btn.setFlat(True)
         self._btn.setCheckable(True)
         self._btn.setChecked(not collapsed)
-        self._btn.setStyleSheet(
-            "QPushButton { text-align:left; font-weight:bold; padding:5px 8px;"
-            " background:#3c3c3c; border-radius:3px; }"
-            " QPushButton:checked { background:#444; }"
-        )
+        self._btn.setCursor(qt_core.Qt.PointingHandCursor)
+        font = self._btn.font()
+        font.setBold(True)
+        self._btn.setFont(font)
+        self._btn.setStyleSheet("")  # ensure no inherited stylesheet
+        self._btn.setSizePolicy(qt_widgets.QSizePolicy.Expanding, qt_widgets.QSizePolicy.Preferred)
+        header_layout.addWidget(self._btn)
+
         self._body = qt_widgets.QFrame()
         self._body.setFrameShape(qt_widgets.QFrame.NoFrame)
         self._body.setVisible(not collapsed)
         self.body_layout = qt_widgets.QVBoxLayout(self._body)
         self.body_layout.setContentsMargins(12, 6, 4, 6)
-        self.body_layout.setSpacing(6)
+        self.body_layout.setSpacing(UI_SPACING)
+
         outer = qt_widgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 4, 0, 0)
         outer.setSpacing(0)
-        outer.addWidget(self._btn)
+        outer.addWidget(header)
         outer.addWidget(self._body)
         self._btn.toggled.connect(self._on_toggle)
 
     def _on_toggle(self, checked):
         self._body.setVisible(checked)
         self._btn.setText(("▼ " if checked else "▶ ") + self._title)
+        cmds.optionVar(intValue=(self._key, 1 if checked else 0))
 
 
 class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
