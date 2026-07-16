@@ -1237,6 +1237,22 @@ def _picker_field(container):
     return getattr(container, "_line_edit", None) if container is not None else None
 
 
+def _hint(text):
+    """A wrapped, muted, slightly smaller secondary caption (no stylesheet)."""
+    label = qt_widgets.QLabel(text)
+    label.setWordWrap(True)
+    if qt_gui is not None:
+        pal = label.palette()
+        muted = pal.color(qt_gui.QPalette.Disabled, qt_gui.QPalette.WindowText)
+        pal.setColor(qt_gui.QPalette.WindowText, muted)
+        label.setPalette(pal)
+        font = label.font()
+        if font.pointSizeF() > 0:
+            font.setPointSizeF(font.pointSizeF() * 0.92)
+        label.setFont(font)
+    return label
+
+
 def _panel_optionvar_key(title):
     slug = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_")
     return "MayaObjectBuilder_panel_%s_expanded" % slug
@@ -1462,13 +1478,10 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout = qt_widgets.QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
-        memory_hint = qt_widgets.QLabel(
-            "Add Memory Point — creates a new named locator (one vertex). "
-            "Add Point to Selection — select an existing memory point and click this to add a second vertex; "
-            "the first click auto-converts it to a named group with two point locators inside."
-        )
-        memory_hint.setWordWrap(True)
-        layout.addWidget(memory_hint)
+        layout.addWidget(_hint(
+            "Add Memory Point — new named locator. Add Point to Selection — "
+            "adds a second point to the selected one (auto-groups them)."
+        ))
         mem_buttons = qt_widgets.QHBoxLayout()
         mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
         mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
@@ -1569,9 +1582,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        hint = qt_widgets.QLabel("Named properties are stored on the selected Object Builder LOD and exported into the P3D TAGG metadata.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.addWidget(_hint("Stored on the selected LOD, exported to P3D TAGGs."))
 
         form = qt_widgets.QFormLayout()
         layout.addLayout(form)
@@ -1605,9 +1616,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        hint = qt_widgets.QLabel("Pick a Maya material, then set its texture and rvmat paths. Edits save to the selected material instantly.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.addWidget(_hint("Pick a material, set its texture / rvmat paths. Edits save instantly."))
 
         self.material_list = qt_widgets.QListWidget()
         self.material_list.currentItemChanged.connect(lambda *_: self.select_material_metadata())
@@ -1636,9 +1645,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        hint = qt_widgets.QLabel("Filter and maintain Object Builder selections, proxy sets, and face/vertex flag sets.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.addWidget(_hint("Object Builder selections, proxies and face / vertex flag sets."))
 
         filters = qt_widgets.QHBoxLayout()
         self.selection_lod_filter = qt_widgets.QComboBox()
@@ -1668,13 +1675,23 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.addWidget(self.selection_details)
 
         first_row = qt_widgets.QHBoxLayout()
-        for label, callback in (("Select", _select_set_members), ("Rename", _rename_selection_set), ("Create", _create_selection_set), ("Find", find_components_from_ui)):
-            first_row.addWidget(_qt_button(label, callback))
+        for label, callback, tip in (
+            ("Select", _select_set_members, "Select the live members of the highlighted set"),
+            ("Rename", _rename_selection_set, "Rename the highlighted Object Builder selection"),
+            ("Create", _create_selection_set, "Create a new selection set from the current component selection"),
+            ("Find", find_components_from_ui, "Find closed mesh components and create Component## selection sets"),
+        ):
+            first_row.addWidget(_qt_button(label, callback, tip))
         layout.addLayout(first_row)
 
         second_row = qt_widgets.QHBoxLayout()
-        for label, callback in (("Add Members", _add_to_selection_set), ("Remove Members", _remove_from_selection_set), ("Delete Set", _delete_selection_set), ("Clear OB", _clear_all_object_builder_sets)):
-            second_row.addWidget(_qt_button(label, callback))
+        for label, callback, tip in (
+            ("Add", _add_to_selection_set, "Add selected components to the highlighted set"),
+            ("Remove", _remove_from_selection_set, "Remove selected components from the highlighted set"),
+            ("Delete", _delete_selection_set, "Delete the highlighted Object Builder set"),
+            ("Clear All", _clear_all_object_builder_sets, "Delete every Object Builder selection set in the scene"),
+        ):
+            second_row.addWidget(_qt_button(label, callback, tip))
         layout.addLayout(second_row)
 
         self.refresh_selection_manager(True)
@@ -1684,9 +1701,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        label = qt_widgets.QLabel("Check Object Builder LODs before export. Scene checks every LOD; Selection checks only selected LODs/components.")
-        label.setWordWrap(True)
-        layout.addWidget(label)
+        layout.addWidget(_hint("Validate before export. Scene = every LOD; Selection = selected only."))
         buttons = qt_widgets.QHBoxLayout()
         buttons.addWidget(_qt_button("Scene", _validate_scene_no_flush))
         buttons.addWidget(_qt_button("Selection", _validate_selection_no_flush))
