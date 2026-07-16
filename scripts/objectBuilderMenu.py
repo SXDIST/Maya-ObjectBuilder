@@ -1,3 +1,4 @@
+import contextlib
 import importlib
 import re
 import sys
@@ -5,6 +6,16 @@ from pathlib import Path
 
 import maya.cmds as cmds
 import maya.mel as mel
+
+
+@contextlib.contextmanager
+def _undo_chunk(name):
+    """Group Maya operations into a single named undo chunk."""
+    cmds.undoInfo(openChunk=True, chunkName=name)
+    try:
+        yield
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 try:
     omui = importlib.import_module("maya.OpenMayaUI")
@@ -207,6 +218,8 @@ LOD_DEFINITIONS = [
     {"type": 32, "label": "Navigation", "has_resolution": False, "default_resolution": 0},
 ]
 LOD_TYPE_NAMES = {definition["type"]: definition["label"] for definition in LOD_DEFINITIONS}
+RESOLUTION_LOD_TYPE = 0  # Resolution LOD: the only type carrying a numeric resolution
+MEMORY_LOD_TYPE = 9      # Memory LOD: holds named locator points
 
 
 def _plugin_path():
@@ -365,15 +378,12 @@ def assign_lod_to_selection():
     if not cmds.ls(selection=True):
         cmds.warning("Select a transform, mesh, or component before assigning LOD metadata")
         return
-    cmds.undoInfo(openChunk=True, chunkName="Create LOD")
-    try:
+    with _undo_chunk("Create LOD"):
         definition = _selected_lod_definition()
         resolution = _lod_resolution_value(definition)
         cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
         _refresh_context_ui()
         _refresh_lod_assignment_ui()
-    finally:
-        cmds.undoInfo(closeChunk=True)
 
 
 def create_empty_lod():
@@ -426,20 +436,14 @@ def apply_mass_from_ui():
         return
     value = dock.mass_value()
     mode = dock.mass_mode()
-    cmds.undoInfo(openChunk=True, chunkName="Set Mass")
-    try:
+    with _undo_chunk("Set Mass"):
         cmds.a3obSetMass(value=value, selectedComponents=(mode == "Selected vertices"))
-    finally:
-        cmds.undoInfo(closeChunk=True)
 
 
 def clear_mass_from_ui():
     load_plugin()
-    cmds.undoInfo(openChunk=True, chunkName="Clear Mass")
-    try:
+    with _undo_chunk("Clear Mass"):
         cmds.a3obSetMass(clear=True)
-    finally:
-        cmds.undoInfo(closeChunk=True)
 
 
 def apply_flag_from_ui():
@@ -453,11 +457,8 @@ def apply_flag_from_ui():
     if not name:
         cmds.warning("Enter a flag set name")
         return
-    cmds.undoInfo(openChunk=True, chunkName="Set Flag")
-    try:
+    with _undo_chunk("Set Flag"):
         cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
-    finally:
-        cmds.undoInfo(closeChunk=True)
 
 
 def create_proxy_from_ui():
@@ -471,11 +472,8 @@ def create_proxy_from_ui():
     if not path:
         cmds.warning("Enter a proxy path")
         return
-    cmds.undoInfo(openChunk=True, chunkName="Create Proxy")
-    try:
+    with _undo_chunk("Create Proxy"):
         cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
-    finally:
-        cmds.undoInfo(closeChunk=True)
 
 
 def import_model_cfg_from_ui():
@@ -494,7 +492,7 @@ def _lod_name_from_transform(lod_node):
     lod_type = _safe_get_attr(lod_node, "a3obLodType", 0)
     resolution = _safe_get_attr(lod_node, "a3obResolution", 0)
     name = LOD_TYPE_NAMES.get(lod_type, "LOD")
-    suffix = f" {resolution}" if lod_type == 0 else ""
+    suffix = f" {resolution}" if lod_type == RESOLUTION_LOD_TYPE else ""
     return f"{name}{suffix}"
 
 
@@ -561,10 +559,6 @@ def _normalize_dayz_path(path):
     if len(path) >= 2 and path[1] == ":":
         path = path[2:].lstrip("\\")
     return re.sub(r"\\+", r"\\", path)
-
-
-def _strip_drive_letter(path):
-    return _normalize_dayz_path(path)
 
 
 def _live_set_members(set_node):
@@ -804,11 +798,7 @@ def _clear_all_object_builder_sets():
 
 def _lod_label(node):
     if _attr_exists(node, "a3obLodType"):
-        lod_type = _safe_get_attr(node, "a3obLodType", 0)
-        resolution = _safe_get_attr(node, "a3obResolution", 0)
-        name = LOD_TYPE_NAMES.get(lod_type, "LOD")
-        suffix = f" {resolution}" if lod_type == 0 else ""
-        return f"{name}{suffix}  |  {node}"
+        return f"{_lod_name_from_transform(node)}  |  {node}"
     return node
 
 
@@ -835,7 +825,7 @@ def _find_memory_lod_from_selection():
     for node in cmds.ls(selection=True, long=True) or []:
         current = node
         while current:
-            if _is_lod_transform(current) and _safe_get_attr(current, "a3obLodType", -1) == 9:
+            if _is_lod_transform(current) and _safe_get_attr(current, "a3obLodType", -1) == MEMORY_LOD_TYPE:
                 return current
             parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
             current = parents[0] if parents else ""
@@ -843,7 +833,7 @@ def _find_memory_lod_from_selection():
 
 
 def _scene_memory_lods():
-    return [n for n in _lod_transforms() if _safe_get_attr(n, "a3obLodType", -1) == 9]
+    return [n for n in _lod_transforms() if _safe_get_attr(n, "a3obLodType", -1) == MEMORY_LOD_TYPE]
 
 
 def _resolve_memory_lod():
@@ -912,7 +902,7 @@ def _memory_lod_parent(node):
     if not parents:
         return None
     parent = parents[0]
-    if _is_lod_transform(parent) and _safe_get_attr(parent, "a3obLodType", -1) == 9:
+    if _is_lod_transform(parent) and _safe_get_attr(parent, "a3obLodType", -1) == MEMORY_LOD_TYPE:
         return parent
     return None
 
@@ -1175,8 +1165,8 @@ def _persist_selected_material_metadata():
     dock = _active_qt_dock()
     if dock is None:
         return None
-    texture = _strip_drive_letter(dock.material_texture_path())
-    material = _strip_drive_letter(dock.material_rvmat_path())
+    texture = _normalize_dayz_path(dock.material_texture_path())
+    material = _normalize_dayz_path(dock.material_rvmat_path())
     changed = False
     all_targets = set(item["shading_groups"])
     if _node_exists(item["material_node"]):
@@ -1994,7 +1984,7 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         selected_lod = _selected_lod_transform()
         if selected_lod:
             lod_type = _safe_get_attr(selected_lod, "a3obLodType", -1)
-            self.memory_points_group.setVisible(lod_type == 9)
+            self.memory_points_group.setVisible(lod_type == MEMORY_LOD_TYPE)
         else:
             self.memory_points_group.setVisible(False)
 
