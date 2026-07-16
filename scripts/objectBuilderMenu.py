@@ -816,6 +816,14 @@ def _picker_field(container):
     return getattr(container, "_line_edit", None) if container is not None else None
 
 
+_SELECTION_KIND_ICONS = {
+    "Selection": ":/aselect.png",
+    "Proxy": ":/out_reference.png",
+    "Vertex Flag": ":/componentTag_vertex.png",
+    "Face Flag": ":/polyFace.png",
+}
+
+
 def _hint(text):
     """A wrapped, muted, slightly smaller secondary caption (no stylesheet)."""
     label = qt_widgets.QLabel(text)
@@ -929,7 +937,6 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         self.selection_search = None
         self.selection_list = None
         self.selection_details = None
-        self.selection_items = {}
         self.selection_mesh_context = None
         self._build_ui()
         self.refresh_lod_assignment()
@@ -1254,23 +1261,23 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         layout.addWidget(self.selection_details)
 
         first_row = qt_widgets.QHBoxLayout()
-        for label, callback, tip in (
-            ("Select", _select_set_members, "Select the live members of the highlighted set"),
-            ("Rename", _rename_selection_set, "Rename the highlighted Object Builder selection"),
-            ("Create", _create_selection_set, "Create a new selection set from the current component selection"),
-            ("Find", find_components_from_ui, "Find closed mesh components and create Component## selection sets"),
+        for label, callback, tip, icon in (
+            ("Select", _select_set_members, "Select the live members of the highlighted set", ":/aselect.png"),
+            ("Rename", _rename_selection_set, "Rename the highlighted Object Builder selection", ":/quickRename.png"),
+            ("Create", _create_selection_set, "Create a new selection set from the current component selection", ":/create.png"),
+            ("Find", find_components_from_ui, "Find closed mesh components and create Component## selection sets", ":/search.png"),
         ):
-            first_row.addWidget(_qt_button(label, callback, tip))
+            first_row.addWidget(_qt_button(label, callback, tip, icon))
         layout.addLayout(first_row)
 
         second_row = qt_widgets.QHBoxLayout()
-        for label, callback, tip in (
-            ("Add", _add_to_selection_set, "Add selected components to the highlighted set"),
-            ("Remove", _remove_from_selection_set, "Remove selected components from the highlighted set"),
-            ("Delete", _delete_selection_set, "Delete the highlighted Object Builder set"),
-            ("Clear All", _clear_all_object_builder_sets, "Delete every Object Builder selection set in the scene"),
+        for label, callback, tip, icon in (
+            ("Add", _add_to_selection_set, "Add selected components to the highlighted set", ":/setEdit.png"),
+            ("Remove", _remove_from_selection_set, "Remove selected components from the highlighted set", ":/removeRenderable.png"),
+            ("Delete", _delete_selection_set, "Delete the highlighted Object Builder set", ":/delete.png"),
+            ("Clear All", _clear_all_object_builder_sets, "Delete every Object Builder selection set in the scene", ":/clearAll.png"),
         ):
-            second_row.addWidget(_qt_button(label, callback, tip))
+            second_row.addWidget(_qt_button(label, callback, tip, icon))
         layout.addLayout(second_row)
 
         self.refresh_selection_manager(True)
@@ -1489,13 +1496,9 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         current = self.selection_list.currentItem() if self.selection_list is not None else None
         if current is None:
             return None
-        item = self.selection_items.get(current.text())
+        item = current.data(qt_core.Qt.UserRole)
         set_node = item["node"] if item else None
-        if not _node_exists(set_node):
-            if current.text() in self.selection_items:
-                del self.selection_items[current.text()]
-            return None
-        return set_node
+        return set_node if _node_exists(set_node) else None
 
     def set_selection_details(self, message):
         if self.selection_details is not None:
@@ -1532,10 +1535,10 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         lod_filter = self.selection_lod_filter.currentText() if self.selection_lod_filter is not None else "All LODs"
         type_filter = self.selection_type_filter.currentText() if self.selection_type_filter is not None else "All Types"
         search = self.selection_search.text().lower() if self.selection_search is not None else ""
-        selected = self.selection_list.currentItem()
-        selected_label = selected.text() if selected is not None else ""
+        prev_node = self.selected_selection_set_node()
+        self.selection_list.blockSignals(True)
         self.selection_list.clear()
-        self.selection_items = {}
+        restore_row = -1
         for item in items:
             if lod_filter != "All LODs" and item["lod"] != lod_filter:
                 continue
@@ -1544,12 +1547,18 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
             searchable = f"{item['lod']} {item['kind']} {item['name']} {item['node']}".lower()
             if search and search not in searchable:
                 continue
-            label = f"{item['lod']} | {item['kind']} | {item['name']} | {item['node']}"
-            self.selection_items[label] = item
-            self.selection_list.addItem(label)
-        matches = self.selection_list.findItems(selected_label, qt_core.Qt.MatchExactly) if selected_label else []
-        if matches:
-            self.selection_list.setCurrentItem(matches[0])
+            list_item = qt_widgets.QListWidgetItem(item["name"])
+            icon = _qt_icon(_SELECTION_KIND_ICONS.get(item["kind"], ""))
+            if icon is not None and not icon.isNull():
+                list_item.setIcon(icon)
+            list_item.setToolTip(f"{item['kind']}  ·  LOD {item['lod']}\nMaya set: {item['node']}")
+            list_item.setData(qt_core.Qt.UserRole, item)
+            self.selection_list.addItem(list_item)
+            if prev_node is not None and item["node"] == prev_node:
+                restore_row = self.selection_list.count() - 1
+        self.selection_list.blockSignals(False)
+        if restore_row >= 0:
+            self.selection_list.setCurrentRow(restore_row)
         else:
             self.set_selection_details("Select a row to see details.")
         _update_selection_details()
