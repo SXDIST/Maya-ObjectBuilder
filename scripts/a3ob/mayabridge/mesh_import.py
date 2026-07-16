@@ -375,6 +375,9 @@ def create_proxy_placeholders(parent_transform_name, transform_name, lod):
         attr.set_string(proxy_obj, A.PROXY_SELECTION, tagg.name)
 
 
+MEMORY_LOCATOR_SCALE = 0.05  # small crosshair so memory points read as tidy dots, not scene-wide crosses
+
+
 def _create_single_locator(parent_name, name, selection_name, position):
     transform_name = _create_transform(parent_name, name)
     transform_obj = _name_to_object(transform_name)
@@ -384,7 +387,8 @@ def _create_single_locator(parent_name, name, selection_name, position):
     # a full DAG path (with "|" and a namespace prefix) during File > Import, and appending
     # "Shape" to that yields an illegal node name ("New name has no legal characters").
     shape_leaf = _leaf(transform_name).rsplit(":", 1)[-1] + "Shape"
-    cmds.createNode("locator", name=shape_leaf, parent=transform_name)
+    shape = cmds.createNode("locator", name=shape_leaf, parent=transform_name)
+    cmds.setAttr(shape + ".localScale", MEMORY_LOCATOR_SCALE, MEMORY_LOCATOR_SCALE, MEMORY_LOCATOR_SCALE, type="double3")
 
 
 def create_locators_for_memory_lod(parent_transform_name, lod):

@@ -548,12 +548,21 @@ def _resolve_memory_lod():
     return None
 
 
+MEMORY_LOCATOR_SCALE = 0.05  # keep UI-created points as tidy dots, matching importer
+
+
+def _shrink_locator(transform):
+    for shape in (cmds.listRelatives(transform, shapes=True, type="locator", fullPath=True) or []):
+        cmds.setAttr(shape + ".localScale", MEMORY_LOCATOR_SCALE, MEMORY_LOCATOR_SCALE, MEMORY_LOCATOR_SCALE, type="double3")
+
+
 def _create_memory_locator(parent_lod, selection_name):
     cmds.select(clear=True)
     locator = cmds.spaceLocator(name=selection_name)[0]
     _ensure_string_attr(locator, "a3obSelectionName", "a3sn")
     cmds.setAttr(f"{locator}.a3obSelectionName", selection_name, type="string")
     cmds.parent(locator, parent_lod, relative=False)
+    _shrink_locator(locator)
     cmds.select(locator)
     return locator
 
@@ -577,6 +586,7 @@ def _add_point_to_group(group_node):
     cmds.select(clear=True)
     locator = cmds.spaceLocator(name="point")[0]
     cmds.parent(locator, group_node, relative=False)
+    _shrink_locator(locator)
     cmds.select(locator)
     return locator
 
