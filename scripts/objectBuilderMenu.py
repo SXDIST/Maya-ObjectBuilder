@@ -1130,9 +1130,8 @@ def _material_nodes_for_selection():
 
 def _material_metadata_label(item):
     name = item["material_node"] or "No material"
-    texture = item["texture"] or "—"
-    rvmat = item["material"] or "—"
-    return f"{name}\n    tex: {texture}    rvmat: {rvmat}"
+    marker = "●" if (item["texture"] or item["material"]) else "○"
+    return f"{marker}  {name}"
 
 
 def _refresh_material_metadata():
@@ -1861,15 +1860,10 @@ class MayaObjectBuilderDock(qt_widgets.QWidget if QT_AVAILABLE else object):
         if not items:
             self.material_list.addItem("Select a mesh, LOD, or faces to edit its DayZ materials")
             return
-        line_h = self.material_list.fontMetrics().height()
-        row_size = qt_core.QSize(0, line_h * 2 + 8) if qt_core is not None else None
         for item in items:
             label = _material_metadata_label(item)
             self.material_items[label] = item
-            list_item = qt_widgets.QListWidgetItem(label)
-            if row_size is not None:
-                list_item.setSizeHint(row_size)
-            self.material_list.addItem(list_item)
+            self.material_list.addItem(qt_widgets.QListWidgetItem(label))
         if prev_label and qt_core is not None:
             matches = self.material_list.findItems(prev_label, qt_core.Qt.MatchExactly)
             if matches:
