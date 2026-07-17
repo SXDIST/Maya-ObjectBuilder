@@ -12,6 +12,7 @@ from a3ob.mayabridge.export.parse import *  # noqa: F401,F403
 
 from a3ob.mayabridge.export.taggs.data import *  # noqa: F401,F403
 from a3ob.mayabridge.export.taggs.memory import *  # noqa: F401,F403
+from a3ob.mayabridge.export.taggs.skin import *  # noqa: F401,F403
 
 
 def _lod_sort_key(transform_path):
@@ -124,6 +125,7 @@ def _export_mesh_lod(transform_path, options):
     _add_property_taggs(node, lod)
     _add_mass_tagg(node, lod)
     _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod)
+    _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod)
     if getattr(options, "generate_components", False):
         _add_generated_components(lod_type, mesh_path, vertex_source_indices, lod)
     _add_sharp_edges_tagg(node, mesh_path, lod)
