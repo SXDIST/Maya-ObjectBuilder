@@ -110,10 +110,23 @@ def proxy_transform_name(transform_name, proxy_path, proxy_index):
     return "%s_PROXY_%s_%d" % (transform_name, sanitized_name(proxy_path), proxy_index)
 
 
+def _material_name_stem(path):
+    # Just the file name without folders or extension — the node name is not part of the
+    # P3D contract (the full path is kept on a3obTexture/a3obMaterial), so keep it readable.
+    if not path:
+        return ""
+    base = os.path.splitext(os.path.basename(path.replace("\\", "/")))[0]
+    return sanitized_name(base) if base else ""
+
+
 def material_node_name(texture, material):
-    if not texture and not material:
+    parts = []
+    for stem in (_material_name_stem(texture), _material_name_stem(material)):
+        if stem and stem not in parts:
+            parts.append(stem)
+    if not parts:
         return "a3ob_MAT_no_material"
-    return "a3ob_MAT_%s__%s" % (sanitized_name(texture), sanitized_name(material))
+    return "a3ob_MAT_" + "_".join(parts)
 
 
 def flag_set_name(component_type, flag):
