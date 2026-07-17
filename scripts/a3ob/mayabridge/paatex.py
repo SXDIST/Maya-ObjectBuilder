@@ -9,6 +9,7 @@ and numpy for the byte conversion.
 
 import os
 import re
+import struct
 import hashlib
 
 import maya.cmds as cmds
@@ -84,11 +85,39 @@ def resolve_paa_path(texture_path):
     return None
 
 
+_CACHE_DIR = None  # resolved once on the main thread (cmds.internalVar is not thread-safe)
+
+
 def _cache_dir():
-    directory = os.path.join(cmds.internalVar(userTmpDir=True), _CACHE_DIRNAME)
-    if not os.path.isdir(directory):
-        os.makedirs(directory)
-    return directory
+    global _CACHE_DIR
+    if _CACHE_DIR is None:
+        directory = os.path.join(cmds.internalVar(userTmpDir=True), _CACHE_DIRNAME)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+        _CACHE_DIR = directory
+    return _CACHE_DIR
+
+
+def _write_png(path, rgba):
+    """Write an RGBA uint8 image to ``path`` as a PNG. Pure numpy+zlib (no Maya API), so it
+    is thread-safe and ~10x faster than MImage. Input rows are bottom-to-top (as the DXT
+    decoders emit); a standard PNG is top-to-bottom, so the rows are flipped on write — this
+    reproduces exactly what MImage.setPixels/writeToFile did (verified vs the game's _co.png)."""
+    import numpy as np
+    import zlib
+    rows = np.ascontiguousarray(rgba[::-1])  # bottom-to-top -> top-to-bottom
+    height, width = rows.shape[:2]
+    raw = np.empty((height, 1 + width * 4), dtype=np.uint8)
+    raw[:, 0] = 0  # PNG "None" filter per scanline
+    raw[:, 1:] = rows.reshape(height, width * 4)
+    compressed = zlib.compress(raw.tobytes(), 1)  # level 1: fast; cache size is not a concern
+
+    def _chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # 8-bit, colour type 6 = RGBA
+    with open(path, "wb") as handle:
+        handle.write(b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", compressed) + _chunk(b"IEND", b""))
 
 
 def _alpha_is_cutout(alpha_np):
@@ -118,20 +147,12 @@ def paa_to_png(paa_path):
             pass
         return png, cutout
     import numpy as np
-    import maya.api.OpenMaya as om
     from a3ob.formats.paa import decode_largest_mip
     width, height, (red, green, blue, alpha) = decode_largest_mip(paa_path)
     channels = [np.frombuffer(c, dtype=np.float32) for c in (red, green, blue, alpha)]
     cutout = _alpha_is_cutout(channels[3])
     rgba = np.stack(channels, axis=1).reshape(height, width, 4)
-    # No flipud: MImage.setPixels stores row 0 as the bottom (OpenGL), matching the DXT
-    # decode's bottom-to-top output, so writeToFile emits a correctly-oriented PNG. An extra
-    # flipud here left the cached PNG upside-down, which — with the (unchanged) UVs — sampled
-    # mirrored rows and produced the "smeared" look verified against the game's own _co.png.
-    buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
-    image = om.MImage()
-    image.setPixels(bytearray(buffer), width, height)
-    image.writeToFile(png, "png")
+    _write_png(png, np.clip(rgba * 255.0, 0, 255).astype(np.uint8))
     try:
         with open(meta, "w") as handle:
             handle.write("1" if cutout else "0")
@@ -194,7 +215,6 @@ def decode_smdi_png(smdi_path):
     if os.path.isfile(spec_png) and os.path.isfile(rough_png):
         return spec_png, rough_png
     import numpy as np
-    import maya.api.OpenMaya as om
     from a3ob.formats.paa import decode_largest_mip
     width, height, (_red, green, blue, _alpha) = decode_largest_mip(smdi_path)
     g = np.frombuffer(green, dtype=np.float32)
@@ -203,10 +223,7 @@ def decode_smdi_png(smdi_path):
     ones = np.ones_like(g)
     for arr, path in ((g, spec_png), (rough, rough_png)):
         rgba = np.stack([arr, arr, arr, ones], axis=1).reshape(height, width, 4)
-        buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()  # bottom-to-top; MImage matches
-        image = om.MImage()
-        image.setPixels(bytearray(buffer), width, height)
-        image.writeToFile(path, "png")
+        _write_png(path, np.clip(rgba * 255.0, 0, 255).astype(np.uint8))
     return spec_png, rough_png
 
 
@@ -218,7 +235,6 @@ def decode_normal_png(nohq_path):
     if os.path.isfile(png):
         return png
     import numpy as np
-    import maya.api.OpenMaya as om
     from a3ob.formats.paa import decode_largest_mip
     width, height, (_red, green, _blue, alpha) = decode_largest_mip(nohq_path)
     nx = np.frombuffer(alpha, dtype=np.float32) * 2.0 - 1.0
@@ -226,10 +242,7 @@ def decode_normal_png(nohq_path):
     nz = np.sqrt(np.clip(1.0 - nx * nx - ny * ny, 0.0, 1.0))
     ones = np.ones_like(nx)
     rgba = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5, ones], axis=1).reshape(height, width, 4)
-    buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()  # bottom-to-top; MImage matches
-    image = om.MImage()
-    image.setPixels(bytearray(buffer), width, height)
-    image.writeToFile(png, "png")
+    _write_png(png, np.clip(rgba * 255.0, 0, 255).astype(np.uint8))
     return png
 
 
@@ -440,11 +453,41 @@ def apply_alpha_transparency_setting():
             _clear_transparency(shader, color_file)
 
 
+def _prefetch_pending(pending):
+    """Decode every channel .paa for the pending shaders into the PNG cache in parallel.
+
+    Path resolution and the cache dir are warmed here on the main thread (cmds.optionVar /
+    cmds.internalVar are not thread-safe); the workers only run the numpy/zlib decoders, which
+    release the GIL, so the DXT decode + PNG write of many textures overlap. Best-effort — a
+    failed decode just falls through to the per-shader warning in assign_paa_texture."""
+    _cache_dir()  # resolve+create the cache dir on the main thread before spawning workers
+    jobs = {}     # (fn, resolved_path) -> dedupe shared textures across materials
+    for _shader, texture, material in pending:
+        channels = _material_channels(texture, material or None)
+        for path, fn in ((channels["color"], paa_to_png),
+                         (channels["normal"], decode_normal_png),
+                         (channels["spec"], decode_smdi_png)):
+            if not path:
+                continue
+            resolved = resolve_paa_path(path)
+            if resolved:
+                jobs[(fn, resolved)] = None
+    if len(jobs) <= 1:
+        return  # nothing to overlap
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+        for future in [pool.submit(fn, path) for (fn, path) in jobs]:
+            try:
+                future.result()
+            except Exception:
+                pass  # non-fatal; the sequential assign below will warn on the missing decode
+
+
 def assign_pending_textures():
     """Wire the .paa channels onto every material that has a texture path but no colour file
     yet. Idempotent — run deferred after a P3D import (Maya's File > Import DG context blocks
     creating/connecting the file node inline). Returns the number of materials textured."""
-    count = 0
+    pending = []
     for shader in cmds.ls(materials=True) or []:
         if not cmds.attributeQuery("a3obTexture", node=shader, exists=True):
             continue
@@ -459,6 +502,15 @@ def assign_pending_textures():
         material = ""
         if cmds.attributeQuery("a3obMaterial", node=shader, exists=True):
             material = cmds.getAttr(shader + ".a3obMaterial") or ""
+        pending.append((shader, texture, material))
+    if not pending:
+        return 0
+    try:
+        _prefetch_pending(pending)  # parallel decode into cache; the wiring below is cache-only
+    except Exception:
+        pass  # fall back to lazy per-shader decode inside assign_paa_texture
+    count = 0
+    for shader, texture, material in pending:
         if assign_paa_texture(shader, texture, material or None):
             count += 1
     return count
