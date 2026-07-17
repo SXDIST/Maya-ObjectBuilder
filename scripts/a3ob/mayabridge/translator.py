@@ -55,6 +55,13 @@ def do_read(expanded_full_name, raw_name, options_string):
     created = MayaMeshImport().import_mlod(mlod, raw_name)
     if option_enabled(options, "validateMeshes", False):
         om.MGlobal.executeCommand("a3obValidate")
+    # Decode/assign .paa colour textures AFTER the import finishes — Maya's File > Import DG
+    # context blocks creating and connecting the file texture node inline.
+    try:
+        import maya.cmds as cmds
+        cmds.evalDeferred("import a3ob.mayabridge.paatex as _pt; _pt.assign_pending_textures()", lowestPriority=True)
+    except Exception:
+        pass
     om.MGlobal.displayInfo("Imported P3D MLOD LOD count: %d" % len(created))
 
 
