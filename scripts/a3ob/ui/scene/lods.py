@@ -18,7 +18,7 @@ def _lod_transforms():
 
 def _selected_lod_transform():
     for node in cmds.ls(selection=True, long=True) or []:
-        current = node
+        current = node.split(".", 1)[0]  # component (mesh.f[..]/.vtx[..]) -> its shape/transform
         while current:
             if _is_lod_transform(current):
                 return current
