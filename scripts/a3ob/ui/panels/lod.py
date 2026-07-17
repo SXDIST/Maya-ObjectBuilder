@@ -138,11 +138,8 @@ class LodPanelMixin:
         if not self._syncing_from_selection and is_lod:
             load_plugin()
             resolution = _lod_resolution_value(definition)
-            cmds.a3obCreateLOD(
-                lodType=definition["type"],
-                resolution=resolution,
-                name=_lod_node_name(definition, resolution),
-            )
+            # Rename the active LOD to match its type/resolution (#11) as the user edits.
+            _mark_lod_named(definition, resolution)
 
 
     def _on_lod_toggle_changed(self, checked):

@@ -15,10 +15,17 @@ def _generate_resolution_lods(source, settings, visuals):
         name = "{0}{1}".format(settings["lod_prefix"], resolution)
 
         if index == 0:
+            # Keep the rename result as a short name (like the duplicate branch below).
+            # Converting to a full path here left a stale path after _parent() reparented
+            # the node, so the full-resolution LOD was silently dropped from the returned
+            # list (and the post-generation selection) even though it existed in the scene.
             duplicate = cmds.rename(source, name)
-            duplicate = (cmds.ls(duplicate, long=True) or [duplicate])[0]
         else:
             duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
+        # Triangulate BEFORE reducing so polyReduce collapses on triangles — a true
+        # decimate. The former order (reduce quads with keepQuadsWeight, then triangulate)
+        # fought the reducer and produced uneven topology.
+        _triangulate(duplicate)
         if ratio < 1.0:
             try:
                 cmds.polyMergeVertex(duplicate, d=0.0001, constructionHistory=False)
@@ -28,10 +35,12 @@ def _generate_resolution_lods(source, settings, visuals):
             if not reduced_ok:
                 cmds.delete(duplicate)
                 raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
-        _triangulate(duplicate)
         _apply_weighted_normals(duplicate)
         _mark_lod(duplicate, 0, resolution)
-        _set_named_properties(duplicate, (("lodnoshadow", "1"), ("autocenter", "0")))
+        # Resolution (visual) LODs get no auto named properties: Blender's Auto LOD adds
+        # none either (autocenter/lodnoshadow there are only autocomplete suggestions).
+        # autocenter=0 in particular was a spurious Blender-port artifact — Object Builder
+        # leaves autocenter at its default, so marking every resolution LOD with it is wrong.
         if index > 0 and generated:
             _propagate_named_selections(generated[0], duplicate, full_resolution=False)
         _parent(duplicate, visuals)

@@ -7,10 +7,22 @@ from maya import mel
 
 
 
+def _geometric_ladder(step, levels=4):
+    # Each successive LOD keeps ``step`` of the PREVIOUS LOD's triangles, i.e. a clean
+    # geometric decimation ladder (ratios are relative to the full-res base, so level i
+    # keeps step**i). This matches how a decimate/LOD chain is expected to fall off,
+    # instead of the former hand-tuned absolute ratios.
+    return tuple(round(step ** i, 4) for i in range(1, levels + 1))
+
+
+# Reduction ladders keyed by aggressiveness (per-step retention of the previous LOD):
+#   QUADS  = 0.50  -> (0.5, 0.25, 0.125, 0.0625)   standard halving, light distant LODs
+#   TRIS   = 0.60  -> (0.6, 0.36, 0.216, 0.1296)   gentler, for triangle-dense organics
+#   CUSTOM = 0.70  -> (0.7, 0.49, 0.343, 0.2401)   minimal reduction per step
 RESOLUTION_PRESETS = {
-    "CUSTOM": (0.75, 0.55, 0.38, 0.22),
-    "TRIS": (0.82, 0.65, 0.48, 0.30),
-    "QUADS": (0.70, 0.50, 0.33, 0.20),
+    "QUADS": _geometric_ladder(0.50),
+    "TRIS": _geometric_ladder(0.60),
+    "CUSTOM": _geometric_ladder(0.70),
 }
 
 

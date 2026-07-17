@@ -179,7 +179,12 @@ def _reduce_mesh(transform, keep_ratio):
     if _has_reduce_blockers(transform):
         _cleanup_for_reduce(transform)
     try:
-        cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=1.0, keepBorder=True, keepMapBorder=True, keepColorBorder=True, keepFaceGroupBorder=True, keepHardEdge=True, keepCreaseEdge=True, keepBorderWeight=0.5, keepMapBorderWeight=0.5, keepColorBorderWeight=0.5, keepFaceGroupBorderWeight=0.5, keepHardEdgeWeight=0.5, keepCreaseEdgeWeight=0.5, cachingReduce=False, constructionHistory=False)
+        # Clean decimate: the mesh is already triangulated, so keepQuadsWeight is moot.
+        # Protect only the open silhouette (keepBorder) and UV seams (keepMapBorder) so
+        # LODs don't grow holes or tear textures; let everything else collapse uniformly
+        # (hard/crease/colour/face-group constraints only made the reduction lumpy — the
+        # 60-degree normal pass reconstructs shading afterwards anyway).
+        cmds.polyReduce(transform, version=1, termination=0, percentage=reduction, keepQuadsWeight=0.0, keepBorder=True, keepMapBorder=True, keepColorBorder=False, keepFaceGroupBorder=False, keepHardEdge=False, keepCreaseEdge=False, keepBorderWeight=0.5, keepMapBorderWeight=0.5, cachingReduce=False, constructionHistory=False)
     except RuntimeError as exc:
         cmds.warning("Auto LOD polyReduce failed on {0}: {1}".format(transform, exc))
     after = _face_count(transform)

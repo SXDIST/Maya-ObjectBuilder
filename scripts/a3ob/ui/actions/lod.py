@@ -43,6 +43,24 @@ def _lod_node_name(definition, resolution):
     return label.replace(" ", "_").replace("/", "_")
 
 
+def _mark_lod_named(definition, resolution):
+    """Mark the selection as a LOD and rename that node to the LOD name (#11).
+
+    a3obCreateLOD only honours the ``name`` flag when it creates a brand-new node;
+    marking an existing mesh leaves its outliner name untouched. So rename the node
+    the command actually returned (never a stray selection) to the LOD name, giving
+    the outliner the native "Resolution_1"/"Geometry" identity on assignment.
+    """
+    desired = _lod_node_name(definition, resolution)
+    result = cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=desired)
+    node = result[0] if isinstance(result, (list, tuple)) and result else result
+    if node and cmds.objExists(node):
+        leaf = node.split("|")[-1].split(":")[-1]
+        if leaf != desired:
+            node = cmds.rename(node, desired)
+    return node
+
+
 def assign_lod_to_selection():
     load_plugin()
     if not cmds.ls(selection=True):
@@ -51,7 +69,7 @@ def assign_lod_to_selection():
     with _undo_chunk("Create LOD"):
         definition = _selected_lod_definition()
         resolution = _lod_resolution_value(definition)
-        cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
+        _mark_lod_named(definition, resolution)
         _refresh_context_ui()
         _refresh_lod_assignment_ui()
 
@@ -62,7 +80,7 @@ def create_empty_lod():
     cmds.select(clear=True)
     definition = _selected_lod_definition()
     resolution = _lod_resolution_value(definition)
-    node = cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=_lod_node_name(definition, resolution))
+    node = _mark_lod_named(definition, resolution)
     if node:
         cmds.select(node, replace=True)
     elif selection:
@@ -105,6 +123,7 @@ __all__ = [
     "_lod_assignment_label",
     "_refresh_lod_assignment_ui",
     "_lod_node_name",
+    "_mark_lod_named",
     "assign_lod_to_selection",
     "create_empty_lod",
     "LOD_ATTRS",
