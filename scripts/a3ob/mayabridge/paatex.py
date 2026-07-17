@@ -15,7 +15,7 @@ import maya.cmds as cmds
 
 TEXTURE_ROOT_VAR = "MayaObjectBuilder_texture_root"
 ALPHA_VAR = "MayaObjectBuilder_paa_alpha_transparency"
-_CACHE_DIRNAME = "a3ob_paa_cache_v2"  # bumped: PNGs now carry an alpha-cutout sidecar
+_CACHE_DIRNAME = "a3ob_paa_cache_v3"  # bumped: fixed vertical flip (PNGs were upside-down)
 
 
 def texture_root():
@@ -124,7 +124,10 @@ def paa_to_png(paa_path):
     channels = [np.frombuffer(c, dtype=np.float32) for c in (red, green, blue, alpha)]
     cutout = _alpha_is_cutout(channels[3])
     rgba = np.stack(channels, axis=1).reshape(height, width, 4)
-    rgba = np.flipud(rgba)  # DXT decode is bottom-to-top; PNG/MImage want top-to-bottom
+    # No flipud: MImage.setPixels stores row 0 as the bottom (OpenGL), matching the DXT
+    # decode's bottom-to-top output, so writeToFile emits a correctly-oriented PNG. An extra
+    # flipud here left the cached PNG upside-down, which — with the (unchanged) UVs — sampled
+    # mirrored rows and produced the "smeared" look verified against the game's own _co.png.
     buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
     image = om.MImage()
     image.setPixels(bytearray(buffer), width, height)
@@ -200,8 +203,7 @@ def decode_smdi_png(smdi_path):
     ones = np.ones_like(g)
     for arr, path in ((g, spec_png), (rough, rough_png)):
         rgba = np.stack([arr, arr, arr, ones], axis=1).reshape(height, width, 4)
-        rgba = np.flipud(rgba)
-        buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
+        buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()  # bottom-to-top; MImage matches
         image = om.MImage()
         image.setPixels(bytearray(buffer), width, height)
         image.writeToFile(path, "png")
@@ -224,8 +226,7 @@ def decode_normal_png(nohq_path):
     nz = np.sqrt(np.clip(1.0 - nx * nx - ny * ny, 0.0, 1.0))
     ones = np.ones_like(nx)
     rgba = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5, ones], axis=1).reshape(height, width, 4)
-    rgba = np.flipud(rgba)
-    buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
+    buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()  # bottom-to-top; MImage matches
     image = om.MImage()
     image.setPixels(bytearray(buffer), width, height)
     image.writeToFile(png, "png")
