@@ -22,18 +22,12 @@ def _generate_resolution_lods(source, settings, visuals):
             duplicate = cmds.rename(source, name)
         else:
             duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
-        # Collapse the QUAD mesh directly (like Blender's Decimate → Collapse), then
-        # triangulate. Pre-triangulating biased the collapse along the fixed quad
-        # diagonals and produced lumpy, uneven LODs; letting polyReduce collapse the
-        # quads (keepQuadsWeight=0 in _reduce_mesh) yields the even, round distribution
-        # Blender gives. The reducer already outputs triangles, so the trailing
-        # _triangulate only tidies the unreduced full-res LOD.
+        # Uniform decimation via polyRetopo (even, shape-preserving topology like
+        # Blender's Decimate). polyReduce is adaptive/QEM and leaves lumpy, uneven
+        # triangles on smooth shapes; _retopo_mesh rebuilds an even distribution,
+        # keeps hard-surface corners, and re-projects UVs from the full-res snapshot.
         if ratio < 1.0:
-            try:
-                cmds.polyMergeVertex(duplicate, d=0.0001, constructionHistory=False)
-            except RuntimeError:
-                pass
-            before, after, reduced_ok = _reduce_mesh(duplicate, ratio)
+            before, after, reduced_ok = _retopo_mesh(duplicate, source_snapshot, ratio)
             if not reduced_ok:
                 cmds.delete(duplicate)
                 raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))

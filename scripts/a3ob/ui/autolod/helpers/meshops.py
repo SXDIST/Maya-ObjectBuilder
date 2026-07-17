@@ -171,6 +171,42 @@ def _create_bbox_lod(source, name, lod_type, parent, named_properties=(), find_c
     return cube
 
 
+def _retopo_mesh(transform, uv_source, keep_ratio):
+    """Uniform decimation via polyRetopo — even, shape-preserving topology like Blender's
+    Decimate (polyReduce is adaptive/QEM and gives lumpy, uneven triangles on smooth
+    shapes). ``preserveHardEdges`` keeps corners on hard-surface meshes; UVs are rebuilt
+    from ``uv_source`` (the full-res mesh) since retopo discards them. Falls back to the
+    QEM ``_reduce_mesh`` if retopo can't process the mesh."""
+    before = _face_count(transform)
+    if keep_ratio >= 1.0 or before <= 4:
+        return before, before, True
+    target = max(4, int(round(_face_count(uv_source) * keep_ratio)))
+    if _has_reduce_blockers(transform):
+        _cleanup_for_reduce(transform)
+    try:
+        cmds.polyRetopo(
+            transform, targetFaceCount=target, targetFaceCountTolerance=10,
+            faceUniformity=1.0, topologyRegularity=1.0, preserveHardEdges=True,
+            constructionHistory=False,
+        )
+    except Exception as exc:  # command missing (headless) / unprocessable mesh -> QEM fallback
+        cmds.warning("Auto LOD polyRetopo failed on {0}: {1} — using polyReduce".format(transform, exc))
+        return _reduce_mesh(transform, keep_ratio)
+    after = _face_count(transform)
+    if after <= 0 or after >= before:
+        cmds.warning("Auto LOD polyRetopo did not reduce {0} ({1} -> {2}) — using polyReduce".format(transform, before, after))
+        return _reduce_mesh(transform, keep_ratio)
+    # Retopo rebuilds topology from scratch and drops UVs; project them back from the
+    # full-res source so textured LODs keep their mapping (unlike a bare remesh).
+    if uv_source and cmds.objExists(uv_source):
+        try:
+            cmds.transferAttributes(uv_source, transform, transferUVs=2, sampleSpace=0, searchMethod=3)
+            cmds.delete(transform, constructionHistory=True)
+        except RuntimeError as exc:
+            cmds.warning("Auto LOD UV transfer failed on {0}: {1}".format(transform, exc))
+    return before, after, True
+
+
 def _reduce_mesh(transform, keep_ratio):
     before = _face_count(transform)
     reduction = max(0.0, min(100.0, (1.0 - keep_ratio) * 100.0))
@@ -294,6 +330,7 @@ __all__ = [
     "_has_reduce_blockers",
     "_cleanup_for_reduce",
     "_parent",
+    "_retopo_mesh",
     "_mark_lod",
     "_mark_technical_set",
     "_set_named_properties",
