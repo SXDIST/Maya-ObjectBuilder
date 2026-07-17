@@ -10,7 +10,6 @@ vectors are normalized first.
 """
 
 import maya.api.OpenMaya as om
-import maya.cmds as cmds
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A

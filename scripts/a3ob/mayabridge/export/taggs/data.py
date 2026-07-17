@@ -1,23 +1,11 @@
-"""data."""
-
-"""Maya DAG/mesh -> P3D MLOD conversion (OpenMaya 2.0).
-
-Port of ``src/maya/MayaMeshExport.cpp``. Two passes: collect LOD transforms (+ sort
-keys) then export and stream-write each LOD one at a time. N-gons are triangulated
-through Maya so Object Builder (tri/quad only) can save them. Memory LODs with no mesh
-are reconstructed from locators.
-
-Coordinate convention: Maya (Y-up) -> P3D (Z-up) point ``(x, y, z) -> (x, -z, y)``;
-vectors are normalized first.
-"""
+"""P3D TAGG builders for export: property, mass, selection, flag, sharp-edge and UVSet
+TAGG assembly from the Maya scene's ``a3ob*`` data."""
 
 import maya.api.OpenMaya as om
-import maya.cmds as cmds
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
 from a3ob.formats import p3d
-from a3ob.formats.binary import BinaryWriter
 
 
 from a3ob.mayabridge.export.parse import *  # noqa: F401,F403

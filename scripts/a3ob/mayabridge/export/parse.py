@@ -15,7 +15,6 @@ import maya.cmds as cmds
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
 from a3ob.formats import p3d
-from a3ob.formats.binary import BinaryWriter
 
 
 

@@ -1,17 +1,5 @@
-"""mesh."""
-
-"""P3D MLOD -> Maya DAG/mesh conversion (OpenMaya 2.0).
-
-Port of ``src/maya/MayaMeshImport.cpp``. Builds a root transform named after the file,
-groups LODs by category, and for each LOD creates a mesh (shape directly under the LOD
-transform), applies UVs/custom normals, materials, selection/flag sets, proxy
-placeholders, Memory-LOD locators and the ``a3ob*`` round-trip metadata.
-
-Coordinate convention: P3D (Z-up) -> Maya (Y-up) point ``(x, y, z) -> (x, z, -y)``.
-"""
-
-import os
-import re
+"""Transform creation, ``a3ob*`` LOD-metadata serialization, and UV/normal application
+for P3D import — geometry-detail helpers used by ``importer.py`` (which builds the mesh)."""
 
 import maya.api.OpenMaya as om
 import maya.cmds as cmds

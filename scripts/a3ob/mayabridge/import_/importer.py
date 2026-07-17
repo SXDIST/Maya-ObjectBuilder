@@ -9,7 +9,6 @@ Coordinate convention: P3D (Z-up) -> Maya (Y-up) point ``(x, y, z) -> (x, z, -y)
 """
 
 import os
-import re
 
 import maya.api.OpenMaya as om
 import maya.cmds as cmds
