@@ -169,8 +169,70 @@ def _make_file_texture(png, color_space):
 def _sibling_paa(texture_path, new_suffix):
     """Derive a sibling texture path by swapping the trailing _co/_ca suffix (e.g. the
     _nohq normal that shares the colour texture's base name). None if it doesn't apply."""
+    if not texture_path:
+        return None
     sibling = re.sub(r"_(co|ca)(\.paa)$", "_" + new_suffix + r"\2", texture_path, flags=re.IGNORECASE)
     return sibling if sibling != texture_path else None
+
+
+def decode_normal_png(nohq_path):
+    """Decode an Arma _nohq (DXT5nm: normal.X in alpha, normal.Y in green, Z reconstructed)
+    into a proper tangent-space normal PNG. Cached (path+mtime)."""
+    key = hashlib.md5(("N|%s|%s" % (nohq_path, os.path.getmtime(nohq_path))).encode("utf8")).hexdigest()
+    png = os.path.join(_cache_dir(), key + "_n.png")
+    if os.path.isfile(png):
+        return png
+    import numpy as np
+    import maya.api.OpenMaya as om
+    from a3ob.formats.paa import decode_largest_mip
+    width, height, (_red, green, _blue, alpha) = decode_largest_mip(nohq_path)
+    nx = np.frombuffer(alpha, dtype=np.float32) * 2.0 - 1.0
+    ny = np.frombuffer(green, dtype=np.float32) * 2.0 - 1.0
+    nz = np.sqrt(np.clip(1.0 - nx * nx - ny * ny, 0.0, 1.0))
+    ones = np.ones_like(nx)
+    rgba = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5, ones], axis=1).reshape(height, width, 4)
+    rgba = np.flipud(rgba)
+    buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
+    image = om.MImage()
+    image.setPixels(bytearray(buffer), width, height)
+    image.writeToFile(png, "png")
+    return png
+
+
+def _material_channels(color_texture, material_path):
+    """Resolve the material's channels: {color, normal, spec} texture paths + flat
+    {specular, specular_power}. Prefers the .rvmat (exact stage textures); falls back to the
+    _nohq/_smdi siblings of the colour texture when no rvmat is available."""
+    channels = {"color": color_texture, "normal": None, "spec": None,
+                "specular": None, "specular_power": None}
+    rvmat = None
+    if material_path and material_path.lower().endswith(".rvmat"):
+        rvmat = resolve_paa_path(material_path)
+    if rvmat:
+        try:
+            from a3ob.formats.rvmat import parse_rvmat_file
+            parsed = parse_rvmat_file(rvmat)
+            textures = parsed["textures"]
+            if textures.get("color"):
+                channels["color"] = textures["color"]
+            channels["normal"] = textures.get("normal")
+            channels["spec"] = textures.get("spec")
+            channels["specular"] = parsed["specular"]
+            channels["specular_power"] = parsed["specular_power"]
+        except Exception:
+            pass
+    if not channels["normal"]:
+        channels["normal"] = _sibling_paa(color_texture, "nohq")
+    if not channels["spec"]:
+        channels["spec"] = _sibling_paa(color_texture, "smdi")
+    return channels
+
+
+def _roughness_from_power(power):
+    if not power or power <= 0:
+        return 0.35
+    import math
+    return max(0.02, min(1.0, math.sqrt(2.0 / (power + 2.0))))
 
 
 def _decoded_png(texture_path):
@@ -185,29 +247,124 @@ def _decoded_png(texture_path):
         return None
 
 
-def assign_paa_texture(shader, texture_path):
-    """Decode ``texture_path`` and wire it onto ``shader`` as its colour file texture.
-    Alpha is connected to transparency ONLY for genuine cut-out masks (foliage/hair) — a
-    solid material whose _ca alpha is a data channel is left opaque, so nothing turns
-    see-through. Returns True when the colour texture was assigned."""
+def preferred_shader_type():
+    """aiStandardSurface when Arnold is loaded (full PBR: base/spec/normal), else blinn
+    (specular + normalCamera), else lambert. Chosen at material-creation time on import."""
+    try:
+        if cmds.pluginInfo("mtoa", query=True, loaded=True):
+            return "aiStandardSurface"
+    except Exception:
+        pass
+    return "blinn"
+
+
+def _wire_transparency(shader, color_file, is_ai):
+    if is_ai:
+        for comp in ("R", "G", "B"):
+            try:
+                cmds.connectAttr(color_file + ".outAlpha", "%s.opacity%s" % (shader, comp), force=True)
+            except RuntimeError:
+                pass
+    else:
+        try:
+            cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
+        except RuntimeError:
+            pass
+
+
+def _wire_normal(shader, nohq_path, is_ai):
+    normal_file = _make_file_texture(decode_normal_png(nohq_path), "Raw")
+    if is_ai:
+        normal_map = cmds.createNode("aiNormalMap", skipSelect=True)
+        cmds.connectAttr(normal_file + ".outColor", normal_map + ".input", force=True)
+        cmds.connectAttr(normal_map + ".outValue", shader + ".normalCamera", force=True)
+    # Non-Arnold: skip the normal (bump2d can't take an RGB tangent normal reliably).
+
+
+def _wire_specular(shader, channels, is_ai):
+    spec_resolved = resolve_paa_path(channels["spec"]) if channels["spec"] else None
+    spec_attr = "specularColor"
+    if not cmds.attributeQuery(spec_attr, node=shader, exists=True):
+        return
+    if spec_resolved:
+        spec_png, _cut = paa_to_png(spec_resolved)
+        spec_file = _make_file_texture(spec_png, "Raw")
+        try:
+            cmds.connectAttr(spec_file + ".outColor", "%s.%s" % (shader, spec_attr), force=True)
+        except RuntimeError:
+            pass
+    elif channels["specular"]:
+        r, g, b = channels["specular"][:3]
+        try:
+            cmds.setAttr("%s.%s" % (shader, spec_attr), r, g, b, type="double3")
+        except RuntimeError:
+            pass
+    if is_ai and cmds.attributeQuery("specularRoughness", node=shader, exists=True):
+        try:
+            cmds.setAttr(shader + ".specularRoughness", _roughness_from_power(channels["specular_power"]))
+        except RuntimeError:
+            pass
+
+
+def assign_paa_texture(shader, texture_path, material_path=None):
+    """Full material pipeline: decode the colour texture and (via the .rvmat, or _nohq/_smdi
+    siblings) wire base colour, a reconstructed tangent normal, and specular onto ``shader``
+    (aiStandardSurface / blinn / lambert). Alpha becomes transparency only for genuine
+    cut-out masks and only when the opt-in is on. Returns True when colour was assigned."""
     if not texture_path or not texture_path.lower().endswith(".paa"):
         return False
-    decoded = _decoded_png(texture_path)
+    channels = _material_channels(texture_path, material_path)
+    decoded = _decoded_png(channels["color"])
     if not decoded:
         return False
     png, is_cutout = decoded
+    is_ai = cmds.nodeType(shader) == "aiStandardSurface"
+    color_attr = "baseColor" if is_ai else "color"
+    if not cmds.attributeQuery(color_attr, node=shader, exists=True):
+        return False
     try:
         color_file = _make_file_texture(png, "sRGB")
-        cmds.connectAttr(color_file + ".outColor", shader + ".color", force=True)
+        cmds.connectAttr(color_file + ".outColor", "%s.%s" % (shader, color_attr), force=True)
         if is_cutout and alpha_transparency_enabled():
+            _wire_transparency(shader, color_file, is_ai)
+    except RuntimeError as exc:
+        cmds.warning("MayaObjectBuilder: could not assign colour %s: %s" % (texture_path, exc))
+        return False
+
+    normal_resolved = resolve_paa_path(channels["normal"]) if channels["normal"] else None
+    if normal_resolved and cmds.attributeQuery("normalCamera", node=shader, exists=True):
+        try:
+            _wire_normal(shader, normal_resolved, is_ai)
+        except Exception as exc:
+            cmds.warning("MayaObjectBuilder: normal wiring failed: %s" % exc)
+    try:
+        _wire_specular(shader, channels, is_ai)
+    except Exception:
+        pass
+    return True
+
+
+def _color_attr(shader):
+    return "baseColor" if cmds.nodeType(shader) == "aiStandardSurface" else "color"
+
+
+def _clear_transparency(shader, color_file):
+    if cmds.nodeType(shader) == "aiStandardSurface":
+        for comp in ("R", "G", "B"):
             try:
-                cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
+                cmds.disconnectAttr(color_file + ".outAlpha", "%s.opacity%s" % (shader, comp))
             except RuntimeError:
                 pass
-    except RuntimeError as exc:
-        cmds.warning("MayaObjectBuilder: could not assign texture %s: %s" % (texture_path, exc))
-        return False
-    return True
+        try:
+            cmds.setAttr(shader + ".opacity", 1, 1, 1, type="double3")
+        except RuntimeError:
+            pass
+    else:
+        try:
+            cmds.disconnectAttr(color_file + ".outTransparency", shader + ".transparency")
+            cmds.setAttr(shader + ".transparency", 0, 0, 0, type="double3")
+        except RuntimeError:
+            pass
 
 
 def apply_alpha_transparency_setting():
@@ -217,9 +374,8 @@ def apply_alpha_transparency_setting():
     for shader in cmds.ls(materials=True) or []:
         if not cmds.attributeQuery("a3obTexture", node=shader, exists=True):
             continue
-        if not cmds.attributeQuery("transparency", node=shader, exists=True):
-            continue
-        color_files = cmds.listConnections(shader + ".color", source=True, type="file") or []
+        color_attr = _color_attr(shader)
+        color_files = cmds.listConnections("%s.%s" % (shader, color_attr), source=True, type="file") or []
         if not color_files:
             continue
         color_file = color_files[0]
@@ -230,37 +386,35 @@ def apply_alpha_transparency_setting():
                 _png, cutout = paa_to_png(resolved)
             except Exception:
                 cutout = False
-        connected = cmds.listConnections(shader + ".transparency", source=True, type="file") or []
+        is_ai = cmds.nodeType(shader) == "aiStandardSurface"
+        transp_attr = shader + (".opacityR" if is_ai else ".transparency")
+        connected = bool(cmds.listConnections(transp_attr, source=True) or [])
         if enabled and cutout and not connected:
-            try:
-                cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
-            except RuntimeError:
-                pass
+            _wire_transparency(shader, color_file, is_ai)
         elif connected and (not enabled or not cutout):
-            try:
-                cmds.disconnectAttr(color_file + ".outTransparency", shader + ".transparency")
-                cmds.setAttr(shader + ".transparency", 0, 0, 0, type="double3")
-            except RuntimeError:
-                pass
+            _clear_transparency(shader, color_file)
 
 
 def assign_pending_textures():
-    """Wire the .paa colour texture onto every material that has a texture path but no
-    colour file yet. Idempotent — run deferred after a P3D import (Maya's File > Import DG
-    context blocks creating/connecting the file node inline, so it must happen afterwards).
-    Returns the number of materials textured."""
+    """Wire the .paa channels onto every material that has a texture path but no colour file
+    yet. Idempotent — run deferred after a P3D import (Maya's File > Import DG context blocks
+    creating/connecting the file node inline). Returns the number of materials textured."""
     count = 0
     for shader in cmds.ls(materials=True) or []:
         if not cmds.attributeQuery("a3obTexture", node=shader, exists=True):
             continue
-        if not cmds.attributeQuery("color", node=shader, exists=True):
+        color_attr = _color_attr(shader)
+        if not cmds.attributeQuery(color_attr, node=shader, exists=True):
             continue
         texture = cmds.getAttr(shader + ".a3obTexture") or ""
         if not texture.lower().endswith(".paa"):
             continue
-        if cmds.listConnections(shader + ".color", source=True, type="file"):
+        if cmds.listConnections("%s.%s" % (shader, color_attr), source=True, type="file"):
             continue  # already textured
-        if assign_paa_texture(shader, texture):
+        material = ""
+        if cmds.attributeQuery("a3obMaterial", node=shader, exists=True):
+            material = cmds.getAttr(shader + ".a3obMaterial") or ""
+        if assign_paa_texture(shader, texture, material or None):
             count += 1
     return count
 
@@ -268,5 +422,6 @@ def assign_pending_textures():
 __all__ = [
     "TEXTURE_ROOT_VAR", "ALPHA_VAR", "texture_root", "set_texture_root",
     "alpha_transparency_enabled", "set_alpha_transparency", "apply_alpha_transparency_setting",
-    "resolve_paa_path", "paa_to_png", "assign_paa_texture", "assign_pending_textures",
+    "resolve_paa_path", "paa_to_png", "decode_normal_png", "preferred_shader_type",
+    "assign_paa_texture", "assign_pending_textures",
 ]

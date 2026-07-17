@@ -46,7 +46,13 @@ class MayaMeshImport:
             return existing
         # createNode (not shadingNode) so material creation also works during a
         # File > Import operation, where shadingNode's UI/hypershade work returns None.
-        shader = cmds.createNode("lambert", name=material_node_name(texture, material))
+        # Prefer aiStandardSurface (full PBR: base/spec/normal) when Arnold is available.
+        try:
+            from a3ob.mayabridge import paatex
+            shader_type = paatex.preferred_shader_type()
+        except Exception:
+            shader_type = "lambert"
+        shader = cmds.createNode(shader_type, name=material_node_name(texture, material))
         # Register in the default shader list — shadingNode does this automatically, but
         # createNode does not, and without it cmds.ls(materials=True)/Hypershade don't see the
         # node as a material, so the Materials panel showed it as "No material".
