@@ -53,6 +53,8 @@ def create_proxy_from_ui():
         return
     with _undo_chunk("Create Proxy"):
         cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
+    from a3ob.ui.recent import remember_path
+    remember_path("proxy", path)
 
 
 __all__ = [

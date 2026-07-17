@@ -29,8 +29,8 @@ class MaterialsPanelMixin:
         layout.addWidget(self.material_list, 1)
 
         form = qt_widgets.QFormLayout()
-        self.material_texture = self._path_picker("Texture", "Select texture path", 1, "Texture (*.paa)")
-        self.material_rvmat = self._path_picker("Material", "Select material path", 1, "Material (*.rvmat)")
+        self.material_texture = self._path_picker("Texture", "Select texture path", 1, "Texture (*.paa)", recent_key="texture")
+        self.material_rvmat = self._path_picker("Material", "Select material path", 1, "Material (*.rvmat)", recent_key="rvmat")
         form.addRow("Texture", self.material_texture)
         form.addRow("Material", self.material_rvmat)
         layout.addLayout(form)

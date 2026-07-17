@@ -168,3 +168,37 @@ LOD_DEFINITIONS = [
 LOD_TYPE_NAMES = {definition["type"]: definition["label"] for definition in LOD_DEFINITIONS}
 RESOLUTION_LOD_TYPE = 0  # Resolution LOD: the only type carrying a numeric resolution
 MEMORY_LOD_TYPE = 9      # Memory LOD: holds named locator points
+
+
+def lod_type_icon(lod_type):
+    """Maya resource icon for a LOD type, grouped by family (combo + LOD list rows)."""
+    if lod_type == 0:
+        return ":/polyMesh.png"                                  # Resolution
+    if lod_type == 9:
+        return ":/locator.png"                                   # Memory
+    if lod_type in (1, 2, 3, 18):
+        return ":/eye.png"                                       # View (gunner/pilot/cargo/commander)
+    if lod_type in (4, 26, 27, 28):
+        return ":/ghostOff.png"                                  # Shadow
+    if lod_type in (6, 7, 8, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24):
+        return ":/polyCube.png"                                  # Geometry family
+    return ":/out_mesh.png"
+
+
+# One-line descriptions for the well-known DayZ/Arma named properties (combo tooltip).
+NAMED_PROP_DESCRIPTIONS = {
+    "autocenter": "Auto-center the model at import (0 = keep the authored origin).",
+    "lodnoshadow": "1 = this LOD casts no shadow (pair it with a dedicated shadow LOD).",
+    "buoyancy": "1 = the geometry participates in water buoyancy.",
+    "class": "Object class (house, tree, vehicle, …) — drives engine behaviour.",
+    "map": "Category/icon shown for the object on the in-game 2D map.",
+    "damage": "Damage / destruction model class.",
+    "sbsource": "Shadow-buffer source (visual / shadowvolume / explicit / none).",
+    "prefershadowvolume": "1 = prefer stencil shadow volumes over the shadow buffer.",
+    "forcenotalpha": "1 = force the LOD to render opaque (skip alpha sorting).",
+    "canocclude": "1 = this geometry can occlude others (occlusion culling).",
+    "canbeoccluded": "1 = this geometry can be occluded by others.",
+    "frequent": "1 = frequently used LOD (engine LOD-switching hint).",
+    "shadow": "Shadow mode (e.g. hybrid).",
+    "loddensitycoef": "Density coefficient influencing LOD switch distance.",
+}

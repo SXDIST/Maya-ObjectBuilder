@@ -43,6 +43,9 @@ def _persist_selected_material_metadata():
         return None
     item["texture"] = texture
     item["material"] = material
+    from a3ob.ui.recent import remember_path
+    remember_path("texture", texture)
+    remember_path("rvmat", material)
     return item
 
 

@@ -61,7 +61,7 @@ class MetadataPanelMixin:
         proxy_layout = qt_widgets.QFormLayout(form_holder)
         proxy_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(form_holder)
-        self.proxy_path_field = self._path_picker("Proxy path", "Select proxy P3D", 1, "Arma P3D (*.p3d)")
+        self.proxy_path_field = self._path_picker("Proxy path", "Select proxy P3D", 1, "Arma P3D (*.p3d)", recent_key="proxy")
         self.proxy_index_field = qt_widgets.QSpinBox()
         self.proxy_index_field.setRange(0, 2147483647)
         self.proxy_index_field.setValue(1)

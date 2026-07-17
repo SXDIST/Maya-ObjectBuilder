@@ -84,6 +84,8 @@ class NamedPropertiesPanelMixin:
         if values:
             self.named_value_combo.addItems(values)
         self.named_value_combo.blockSignals(False)
+        description = NAMED_PROP_DESCRIPTIONS.get(name.lower(), "")
+        self.named_name_combo.setToolTip(description or "DayZ named property stored on the active LOD.")
 
 
     def refresh_named_properties(self):

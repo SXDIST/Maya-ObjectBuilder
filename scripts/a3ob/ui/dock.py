@@ -8,6 +8,7 @@ from a3ob.ui.widgets import *  # noqa: F401,F403
 from a3ob.ui.scene_ops import *  # noqa: F401,F403
 from a3ob.ui.actions import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
+from a3ob.ui.recent import recent_paths, remember_path
 
 from a3ob.ui.panels.lod import LodPanelMixin
 from a3ob.ui.panels.metadata import MetadataPanelMixin
@@ -206,27 +207,45 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         return group
 
 
-    def _path_picker(self, label, caption, mode, file_filter):
+    def _path_picker(self, label, caption, mode, file_filter, recent_key=None):
         container = qt_widgets.QWidget()
         layout = qt_widgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        field = qt_widgets.QLineEdit()
+        if recent_key:
+            # Editable combo seeded with recently-used paths (see a3ob.ui.recent).
+            combo = qt_widgets.QComboBox()
+            combo.setEditable(True)
+            combo.setInsertPolicy(qt_widgets.QComboBox.NoInsert)
+            combo.addItem("")
+            for path in recent_paths(recent_key):
+                combo.addItem(path)
+            combo.setCurrentIndex(0)
+            input_widget = combo
+            field = combo.lineEdit()
+            field.setText("")
+        else:
+            field = qt_widgets.QLineEdit()
+            input_widget = field
         browse = _icon_button(":/fileOpen.png", "...", caption)
         clear = _icon_button(":/deleteActive.png", "X", f"Clear {label}")
-        browse.clicked.connect(lambda: self._browse_qt_path(field, caption, mode, file_filter))
+        browse.clicked.connect(lambda: self._browse_qt_path(field, caption, mode, file_filter, recent_key))
         clear.clicked.connect(field.clear)
-        layout.addWidget(field, 1)
+        layout.addWidget(input_widget, 1)
         layout.addWidget(browse)
         layout.addWidget(clear)
         container._line_edit = field
+        container._recent_key = recent_key
         return container
 
 
-    def _browse_qt_path(self, field, caption, mode, file_filter):
+    def _browse_qt_path(self, field, caption, mode, file_filter, recent_key=None):
         selected = cmds.fileDialog2(fileMode=mode, caption=caption, fileFilter=file_filter)
         if selected:
-            field.setText(_normalize_dayz_path(selected[0]))
+            path = _normalize_dayz_path(selected[0])
+            field.setText(path)
+            if recent_key:
+                remember_path(recent_key, path)
 
 
 __all__ = ["MayaObjectBuilderDock"]

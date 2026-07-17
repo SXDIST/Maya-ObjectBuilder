@@ -29,7 +29,11 @@ class LodPanelMixin:
         form = qt_widgets.QFormLayout()
         self.lod_type_combo = qt_widgets.QComboBox()
         for definition in LOD_DEFINITIONS:
-            self.lod_type_combo.addItem(definition["label"], definition["type"])
+            icon = _qt_icon(lod_type_icon(definition["type"]))
+            if icon is not None and not icon.isNull():
+                self.lod_type_combo.addItem(icon, definition["label"], definition["type"])
+            else:
+                self.lod_type_combo.addItem(definition["label"], definition["type"])
         self.lod_type_combo.currentIndexChanged.connect(self._on_lod_controls_changed)
         form.addRow("LOD type", self.lod_type_combo)
 
