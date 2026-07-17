@@ -175,6 +175,39 @@ def _sibling_paa(texture_path, new_suffix):
     return sibling if sibling != texture_path else None
 
 
+def decode_smdi_png(smdi_path):
+    """Decode a DayZ ``_smdi`` specular map into (spec_png, rough_png).
+
+    Arma/DayZ SMDI channel layout (verified against own_femida_top_smdi): R is a
+    constant 1.0 (unused), **G is the per-texel specular level** (dark = matte, bright =
+    shiny), **B is the glossiness/power** (near-constant per material). Feeding the raw RGB
+    into ``specularColor`` was wrong — R=1 forced a full-strength red-tinted spec across the
+    whole surface (the over-bright blow-out). Instead: spec_png is grayscale G (specular
+    only where the map says so), rough_png is grayscale ``1 - B`` (glossy where B is high).
+    Both cached (path+mtime)."""
+    key = hashlib.md5(("S|%s|%s" % (smdi_path, os.path.getmtime(smdi_path))).encode("utf8")).hexdigest()
+    spec_png = os.path.join(_cache_dir(), key + "_s.png")
+    rough_png = os.path.join(_cache_dir(), key + "_r.png")
+    if os.path.isfile(spec_png) and os.path.isfile(rough_png):
+        return spec_png, rough_png
+    import numpy as np
+    import maya.api.OpenMaya as om
+    from a3ob.formats.paa import decode_largest_mip
+    width, height, (_red, green, blue, _alpha) = decode_largest_mip(smdi_path)
+    g = np.frombuffer(green, dtype=np.float32)
+    b = np.frombuffer(blue, dtype=np.float32)
+    rough = np.clip(1.0 - b, 0.03, 0.98)
+    ones = np.ones_like(g)
+    for arr, path in ((g, spec_png), (rough, rough_png)):
+        rgba = np.stack([arr, arr, arr, ones], axis=1).reshape(height, width, 4)
+        rgba = np.flipud(rgba)
+        buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
+        image = om.MImage()
+        image.setPixels(bytearray(buffer), width, height)
+        image.writeToFile(path, "png")
+    return spec_png, rough_png
+
+
 def decode_normal_png(nohq_path):
     """Decode an Arma _nohq (DXT5nm: normal.X in alpha, normal.Y in green, Z reconstructed)
     into a proper tangent-space normal PNG. Cached (path+mtime)."""
@@ -286,20 +319,31 @@ def _wire_specular(shader, channels, is_ai):
     spec_attr = "specularColor"
     if not cmds.attributeQuery(spec_attr, node=shader, exists=True):
         return
+    has_roughness = is_ai and cmds.attributeQuery("specularRoughness", node=shader, exists=True)
     if spec_resolved:
-        spec_png, _cut = paa_to_png(spec_resolved)
+        # DayZ _smdi: G = specular level (grayscale), B = glossiness. Wire the G map as the
+        # specular colour and the derived roughness map into specularRoughness — NOT the raw
+        # RGB (whose constant R=1 blew the whole surface out with a red-tinted spec).
+        spec_png, rough_png = decode_smdi_png(spec_resolved)
         spec_file = _make_file_texture(spec_png, "Raw")
         try:
             cmds.connectAttr(spec_file + ".outColor", "%s.%s" % (shader, spec_attr), force=True)
         except RuntimeError:
             pass
-    elif channels["specular"]:
+        if has_roughness:
+            rough_file = _make_file_texture(rough_png, "Raw")
+            try:
+                cmds.connectAttr(rough_file + ".outColorR", shader + ".specularRoughness", force=True)
+            except RuntimeError:
+                pass
+        return
+    if channels["specular"]:
         r, g, b = channels["specular"][:3]
         try:
             cmds.setAttr("%s.%s" % (shader, spec_attr), r, g, b, type="double3")
         except RuntimeError:
             pass
-    if is_ai and cmds.attributeQuery("specularRoughness", node=shader, exists=True):
+    if has_roughness:
         try:
             cmds.setAttr(shader + ".specularRoughness", _roughness_from_power(channels["specular_power"]))
         except RuntimeError:
