@@ -109,6 +109,16 @@ class MaterialsPanelMixin:
             self.material_items[new_label] = item
 
 
+    def _clear_material_fields(self):
+        for field in (_picker_field(self.material_texture), _picker_field(self.material_rvmat)):
+            if field is None:
+                continue
+            field.blockSignals(True)
+            try:
+                field.clear()
+            finally:
+                field.blockSignals(False)
+
     def refresh_material_metadata(self):
         if self.material_list is None:
             return
@@ -119,6 +129,7 @@ class MaterialsPanelMixin:
         items = _material_nodes_for_selection()
         if not items:
             self.material_list.addItem("Select a mesh, LOD, or faces to edit its DayZ materials")
+            self._clear_material_fields()  # don't leave the previous material's paths showing
             return
         for item in items:
             label = _material_metadata_label(item)

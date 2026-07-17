@@ -47,6 +47,11 @@ class MayaMeshImport:
         # createNode (not shadingNode) so material creation also works during a
         # File > Import operation, where shadingNode's UI/hypershade work returns None.
         shader = cmds.createNode("lambert", name=material_node_name(texture, material))
+        # Register in the default shader list — shadingNode does this automatically, but
+        # createNode does not, and without it cmds.ls(materials=True)/Hypershade don't see the
+        # node as a material, so the Materials panel showed it as "No material".
+        if cmds.objExists("defaultShaderList1"):
+            cmds.connectAttr(shader + ".message", "defaultShaderList1.shaders", nextAvailable=True, force=True)
         shading_group = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=shader + "SG")
         cmds.connectAttr(shader + ".outColor", shading_group + ".surfaceShader", force=True)
         shader_obj = _name_to_object(shader)
