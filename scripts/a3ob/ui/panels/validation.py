@@ -17,8 +17,8 @@ class ValidationPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(_hint("Validate before export. Scene = every LOD; Selection = selected only."))
         buttons = qt_widgets.QHBoxLayout()
-        buttons.addWidget(_qt_button("Scene", _validate_scene_no_flush))
-        buttons.addWidget(_qt_button("Selection", _validate_selection_no_flush))
+        buttons.addWidget(_qt_button("Scene", _validate_scene_no_flush, "Validate every Object Builder LOD in the scene.", ":/confirm.png"))
+        buttons.addWidget(_qt_button("Selection", _validate_selection_no_flush, "Validate only the selected LODs.", ":/confirm.png"))
         layout.addLayout(buttons)
         layout.addStretch()
         return widget

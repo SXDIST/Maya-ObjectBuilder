@@ -72,7 +72,7 @@ class LodPanelMixin:
         auto_layout.addRow(self.auto_lod_view)
         auto_layout.addRow("Geometry", self.auto_lod_geometry_type)
         auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
-        auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh."))
+        auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh.", ":/polyReduce.png"))
         return widget
 
 
@@ -86,8 +86,8 @@ class LodPanelMixin:
             "adds a second point to the selected one (auto-groups them)."
         ))
         mem_buttons = qt_widgets.QHBoxLayout()
-        mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD."))
-        mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point."))
+        mem_buttons.addWidget(_qt_button("Add Memory Point", add_memory_point, "Create a new named locator under the selected Memory LOD.", ":/locator.png"))
+        mem_buttons.addWidget(_qt_button("Add Point to Selection", add_point_to_selection, "Add another locator to the same named selection as the selected memory point.", ":/locator.png"))
         layout.addLayout(mem_buttons)
         return widget
 

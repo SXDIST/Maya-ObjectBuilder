@@ -14,11 +14,10 @@ from a3ob.ui.panels.metadata import MetadataPanelMixin
 from a3ob.ui.panels.named_properties import NamedPropertiesPanelMixin
 from a3ob.ui.panels.materials import MaterialsPanelMixin
 from a3ob.ui.panels.selections import SelectionsPanelMixin
-from a3ob.ui.panels.skeleton import SkeletonPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
 
 
-class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, SkeletonPanelMixin, ValidationPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
@@ -37,8 +36,6 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         self.auto_lod_view = None
         self.auto_lod_geometry_type = None
         self.auto_lod_fire_quality = None
-        self.model_cfg_import = None
-        self.model_cfg_export = None
         self.mass_value_field = None
         self.mass_mode_combo = None
         self.flag_component_combo = None
@@ -93,7 +90,6 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Proxies", self._build_proxies_section(), True, None),
             ("Memory Points", self._build_memory_points_section(), True, None),
-            ("Skeleton (model.cfg)", self._build_skeleton_section(), True, None),
             ("Validation", self._build_validation_tab(), True, None),
         ]
         self.memory_points_group = None

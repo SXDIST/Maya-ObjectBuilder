@@ -9,15 +9,13 @@ from a3ob.ui.actions._common import _undo_chunk  # noqa: F401
 
 
 def import_model_cfg_from_ui():
-    dock = _active_qt_dock()
-    path = dock.model_cfg_import_path() if dock is not None else ""
-    import_model_cfg(path or None)
+    # The dedicated Skeleton panel was removed; the model.cfg commands stay reachable
+    # from the MayaObjectBuilder menu and prompt for the path via the native dialog.
+    import_model_cfg(None)
 
 
 def export_model_cfg_from_ui():
-    dock = _active_qt_dock()
-    path = dock.model_cfg_export_path() if dock is not None else ""
-    export_model_cfg(path or None)
+    export_model_cfg(None)
 
 
 __all__ = [

@@ -19,9 +19,6 @@ class NamedPropertiesPanelMixin:
 
         layout.addWidget(_hint("Stored on the selected LOD, exported to P3D TAGGs."))
 
-        form = qt_widgets.QFormLayout()
-        layout.addLayout(form)
-
         self.named_list = qt_widgets.QListWidget()
         self.named_list.currentItemChanged.connect(lambda *_: self.select_named_property())
         layout.addWidget(self.named_list, 1)
@@ -38,8 +35,8 @@ class NamedPropertiesPanelMixin:
         layout.addLayout(edit_form)
 
         named_buttons = qt_widgets.QHBoxLayout()
-        named_buttons.addWidget(_qt_button("Add / Update", _commit_named_property_fields, "Save the current name/value pair on the active LOD."))
-        named_buttons.addWidget(_qt_button("Remove", _remove_named_property, "Remove the selected property from the active LOD."))
+        named_buttons.addWidget(_qt_button("Add / Update", _commit_named_property_fields, "Save the current name/value pair on the active LOD.", ":/confirm.png"))
+        named_buttons.addWidget(_qt_button("Remove", _remove_named_property, "Remove the selected property from the active LOD.", ":/delete.png"))
         layout.addLayout(named_buttons)
 
         self.refresh_named_properties()

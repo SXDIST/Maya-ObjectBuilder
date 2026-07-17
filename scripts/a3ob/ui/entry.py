@@ -258,6 +258,9 @@ def show_plugin_ui():
     if not cmds.menu(MENU_NAME, exists=True):
         menu = cmds.menu(MENU_NAME, label="MayaObjectBuilder", parent=main_window, tearOff=True)
         cmds.menuItem(label="Open MayaObjectBuilder", parent=menu, command=lambda *_: open_dock())
+        cmds.menuItem(divider=True, parent=menu)
+        cmds.menuItem(label="Import model.cfg Skeleton", parent=menu, command=lambda *_: import_model_cfg())
+        cmds.menuItem(label="Export model.cfg Skeleton", parent=menu, command=lambda *_: export_model_cfg())
     _remove_legacy_shelf_button()
     return open_dock()
 

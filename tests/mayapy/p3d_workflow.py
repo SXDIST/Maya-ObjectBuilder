@@ -307,14 +307,18 @@ def assert_ui_redesign_helpers_load():
         raise RuntimeError("DayZ path helper did not normalize Windows paths")
     dock_class = ui["MayaObjectBuilderDock"]
     # accordion section builders + reused panel builders + data-refresh methods
+    # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so
+    # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
     for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
                  "_build_auto_lod_section", "_build_mass_flags_section", "_build_proxies_section",
-                 "_build_memory_points_section", "_build_skeleton_section",
+                 "_build_memory_points_section",
                  "_build_named_properties_tab", "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
                  "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
         if not hasattr(dock_class, name):
             raise RuntimeError(f"Missing Qt dock method: {name}")
+    if hasattr(dock_class, "_build_skeleton_section"):
+        raise RuntimeError("Skeleton panel should have been removed from the dock")
     # panel optionVar key is derived from the panel title
     if ui["_panel_optionvar_key"]("Mass & Flags") != "MayaObjectBuilder_panel_Mass_Flags_expanded":
         raise RuntimeError("Panel optionVar key helper changed unexpectedly")

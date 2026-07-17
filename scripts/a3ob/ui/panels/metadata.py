@@ -17,6 +17,8 @@ class MetadataPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
+        layout.addWidget(_hint("Per-vertex mass and per-component flags on the active LOD, exported to P3D."))
+
         mass_group = qt_widgets.QGroupBox("Mass")
         mass_layout = qt_widgets.QFormLayout(mass_group)
         self.mass_value_field = qt_widgets.QDoubleSpinBox()
@@ -28,8 +30,8 @@ class MetadataPanelMixin:
         mass_layout.addRow("Value", self.mass_value_field)
         mass_layout.addRow("Mode", self.mass_mode_combo)
         mass_buttons = qt_widgets.QHBoxLayout()
-        mass_buttons.addWidget(_qt_button("Apply", apply_mass_from_ui))
-        mass_buttons.addWidget(_qt_button("Clear", clear_mass_from_ui))
+        mass_buttons.addWidget(_qt_button("Apply", apply_mass_from_ui, "Set the mass value on the LOD's vertices.", ":/confirm.png"))
+        mass_buttons.addWidget(_qt_button("Clear", clear_mass_from_ui, "Remove all mass data from the LOD.", ":/delete.png"))
         mass_layout.addRow(mass_buttons)
         layout.addWidget(mass_group)
 
@@ -44,15 +46,21 @@ class MetadataPanelMixin:
         flags_layout.addRow("Component", self.flag_component_combo)
         flags_layout.addRow("Value", self.flag_value_field)
         flags_layout.addRow("Set name", self.flag_name_field)
-        flags_layout.addRow(_qt_button("Apply Flag", apply_flag_from_ui))
+        flags_layout.addRow(_qt_button("Apply Flag", apply_flag_from_ui, "Apply the flag value to the chosen component set.", ":/confirm.png"))
         layout.addWidget(flags_group)
         return widget
 
 
     def _build_proxies_section(self):
         widget = qt_widgets.QWidget()
-        proxy_layout = qt_widgets.QFormLayout(widget)
+        layout = qt_widgets.QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
+        layout.addWidget(_hint("Create a proxy placeholder (weapon, crew, light) from a P3D path + selection."))
+        form_holder = qt_widgets.QWidget()
+        proxy_layout = qt_widgets.QFormLayout(form_holder)
         proxy_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(form_holder)
         self.proxy_path_field = self._path_picker("Proxy path", "Select proxy P3D", 1, "Arma P3D (*.p3d)")
         self.proxy_index_field = qt_widgets.QSpinBox()
         self.proxy_index_field.setRange(0, 2147483647)
@@ -62,7 +70,7 @@ class MetadataPanelMixin:
         proxy_layout.addRow("Path", self.proxy_path_field)
         proxy_layout.addRow("Index", self.proxy_index_field)
         proxy_layout.addRow(self.proxy_from_selection_check)
-        proxy_layout.addRow(_qt_button("Create Proxy", create_proxy_from_ui))
+        proxy_layout.addRow(_qt_button("Create Proxy", create_proxy_from_ui, "Create a proxy from the path and selected components.", ":/create.png"))
         return widget
 
 
