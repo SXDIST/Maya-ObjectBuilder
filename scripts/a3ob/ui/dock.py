@@ -55,6 +55,7 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.proxy_index_field = None
         self.proxy_from_selection_check = None
         self.named_list = None
+        self.named_batch_check = None
         self.named_name_combo = None
         self.named_value_combo = None
         self.named_items = {}

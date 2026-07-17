@@ -34,6 +34,10 @@ class NamedPropertiesPanelMixin:
         edit_form.addRow("Value", self.named_value_combo)
         layout.addLayout(edit_form)
 
+        self.named_batch_check = qt_widgets.QCheckBox("Apply to all selected LODs")
+        self.named_batch_check.setToolTip("Add/Update writes the property to every selected LOD, not just the active one.")
+        layout.addWidget(self.named_batch_check)
+
         named_buttons = qt_widgets.QHBoxLayout()
         named_buttons.addWidget(_qt_button("Add / Update", _commit_named_property_fields, "Save the current name/value pair on the active LOD.", ":/confirm.png"))
         named_buttons.addWidget(_qt_button("Remove", _remove_named_property, "Remove the selected property from the active LOD.", ":/delete.png"))
@@ -41,6 +45,10 @@ class NamedPropertiesPanelMixin:
 
         self.refresh_named_properties()
         return widget
+
+
+    def named_batch_enabled(self):
+        return self.named_batch_check.isChecked() if getattr(self, "named_batch_check", None) is not None else False
 
 
     def selected_named_property_lod(self):
