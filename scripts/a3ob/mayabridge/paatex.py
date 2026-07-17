@@ -14,7 +14,8 @@ import hashlib
 import maya.cmds as cmds
 
 TEXTURE_ROOT_VAR = "MayaObjectBuilder_texture_root"
-_CACHE_DIRNAME = "a3ob_paa_cache"
+ALPHA_VAR = "MayaObjectBuilder_paa_alpha_transparency"
+_CACHE_DIRNAME = "a3ob_paa_cache_v2"  # bumped: PNGs now carry an alpha-cutout sidecar
 
 
 def texture_root():
@@ -25,6 +26,16 @@ def texture_root():
 
 def set_texture_root(path):
     cmds.optionVar(stringValue=(TEXTURE_ROOT_VAR, path or ""))
+
+
+def alpha_transparency_enabled():
+    # Off by default: a DayZ _ca alpha is often a data channel (chainmail, spec) rather than
+    # a geometry cut-out, and wiring it makes solid armour see-through. Opt-in for foliage.
+    return bool(cmds.optionVar(query=ALPHA_VAR)) if cmds.optionVar(exists=ALPHA_VAR) else False
+
+
+def set_alpha_transparency(enabled):
+    cmds.optionVar(intValue=(ALPHA_VAR, 1 if enabled else 0))
 
 
 _WALK_DIR_LIMIT = 20000  # guard: never walk an entire huge drive looking for a basename
@@ -80,24 +91,50 @@ def _cache_dir():
     return directory
 
 
+def _alpha_is_cutout(alpha_np):
+    """True only for a genuine cut-out mask: alpha is bimodal (mostly 0 or 1) and has a
+    real amount of fully-transparent pixels (foliage/hair). Solid materials whose _ca alpha
+    is a mid-range data channel return False, so they are not made see-through."""
+    total = alpha_np.size
+    if total == 0:
+        return False
+    near0 = float((alpha_np < 0.05).sum()) / total
+    near1 = float((alpha_np > 0.95).sum()) / total
+    return (near0 + near1) > 0.9 and near0 > 0.02
+
+
 def paa_to_png(paa_path):
-    """Decode a .paa to a cached PNG (keyed by path+mtime) and return the PNG path."""
+    """Decode a .paa to a cached PNG (keyed by path+mtime). Returns (png_path, is_cutout)
+    where is_cutout says whether the alpha is a real transparency mask."""
     key = hashlib.md5(("%s|%s" % (paa_path, os.path.getmtime(paa_path))).encode("utf8")).hexdigest()
     png = os.path.join(_cache_dir(), key + ".png")
+    meta = png + ".cutout"
     if os.path.isfile(png):
-        return png
+        cutout = False
+        try:
+            with open(meta) as handle:
+                cutout = handle.read().strip() == "1"
+        except OSError:
+            pass
+        return png, cutout
     import numpy as np
     import maya.api.OpenMaya as om
     from a3ob.formats.paa import decode_largest_mip
     width, height, (red, green, blue, alpha) = decode_largest_mip(paa_path)
     channels = [np.frombuffer(c, dtype=np.float32) for c in (red, green, blue, alpha)]
+    cutout = _alpha_is_cutout(channels[3])
     rgba = np.stack(channels, axis=1).reshape(height, width, 4)
     rgba = np.flipud(rgba)  # DXT decode is bottom-to-top; PNG/MImage want top-to-bottom
     buffer = np.clip(rgba * 255.0, 0, 255).astype(np.uint8).tobytes()
     image = om.MImage()
     image.setPixels(bytearray(buffer), width, height)
     image.writeToFile(png, "png")
-    return png
+    try:
+        with open(meta, "w") as handle:
+            handle.write("1" if cutout else "0")
+    except OSError:
+        pass
+    return png, cutout
 
 
 _FILE_LINKS = (
@@ -137,6 +174,7 @@ def _sibling_paa(texture_path, new_suffix):
 
 
 def _decoded_png(texture_path):
+    """(png_path, is_cutout) for a texture path, or None when unresolved/undecodable."""
     resolved = resolve_paa_path(texture_path) if texture_path else None
     if not resolved:
         return None
@@ -148,41 +186,62 @@ def _decoded_png(texture_path):
 
 
 def assign_paa_texture(shader, texture_path):
-    """Decode ``texture_path`` and wire it onto ``shader``: colour + alpha transparency, and
-    (best-effort) the sibling ``_nohq`` normal as a tangent bump. Returns True when the
-    colour texture was assigned. Failures are non-fatal — the plain material stays."""
+    """Decode ``texture_path`` and wire it onto ``shader`` as its colour file texture.
+    Alpha is connected to transparency ONLY for genuine cut-out masks (foliage/hair) — a
+    solid material whose _ca alpha is a data channel is left opaque, so nothing turns
+    see-through. Returns True when the colour texture was assigned."""
     if not texture_path or not texture_path.lower().endswith(".paa"):
         return False
-    png = _decoded_png(texture_path)
-    if not png:
+    decoded = _decoded_png(texture_path)
+    if not decoded:
         return False
+    png, is_cutout = decoded
     try:
         color_file = _make_file_texture(png, "sRGB")
         cmds.connectAttr(color_file + ".outColor", shader + ".color", force=True)
-        # Alpha -> transparency (foliage / _ca cut-outs). Opaque textures decode alpha=1
-        # so transparency stays 0; safe to always wire.
-        try:
-            cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
-        except RuntimeError:
-            pass
+        if is_cutout and alpha_transparency_enabled():
+            try:
+                cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
+            except RuntimeError:
+                pass
     except RuntimeError as exc:
         cmds.warning("MayaObjectBuilder: could not assign texture %s: %s" % (texture_path, exc))
         return False
+    return True
 
-    # Sibling normal map (_nohq) -> tangent bump on normalCamera (best effort; Arma's
-    # channel swizzle is not fully reproduced, so this is approximate surface detail).
-    if cmds.attributeQuery("normalCamera", node=shader, exists=True):
-        normal_png = _decoded_png(_sibling_paa(texture_path, "nohq"))
-        if normal_png:
+
+def apply_alpha_transparency_setting():
+    """Add or remove the alpha->transparency link on every already-textured Object Builder
+    material to match the current setting (so toggling the option updates the scene)."""
+    enabled = alpha_transparency_enabled()
+    for shader in cmds.ls(materials=True) or []:
+        if not cmds.attributeQuery("a3obTexture", node=shader, exists=True):
+            continue
+        if not cmds.attributeQuery("transparency", node=shader, exists=True):
+            continue
+        color_files = cmds.listConnections(shader + ".color", source=True, type="file") or []
+        if not color_files:
+            continue
+        color_file = color_files[0]
+        resolved = resolve_paa_path(cmds.getAttr(shader + ".a3obTexture") or "")
+        cutout = False
+        if resolved:
             try:
-                normal_file = _make_file_texture(normal_png, "Raw")
-                bump = cmds.createNode("bump2d", skipSelect=True)
-                cmds.setAttr(bump + ".bumpInterp", 1)  # Tangent Space Normals
-                cmds.connectAttr(normal_file + ".outAlpha", bump + ".bumpValue", force=True)
-                cmds.connectAttr(bump + ".outNormal", shader + ".normalCamera", force=True)
+                _png, cutout = paa_to_png(resolved)
+            except Exception:
+                cutout = False
+        connected = cmds.listConnections(shader + ".transparency", source=True, type="file") or []
+        if enabled and cutout and not connected:
+            try:
+                cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
             except RuntimeError:
                 pass
-    return True
+        elif connected and (not enabled or not cutout):
+            try:
+                cmds.disconnectAttr(color_file + ".outTransparency", shader + ".transparency")
+                cmds.setAttr(shader + ".transparency", 0, 0, 0, type="double3")
+            except RuntimeError:
+                pass
 
 
 def assign_pending_textures():
@@ -207,6 +266,7 @@ def assign_pending_textures():
 
 
 __all__ = [
-    "TEXTURE_ROOT_VAR", "texture_root", "set_texture_root",
+    "TEXTURE_ROOT_VAR", "ALPHA_VAR", "texture_root", "set_texture_root",
+    "alpha_transparency_enabled", "set_alpha_transparency", "apply_alpha_transparency_setting",
     "resolve_paa_path", "paa_to_png", "assign_paa_texture", "assign_pending_textures",
 ]

@@ -30,6 +30,12 @@ class MaterialsPanelMixin:
         root_row.addWidget(root_browse)
         layout.addLayout(root_row)
 
+        self.paa_alpha_check = qt_widgets.QCheckBox("Alpha → transparency (foliage / cut-outs)")
+        self.paa_alpha_check.setToolTip("Off: imported materials stay opaque (solid armour). On: a .paa cut-out alpha becomes viewport transparency.")
+        self.paa_alpha_check.setChecked(_paatex.alpha_transparency_enabled())
+        self.paa_alpha_check.toggled.connect(self._on_paa_alpha_toggled)
+        layout.addWidget(self.paa_alpha_check)
+
         head = qt_widgets.QHBoxLayout()
         head.addWidget(_hint("Pick a material, set its texture / rvmat paths. Edits save instantly."), 1)
         refresh = _icon_button(":/refresh.png", "↻", "Re-scan the current selection's materials")
@@ -57,6 +63,12 @@ class MaterialsPanelMixin:
 
         self.refresh_material_metadata()
         return widget
+
+
+    def _on_paa_alpha_toggled(self, checked):
+        from a3ob.mayabridge import paatex
+        paatex.set_alpha_transparency(checked)
+        paatex.apply_alpha_transparency_setting()
 
 
     def _on_texture_root_edited(self):
