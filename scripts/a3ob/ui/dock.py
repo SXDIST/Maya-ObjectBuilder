@@ -117,13 +117,18 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
 
     def _poll_live_panels(self):
         """Cheap timer tick: refresh an open live panel only when its scene snapshot changed."""
-        if not self.isVisible():
+        # Bail out if the C++ widget is gone (dock deleted / Maya shutting down) — polling a
+        # dead object or a torn-down scene is what produced the exit-time crash.
+        if qt_is_valid is not None and not qt_is_valid(self):
             return
-        self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
-                         defer=self._material_fields_focused())
-        self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
-        self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
-                         defer=self._named_fields_focused())
+        try:
+            self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
+                             defer=self._material_fields_focused())
+            self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
+            self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
+                             defer=self._named_fields_focused())
+        except Exception:
+            pass  # transient scene state during undo/scene-open/teardown — retry next tick
 
     def _poll_panel(self, title, snapshot_fn, refresh_fn, defer=False):
         section = self._live_sections.get(title)
@@ -172,6 +177,19 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
     def _named_snapshot(self):
         lod = self.selected_named_property_lod()
         return _safe_get_attr(lod, "a3obProperties", "") if lod else ""
+
+    def showEvent(self, event):
+        # Only poll while the dock is actually on screen; also restarts after a hide.
+        if getattr(self, "_poll_timer", None) is not None and not self._poll_timer.isActive():
+            self._poll_timer.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        # Stop polling when the dock is hidden (tab switched, closed, Maya exiting) so a
+        # stray tick never touches a torn-down scene.
+        if getattr(self, "_poll_timer", None) is not None:
+            self._poll_timer.stop()
+        super().hideEvent(event)
 
     def _build_quick_actions(self):
         group = qt_widgets.QGroupBox("Quick Actions")

@@ -202,6 +202,9 @@ def _delete_qt_dock():
     global _qt_dock_widget
     widget = _active_qt_dock()
     if widget is not None:
+        timer = getattr(widget, "_poll_timer", None)
+        if timer is not None:
+            timer.stop()  # stop the auto-refresh poll before teardown (avoids exit-time crashes)
         widget.setParent(None)
         widget.deleteLater()
     _qt_dock_widget = None
