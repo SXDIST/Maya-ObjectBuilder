@@ -23,15 +23,85 @@ class LodListPanelMixin:
         self.lod_list = qt_widgets.QListWidget()
         self.lod_list.currentItemChanged.connect(lambda *_: self._on_lod_list_selected())
         self.lod_list.itemDoubleClicked.connect(lambda *_: self._frame_selected_lod())
+        self.lod_list.setContextMenuPolicy(qt_core.Qt.CustomContextMenu)
+        self.lod_list.customContextMenuRequested.connect(self._show_lod_context_menu)
         layout.addWidget(self.lod_list, 1)
 
         row = qt_widgets.QHBoxLayout()
+        add_button = qt_widgets.QPushButton("Add LOD")
+        _add_icon = _qt_icon(":/create.png")
+        if _add_icon is not None and not _add_icon.isNull():
+            add_button.setIcon(_add_icon)
+        add_button.setToolTip("Add a new empty LOD of a chosen type.")
+        add_button.clicked.connect(lambda: self._show_add_lod_menu(add_button))
+        row.addWidget(add_button)
         row.addWidget(_qt_button("Frame", self._frame_selected_lod, "Select and frame the LOD in the viewport.", ":/eye.png"))
         row.addWidget(_qt_button("Isolate", self._toggle_isolate_lod, "Toggle viewport isolation of the selected LOD (non-destructive).", ":/ghostOff.png"))
         layout.addLayout(row)
 
         self.refresh_lod_list()
         return widget
+
+
+    # Common LOD types offered by the Add menu (label comes from LOD_DEFINITIONS).
+    _ADD_LOD_TYPES = (0, 6, 7, 14, 15, 4, 9, 11, 10, 12, 13)
+
+    def _show_add_lod_menu(self, anchor):
+        menu = qt_widgets.QMenu(self)
+        labels = {d["type"]: d["label"] for d in LOD_DEFINITIONS}
+        for lod_type in self._ADD_LOD_TYPES:
+            label = labels.get(lod_type, "LOD %d" % lod_type)
+            icon = _qt_icon(lod_type_icon(lod_type))
+            action = menu.addAction(label)
+            if icon is not None and not icon.isNull():
+                action.setIcon(icon)
+            action.triggered.connect(lambda checked=False, t=lod_type: create_lod_type(t))
+        menu.popup(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+
+    def _show_lod_context_menu(self, pos):
+        item = self.lod_list.itemAt(pos)
+        if item is None:
+            return
+        node = item.data(qt_core.Qt.UserRole)
+        if not node or not cmds.objExists(node):
+            return
+        menu = qt_widgets.QMenu(self)
+        menu.addAction("Frame").triggered.connect(lambda *_: self._frame_selected_lod())
+        menu.addAction("Isolate").triggered.connect(lambda *_: self._toggle_isolate_lod())
+        menu.addSeparator()
+        menu.addAction("Rename…").triggered.connect(lambda *_: self._rename_lod(node))
+        menu.addAction("Duplicate").triggered.connect(lambda *_: self._duplicate_lod(node))
+        menu.addSeparator()
+        menu.addAction("Delete").triggered.connect(lambda *_: self._delete_lod(node))
+        menu.popup(self.lod_list.viewport().mapToGlobal(pos))
+
+
+    def _rename_lod(self, node):
+        leaf = node.split("|")[-1].split(":")[-1]
+        result = cmds.promptDialog(title="Rename LOD", message="New name:", text=leaf,
+                                   button=["OK", "Cancel"], defaultButton="OK", cancelButton="Cancel", dismissString="Cancel")
+        if result != "OK":
+            return
+        new_name = cmds.promptDialog(query=True, text=True).strip()
+        if new_name and cmds.objExists(node):
+            cmds.rename(node, new_name)
+            self.refresh_lod_list()
+
+
+    def _duplicate_lod(self, node):
+        if not cmds.objExists(node):
+            return
+        duplicated = cmds.duplicate(node, returnRootsOnly=True)
+        if duplicated:
+            cmds.select(duplicated[0], replace=True)
+        self.refresh_lod_list()
+
+
+    def _delete_lod(self, node):
+        if cmds.objExists(node):
+            cmds.delete(node)
+        self.refresh_lod_list()
 
 
     def _selected_lod_list_node(self):

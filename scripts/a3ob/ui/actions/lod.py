@@ -107,6 +107,20 @@ def _remove_lod_from_selection():
     _refresh_context_ui()
 
 
+def create_lod_type(lod_type, resolution=0):
+    """Create a new empty LOD of a specific type (for the LOD list's Add menu)."""
+    load_plugin()
+    definition = next((d for d in LOD_DEFINITIONS if d["type"] == lod_type), LOD_DEFINITIONS[0])
+    res = resolution if definition["has_resolution"] else definition["default_resolution"]
+    with _undo_chunk("Add LOD"):
+        cmds.select(clear=True)
+        node = _mark_lod_named(definition, res)
+        if node and cmds.objExists(node):
+            cmds.select(node, replace=True)
+    _refresh_context_ui()
+    return node
+
+
 def generate_auto_lods_from_ui():
     load_plugin()
     dock = _active_qt_dock()
@@ -124,6 +138,7 @@ __all__ = [
     "_refresh_lod_assignment_ui",
     "_lod_node_name",
     "_mark_lod_named",
+    "create_lod_type",
     "assign_lod_to_selection",
     "create_empty_lod",
     "LOD_ATTRS",
