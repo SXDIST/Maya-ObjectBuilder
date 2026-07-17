@@ -6,7 +6,7 @@ from a3ob.ui.autolod.helpers import *  # noqa: F401,F403
 
 def _generate_resolution_lods(source, settings, visuals):
     start_lod = 0 if settings["first_lod"] == "LOD0" else 1
-    ratios = RESOLUTION_PRESETS.get(settings["preset"], RESOLUTION_PRESETS["QUADS"])
+    ratios = reduction_ladder(settings["reduction"])
     generated = []
     source_snapshot = cmds.duplicate(source, returnRootsOnly=True)[0]
 
@@ -42,8 +42,8 @@ def _generate_resolution_lods(source, settings, visuals):
                 if not reduced_ok:
                     cmds.delete(duplicate)
                     raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
-        # QUADS mode keeps quad-dominant LODs (its whole purpose); TRIS/CUSTOM triangulate.
-        if settings["preset"] == "QUADS":
+        # "quads" output keeps quad-dominant LODs; "triangles" triangulates.
+        if settings["output"] == "quads":
             _quadrangulate(duplicate)
         else:
             _triangulate(duplicate)

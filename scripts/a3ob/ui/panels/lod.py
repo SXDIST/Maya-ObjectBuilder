@@ -47,8 +47,12 @@ class LodPanelMixin:
         widget = qt_widgets.QWidget()
         auto_layout = qt_widgets.QFormLayout(widget)
         auto_layout.setContentsMargins(0, 0, 0, 0)
-        self.auto_lod_preset = qt_widgets.QComboBox()
-        self.auto_lod_preset.addItems(["QUADS", "TRIS", "CUSTOM"])
+        self.auto_lod_output = qt_widgets.QComboBox()
+        self.auto_lod_output.addItems(["Quads", "Triangles"])
+        self.auto_lod_output.setToolTip("Quads keep quad-dominant LODs; Triangles fully triangulate.")
+        self.auto_lod_reduction = qt_widgets.QComboBox()
+        self.auto_lod_reduction.addItems(["Aggressive", "Balanced", "Light"])
+        self.auto_lod_reduction.setToolTip("Per-step strength: Aggressive halves each LOD, Light barely reduces.")
         self.auto_lod_first = qt_widgets.QComboBox()
         self.auto_lod_first.addItems(["LOD1", "LOD0"])
         self.auto_lod_resolution = qt_widgets.QCheckBox("Resolution LODs")
@@ -63,7 +67,8 @@ class LodPanelMixin:
         self.auto_lod_fire_quality = qt_widgets.QSpinBox()
         self.auto_lod_fire_quality.setRange(1, 10)
         self.auto_lod_fire_quality.setValue(2)
-        auto_layout.addRow("Preset", self.auto_lod_preset)
+        auto_layout.addRow("Output", self.auto_lod_output)
+        auto_layout.addRow("Reduction", self.auto_lod_reduction)
         auto_layout.addRow("First LOD", self.auto_lod_first)
         auto_layout.addRow(self.auto_lod_resolution)
         auto_layout.addRow(self.auto_lod_geometry)
@@ -103,7 +108,8 @@ class LodPanelMixin:
 
     def auto_lod_settings(self):
         return {
-            "preset": self.auto_lod_preset.currentText() if self.auto_lod_preset is not None else "QUADS",
+            "output": (self.auto_lod_output.currentText() if self.auto_lod_output is not None else "Quads").lower(),
+            "reduction": (self.auto_lod_reduction.currentText() if self.auto_lod_reduction is not None else "Aggressive").lower(),
             "first_lod": self.auto_lod_first.currentText() if self.auto_lod_first is not None else "LOD1",
             "resolution": self.auto_lod_resolution.isChecked() if self.auto_lod_resolution is not None else True,
             "geometry": self.auto_lod_geometry.isChecked() if self.auto_lod_geometry is not None else True,

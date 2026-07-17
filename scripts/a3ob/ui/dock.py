@@ -27,7 +27,8 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         self.lod_resolution = None
         self.lod_context = None
         self.memory_points_group = None
-        self.auto_lod_preset = None
+        self.auto_lod_output = None
+        self.auto_lod_reduction = None
         self.auto_lod_first = None
         self.auto_lod_resolution = None
         self.auto_lod_geometry = None
