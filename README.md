@@ -42,8 +42,9 @@ The plugin is written in **pure Python** (Maya Python API 2.0, with a tiny API-1
 |---|---|
 | 🔄 **P3D translator** | `Arma P3D` file type for Maya **File > Import / Export** |
 | 🧱 **MLOD import/export** | Full LOD metadata preservation on round-trip |
-| 🎚️ **LOD tools** | Assign LOD type/resolution, create empty LODs |
+| 🎚️ **LOD tools** | Central LOD list, assign LOD type/resolution, create empty LODs |
 | 🏷️ **Metadata editing** | Named selections & properties, materials, mass, flags, proxies |
+| 🎨 **PBR textures** | Decode DayZ `.paa` textures (+ `.rvmat`) on import and wire base colour, normal & specular onto materials (`aiStandardSurface` / `blinn`) |
 | ⚡ **Auto LOD** | Generate resolution / geometry / memory / fire / view LODs from a mesh |
 | 🦴 **model.cfg** | Skeleton import/export workflow |
 | ✅ **Validation** | Pre-export checks for the whole scene or the selection |
@@ -108,16 +109,19 @@ The dock is a vertical stack of **collapsible panels** — each remembers its ex
 | Panel | Purpose |
 |-------|---------|
 | ⚡ **Quick Actions** | Import/Export P3D · Auto LOD · Validate |
+| 📋 **LODs** | Central list of every LOD in the scene — select, frame, rename, duplicate, delete, add new LODs |
 | 🎚️ **LOD Properties** | Assign P3D LOD type & resolution to the selection |
 | 🤖 **Auto LOD** | Generate resolution/geometry/memory/fire/view LODs from a mesh |
 | ⚖️ **Mass & Flags** | Vertex mass and face/vertex component flags |
 | 🏷️ **Named Properties** | Key/value properties stored on the selected LOD |
-| 🎨 **Materials** | Texture and `.rvmat` paths for the mesh's materials |
+| 🎨 **Materials** | Texture (`.paa`) and `.rvmat` paths per material, the texture root, and the alpha→transparency toggle |
 | 🗂️ **Selections** | Filter & maintain selections, proxies, and flag sets |
 | 🔗 **Proxies** | Create/update proxy metadata |
 | 📍 **Memory Points** | Named locators for the Memory LOD |
-| 🦴 **Skeleton (model.cfg)** | Import/export skeleton data |
 | ✅ **Validation** | Check LODs before export (whole scene or selection) |
+
+> [!TIP]
+> **Textures on import** — Maya can't read `.paa` directly, so the plugin decodes each texture to a cached PNG and wires it onto the material (base colour + reconstructed normal from `_nohq` + specular from `_smdi`/`.rvmat`). For the mod-relative paths in a P3D to resolve, set the **texture root** in the **Materials** panel (or the *Set Texture Root* menu item) to your unpacked mod / `P:` drive. Skeleton (`model.cfg`) import/export lives in the **MayaObjectBuilder menu**, not a dock panel.
 
 ### 📍 Memory LOD workflow
 
@@ -155,12 +159,13 @@ There is **no build step**. Run the checklist from the repository root.
 ```bash
 python tests/python/test_p3d_roundtrip.py
 python tests/python/test_model_cfg.py
+python tests/python/test_paa.py          # PAA decoder; skips cleanly without tests/paa/*.paa fixtures
 ```
 
-**Python syntax check:**
+**Python syntax check** (compile every `.py` on disk — robust to package renames):
 
 ```bash
-python -m py_compile plug-ins/*.py scripts/objectBuilderMenu.py scripts/objectBuilderAutoLOD.py scripts/dev_install.py $(git ls-files 'scripts/a3ob/*.py') tests/mayapy/*.py tests/python/*.py
+python -m py_compile $(find scripts plug-ins tests -name '*.py')
 ```
 
 **Maya integration workflows** (load the plugin, exercise import/export + commands + UI):
@@ -226,11 +231,11 @@ Generated `dist/` contents are release artifacts and are not meant to be committ
 
 | Path | Responsibility |
 |------|----------------|
-| `scripts/a3ob/formats/` | Maya-independent format code (`binary.py`, `p3d.py`, `model_cfg.py`) — unit-testable with plain Python |
-| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): attribute schema, Maya↔MLOD conversion, `a3ob*` commands, `model.cfg` commands, translator bodies |
-| `scripts/a3ob/ui/` | UI support: `constants.py` (data tables) + `scene_ops.py` (Qt-free scene helpers) |
-| `scripts/objectBuilderMenu.py` | Qt dock/menu UI (`MayaObjectBuilderDock`) + command wrappers |
-| `scripts/objectBuilderAutoLOD.py` | Auto-LOD generator |
+| `scripts/a3ob/formats/` | Maya-independent format code (`binary.py`, `p3d.py`, `model_cfg.py`, `paa.py` texture decoder, `rvmat.py`) — unit-testable with plain Python |
+| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): attribute schema, Maya↔MLOD conversion (`import_/`, `export/`), `a3ob*` commands, `model.cfg` commands, translator bodies, and the `paatex/` `.paa`→material pipeline |
+| `scripts/a3ob/ui/` | Dock UI package: `dock.py` + `panels/` (collapsible sections), `actions/` (scene business logic), `scene/` (Qt-free helpers), `autolod/`, `entry.py`, `constants.py`, `recent.py` |
+| `scripts/objectBuilderMenu.py` | Thin facade over `a3ob.ui` (kept for the plugin + mayapy tests) |
+| `scripts/objectBuilderAutoLOD.py` | Facade over `a3ob.ui.autolod` (auto-LOD generator) |
 | `plug-ins/MayaObjectBuilder.py` | Main scripted plugin (API 2.0): commands, dock, auto-loads the translator |
 | `plug-ins/MayaObjectBuilderTranslator.py` | Companion plugin (API 1.0): the `Arma P3D` `MPxFileTranslator` |
 | `install/` | Release installer run from the extracted zip inside Maya |
@@ -241,7 +246,7 @@ Generated `dist/` contents are release artifacts and are not meant to be committ
 
 ## 🙏 Acknowledgements
 
-Special thanks to **[MrClock8163/Arma3ObjectBuilder](https://github.com/MrClock8163/Arma3ObjectBuilder)**. This project uses the original Blender add-on as a compatibility reference for Object Builder data structures, P3D behavior, and workflow expectations.
+Special thanks to **[MrClock8163/Arma3ObjectBuilder](https://github.com/MrClock8163/Arma3ObjectBuilder)**. This project uses the original Blender add-on as a compatibility reference for Object Builder data structures, P3D behavior, and workflow expectations; the `.paa` texture decoder (`formats/paa.py`: DXT1/DXT5 + LZO1X) is ported from its `io/data_paa.py` and `io/compression.py`.
 
 <div align="center">
 <sub>Licensed under the <a href="LICENSE">MIT License</a>.</sub>
