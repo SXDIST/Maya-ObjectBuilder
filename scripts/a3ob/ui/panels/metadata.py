@@ -92,13 +92,23 @@ class MetadataPanelMixin:
     def refresh_mass_summary(self):
         if getattr(self, "mass_total_label", None) is None:
             return
-        total, count = _lod_mass_summary()
-        if total is None:
+        node = _selected_lod_transform()
+        raw = _safe_get_attr(node, "a3obMassValues", "") if node else ""
+        values = []
+        for token in (raw or "").split(";"):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                values.append(float(token))
+            except ValueError:
+                pass
+        if node is None:
             self.mass_total_label.setText("Total: — (no LOD)")
-        elif count <= 0:
+        elif not values:
             self.mass_total_label.setText("Total: — (no mass set)")
         else:
-            self.mass_total_label.setText("Total: {0:.3f}  ({1} verts)".format(total, count))
+            self.mass_total_label.setText("Total: {0:.3f}  ({1} verts)".format(sum(values), len(values)))
 
 
     def mass_value(self):
