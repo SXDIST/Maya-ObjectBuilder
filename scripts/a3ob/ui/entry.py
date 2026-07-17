@@ -67,21 +67,23 @@ def load_plugin():
 
 
 def import_p3d():
+    # Open Maya's native File > Import dialog (with the Arma P3D translator options),
+    # rather than a custom flow. Native import merges the P3D into the current scene
+    # without ever renaming it, so nothing turns the scene into a ".p3d project".
     load_plugin()
     mel.eval('mayaObjectBuilderP3DSetFileAction("Import")')
-    selected = cmds.fileDialog2(fileMode=1, caption="Import P3D", fileFilter="Arma P3D (*.p3d)", selectFileFilter="Arma P3D")
-    if selected:
-        cmds.file(selected[0], i=True, type=TRANSLATOR_NAME, ignoreVersion=True, ra=True, mergeNamespacesOnClash=False, namespace="p3d")
-        _refresh_context_ui()
+    mel.eval("Import")
+    _refresh_context_ui()
 
 
 def export_p3d():
+    # Open Maya's native File > Export All dialog (Export runtime command ->
+    # `projectViewer ExportAll`). Native export writes the chosen path WITHOUT renaming
+    # the current scene or switching the project — unlike the old file(rename=...) flow,
+    # which left the scene named ".p3d" so the next Ctrl+S clobbered the exported model.
     load_plugin()
-    mel.eval('mayaObjectBuilderP3DSetFileAction("ExportAll")')
-    selected = cmds.fileDialog2(fileMode=0, caption="Export P3D", fileFilter="Arma P3D (*.p3d)", selectFileFilter="Arma P3D")
-    if selected:
-        cmds.file(rename=selected[0])
-        cmds.file(exportAll=True, force=True, type=TRANSLATOR_NAME)
+    mel.eval('mayaObjectBuilderP3DSetFileAction("Export")')
+    mel.eval("Export")
 
 
 def _validate_scene_no_flush():

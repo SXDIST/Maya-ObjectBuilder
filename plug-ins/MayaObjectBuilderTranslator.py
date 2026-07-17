@@ -51,7 +51,11 @@ class P3DTranslator(ompx.MPxFileTranslator):
         return True
 
     def canBeOpened(self):
-        return True
+        # P3D is an import/export interchange format, not a Maya scene: never let a .p3d
+        # become the open scene file. Otherwise File > Open (or opening a recent .p3d)
+        # makes it the current file, and Ctrl+S then re-writes the .p3d through this
+        # translator — silently corrupting a model that Object Builder can no longer open.
+        return False
 
     def defaultExtension(self):
         return "p3d"
