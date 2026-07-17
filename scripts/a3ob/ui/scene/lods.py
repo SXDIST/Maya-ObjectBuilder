@@ -70,6 +70,41 @@ def _set_lod_label(node):
     return "Other"
 
 
+def _lod_triangle_count(node):
+    total = 0
+    for shape in cmds.listRelatives(node, allDescendents=True, type="mesh", fullPath=True) or []:
+        try:
+            total += cmds.polyEvaluate(shape, triangle=True)
+        except Exception:
+            pass
+    return total
+
+
+def lod_overview():
+    """Every LOD in the scene as dicts (node, label, type, resolution, tris, selections),
+    sorted by type then resolution — data for the central LOD list panel."""
+    selection_counts = {}
+    for node in cmds.ls(type="objectSet") or []:
+        if not _attr_exists(node, "a3obSelectionName"):
+            continue
+        label = _lod_name_for_set(node)
+        if label:
+            selection_counts[label] = selection_counts.get(label, 0) + 1
+    rows = []
+    for node in _lod_transforms():
+        label = _lod_name_from_transform(node)
+        rows.append({
+            "node": node,
+            "label": label,
+            "type": _safe_get_attr(node, "a3obLodType", 0),
+            "resolution": _safe_get_attr(node, "a3obResolution", 0),
+            "tris": _lod_triangle_count(node),
+            "selections": selection_counts.get(label, 0),
+        })
+    rows.sort(key=lambda row: (row["type"], row["resolution"], row["label"]))
+    return rows
+
+
 def _set_kind(is_proxy, flag_component):
     if is_proxy:
         return "Proxy"
@@ -88,5 +123,7 @@ __all__ = [
     "_lod_label",
     "_lod_name_for_set",
     "_set_lod_label",
+    "_lod_triangle_count",
+    "lod_overview",
     "_set_kind",
 ]

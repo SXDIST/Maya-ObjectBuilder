@@ -10,6 +10,7 @@ from a3ob.ui.actions import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.recent import recent_paths, remember_path
 
+from a3ob.ui.panels.lod_list import LodListPanelMixin
 from a3ob.ui.panels.lod import LodPanelMixin
 from a3ob.ui.panels.metadata import MetadataPanelMixin
 from a3ob.ui.panels.named_properties import NamedPropertiesPanelMixin
@@ -18,10 +19,13 @@ from a3ob.ui.panels.selections import SelectionsPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
 
 
-class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
+        self.lod_list = None
+        self.lod_list_context = None
+        self._syncing_lod_list = False
         self.lod_toggle = None
         self._syncing_from_selection = False
         self.lod_type_combo = None
@@ -84,6 +88,7 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         # (materials, selections, named properties) stay fresh even after changes that
         # do not fire a SelectionChanged event (e.g. reassigning a material).
         panels = [
+            ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
             ("LOD Properties", self._build_lod_properties_section(), False, None),
             ("Auto LOD", self._build_auto_lod_section(), True, None),
             ("Mass & Flags", self._build_mass_flags_section(), True, None),
@@ -120,6 +125,7 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
         if qt_is_valid is not None and not qt_is_valid(self):
             return
         try:
+            self._poll_panel("LODs", self._lods_snapshot, self.refresh_lod_list)
             self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
                              defer=self._material_fields_focused())
             self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
@@ -153,6 +159,11 @@ class MayaObjectBuilderDock(LodPanelMixin, MetadataPanelMixin, NamedPropertiesPa
             if combo.hasFocus() or (combo.lineEdit() is not None and combo.lineEdit().hasFocus()):
                 return True
         return False
+
+    def _lods_snapshot(self):
+        lod = _selected_lod_transform()
+        active = _lod_name_from_transform(lod) if lod else None
+        return (active, tuple((r["node"], r["tris"], r["selections"]) for r in lod_overview()))
 
     def _materials_snapshot(self):
         return tuple((i["shading_groups"][0], i["material_node"], i["texture"], i["material"])

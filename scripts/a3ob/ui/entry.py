@@ -161,6 +161,7 @@ def _refresh_context_ui():
     dock = _active_qt_dock()
     if dock is None:
         return
+    dock.refresh_lod_list()
     dock.refresh_lod_assignment()
     dock.refresh_named_properties()
     dock.refresh_material_metadata()
