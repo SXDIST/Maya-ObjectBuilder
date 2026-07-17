@@ -110,6 +110,9 @@ def proxy_transform_name(transform_name, proxy_path, proxy_index):
     return "%s_PROXY_%s_%d" % (transform_name, sanitized_name(proxy_path), proxy_index)
 
 
+_TEXTURE_SUFFIX_RE = re.compile(r"_(co|ca|nohq|smdi|as|mca|dt|sm|mc|detail)$", re.IGNORECASE)
+
+
 def _material_name_stem(path):
     # Just the file name without folders or extension — the node name is not part of the
     # P3D contract (the full path is kept on a3obTexture/a3obMaterial), so keep it readable.
@@ -120,13 +123,16 @@ def _material_name_stem(path):
 
 
 def material_node_name(texture, material):
-    parts = []
-    for stem in (_material_name_stem(texture), _material_name_stem(material)):
-        if stem and stem not in parts:
-            parts.append(stem)
-    if not parts:
-        return "a3ob_MAT_no_material"
-    return "a3ob_MAT_" + "_".join(parts)
+    # Prefer the .rvmat base (the real material name); else the texture name with its
+    # _co/_ca/_nohq channel suffix stripped. No verbose prefix — the a3ob* attributes
+    # identify Object Builder materials, and name clashes get auto-numbered by Maya.
+    material_stem = _material_name_stem(material)
+    if material_stem:
+        return material_stem
+    texture_stem = _material_name_stem(texture)
+    if texture_stem:
+        return _TEXTURE_SUFFIX_RE.sub("", texture_stem) or texture_stem
+    return "no_material"
 
 
 def flag_set_name(component_type, flag):
