@@ -101,12 +101,18 @@ def apply_uvs(mesh_fn, lod):
     v_values = om.MFloatArray()
     uv_counts = om.MIntArray()
     uv_ids = om.MIntArray()
+    uv_lookup = {}
     for face in lod.faces:
         uv_counts.append(len(face.uvs))
         for uv in face.uvs:
-            u_values.append(uv.u)
-            v_values.append(uv.v)
-            uv_ids.append(len(uv_ids))
+            key = (uv.u, uv.v)
+            uv_id = uv_lookup.get(key)
+            if uv_id is None:
+                uv_id = len(u_values)
+                uv_lookup[key] = uv_id
+                u_values.append(uv.u)
+                v_values.append(uv.v)
+            uv_ids.append(uv_id)
     if len(u_values) == 0:
         return
     mesh_fn.setUVs(u_values, v_values)
