@@ -44,6 +44,10 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.auto_lod_fire_quality = None
         self.mass_value_field = None
         self.mass_mode_combo = None
+        self.mass_total_label = None
+        self.mass_density_field = None
+        self.validation_list = None
+        self.validation_summary = None
         self.flag_component_combo = None
         self.flag_value_field = None
         self.flag_name_field = None

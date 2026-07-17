@@ -109,6 +109,16 @@ def _validate_selection_no_flush():
         cmds.undoInfo(stateWithoutFlush=False)
 
 
+def _run_validation(selection_only):
+    """Run a3obValidate and return its issue rows ("severity|node|message") for the panel."""
+    load_plugin()
+    cmds.undoInfo(stateWithoutFlush=True)
+    try:
+        return cmds.a3obValidate(selectionOnly=selection_only) or []
+    finally:
+        cmds.undoInfo(stateWithoutFlush=False)
+
+
 def import_model_cfg(path=None):
     load_plugin()
     selected_path = path
@@ -166,6 +176,7 @@ def _refresh_context_ui():
     dock.refresh_named_properties()
     dock.refresh_material_metadata()
     dock.refresh_selection_manager(True)
+    dock.refresh_mass_summary()
 
 
 def _install_context_refresh_job(parent):
@@ -307,6 +318,7 @@ __all__ = [
     "export_p3d",
     "_validate_scene_no_flush",
     "_validate_selection_no_flush",
+    "_run_validation",
     "import_model_cfg",
     "export_model_cfg",
     "_prompt",

@@ -27,13 +27,28 @@ class MetadataPanelMixin:
         self.mass_value_field.setRange(-1000000.0, 1000000.0)
         self.mass_mode_combo = qt_widgets.QComboBox()
         self.mass_mode_combo.addItems(["All vertices", "Selected vertices"])
+        self.mass_total_label = qt_widgets.QLabel("Total: —")
         mass_layout.addRow("Value", self.mass_value_field)
         mass_layout.addRow("Mode", self.mass_mode_combo)
+        mass_layout.addRow("Current", self.mass_total_label)
         mass_buttons = qt_widgets.QHBoxLayout()
         mass_buttons.addWidget(_qt_button("Apply", apply_mass_from_ui, "Set the mass value on the LOD's vertices.", ":/confirm.png"))
         mass_buttons.addWidget(_qt_button("Clear", clear_mass_from_ui, "Remove all mass data from the LOD.", ":/delete.png"))
         mass_layout.addRow(mass_buttons)
+
+        self.mass_density_field = qt_widgets.QDoubleSpinBox()
+        self.mass_density_field.setDecimals(1)
+        self.mass_density_field.setRange(0.1, 1000000.0)
+        self.mass_density_field.setValue(1000.0)
+        self.mass_density_field.setToolTip("Density (kg/m3) for 'From volume' — water ~ 1000, wood ~ 700, steel ~ 7850.")
+        mass_layout.addRow("Density", self.mass_density_field)
+        mass_tools = qt_widgets.QHBoxLayout()
+        mass_tools.addWidget(_qt_button("Distribute evenly", distribute_mass_evenly, "Spread the current total mass evenly across all vertices.", ":/confirm.png"))
+        mass_tools.addWidget(_qt_button("From volume", mass_from_volume_from_ui, "Set total mass = bounding-box volume x density, spread evenly.", ":/polyCube.png"))
+        mass_layout.addRow(mass_tools)
         layout.addWidget(mass_group)
+
+        self.refresh_mass_summary()
 
         flags_group = qt_widgets.QGroupBox("Flags")
         flags_layout = qt_widgets.QFormLayout(flags_group)
@@ -72,6 +87,18 @@ class MetadataPanelMixin:
         proxy_layout.addRow(self.proxy_from_selection_check)
         proxy_layout.addRow(_qt_button("Create Proxy", create_proxy_from_ui, "Create a proxy from the path and selected components.", ":/create.png"))
         return widget
+
+
+    def refresh_mass_summary(self):
+        if getattr(self, "mass_total_label", None) is None:
+            return
+        total, count = _lod_mass_summary()
+        if total is None:
+            self.mass_total_label.setText("Total: — (no LOD)")
+        elif count <= 0:
+            self.mass_total_label.setText("Total: — (no mass set)")
+        else:
+            self.mass_total_label.setText("Total: {0:.3f}  ({1} verts)".format(total, count))
 
 
     def mass_value(self):
