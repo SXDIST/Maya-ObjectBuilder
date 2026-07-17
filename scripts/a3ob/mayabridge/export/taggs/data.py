@@ -101,6 +101,46 @@ def _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod):
                     lod.faces[face].flag = flag_value
 
 
+_GEOMETRY_COMPONENT_TYPES = frozenset((6, 7, 8, 14, 15))
+
+
+def _add_generated_components(lod_type, mesh_path, vertex_source_indices, lod):
+    """Synthesize Component## vertex selections for a geometry LOD straight into the P3D
+    data — from the mesh's closed face islands, WITHOUT creating any scene sets. Skipped
+    unless the LOD is a geometry type and has no Component selection yet, so manually made
+    components are never touched (the user's #5.2 concern)."""
+    if lod_type not in _GEOMETRY_COMPONENT_TYPES:
+        return
+    for tagg in lod.taggs:
+        if isinstance(tagg.name, str) and tagg.name.lower().startswith("component"):
+            return
+    from a3ob.mayabridge.commands.helpers.geometry import closed_face_islands
+    mesh_fn = om.MFnMesh(mesh_path)
+    index = 0
+    for island_faces, island_vertices, closed in closed_face_islands(mesh_fn):
+        if not closed or not island_vertices:
+            continue
+        index += 1
+        faces = set(island_faces)
+        _derive_faces_from_vertices(mesh_path, set(island_vertices), faces)
+        tagg = p3d.Tagg()
+        tagg.name = "Component%02d" % index
+        data = p3d.SelectionTaggData()
+        data.count_verts = len(lod.vertices)
+        data.count_faces = len(lod.faces)
+        for vertex in sorted(island_vertices):
+            if vertex < 0:
+                continue
+            source_index = vertex_source_indices[vertex] if vertex < len(vertex_source_indices) else vertex
+            if source_index < len(lod.vertices):
+                data.vertex_weights.append((source_index, 1.0))
+        for face in sorted(faces):
+            if 0 <= face < len(lod.faces):
+                data.face_weights.append((face, 1.0))
+        tagg.data = data
+        lod.taggs.append(tagg)
+
+
 def _add_sharp_edges_tagg(transform, mesh_path, lod):
     if not attr.get_bool(transform, A.HAS_SHARP_EDGES):
         return
@@ -166,6 +206,7 @@ __all__ = [
     "_add_property_taggs",
     "_add_mass_tagg",
     "_add_selection_and_flag_data",
+    "_add_generated_components",
     "_add_sharp_edges_tagg",
     "_add_uvset_taggs",
 ]

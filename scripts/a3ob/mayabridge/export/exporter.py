@@ -22,13 +22,14 @@ from a3ob.mayabridge.export.parse import *  # noqa: F401,F403
 from a3ob.mayabridge.export.taggs import *  # noqa: F401,F403
 
 class ExportOptions:
-    __slots__ = ("selected_only", "visible_only", "apply_transforms", "apply_modifiers")
+    __slots__ = ("selected_only", "visible_only", "apply_transforms", "apply_modifiers", "generate_components")
 
-    def __init__(self, selected_only=False, visible_only=True, apply_transforms=True, apply_modifiers=True):
+    def __init__(self, selected_only=False, visible_only=True, apply_transforms=True, apply_modifiers=True, generate_components=False):
         self.selected_only = selected_only
         self.visible_only = visible_only
         self.apply_transforms = apply_transforms
         self.apply_modifiers = apply_modifiers
+        self.generate_components = generate_components
 
 
 class MayaMeshExport:

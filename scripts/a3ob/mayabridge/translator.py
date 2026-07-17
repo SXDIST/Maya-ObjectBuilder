@@ -66,6 +66,7 @@ def do_write(expanded_full_name, options_string, export_active):
     export_options.visible_only = option_enabled(options, "visibleOnly", True)
     export_options.apply_transforms = option_enabled(options, "applyTransforms", True)
     export_options.apply_modifiers = option_enabled(options, "applyModifiers", True)
+    export_options.generate_components = option_enabled(options, "generateComponents", False)
 
     if (option_enabled(options, "validateMeshes", False)
             or option_enabled(options, "exportValidateMeshes", False)
