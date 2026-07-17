@@ -348,6 +348,15 @@ def _triangulate(transform):
         cmds.warning("Auto LOD triangulate failed on {0}: {1}".format(transform, exc))
 
 
+def _quadrangulate(transform):
+    # QUADS mode: merge the decimated triangles back into quads so the LOD stays
+    # quad-dominant (P3D supports quad faces; that is the whole point of QUADS mode).
+    try:
+        cmds.polyQuad(transform, angle=30, constructionHistory=False)
+    except RuntimeError as exc:
+        cmds.warning("Auto LOD quadrangulate failed on {0}: {1}".format(transform, exc))
+
+
 def _apply_weighted_normals(transform):
     try:
         cmds.polySetToFaceNormal(transform, setUserNormal=True)
@@ -446,6 +455,7 @@ __all__ = [
     "_create_bbox_lod",
     "_reduce_mesh",
     "_triangulate",
+    "_quadrangulate",
     "_apply_weighted_normals",
     "_propagate_named_selections",
     "_create_memory_mesh",

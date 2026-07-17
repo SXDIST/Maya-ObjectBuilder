@@ -42,7 +42,11 @@ def _generate_resolution_lods(source, settings, visuals):
                 if not reduced_ok:
                     cmds.delete(duplicate)
                     raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
-        _triangulate(duplicate)
+        # QUADS mode keeps quad-dominant LODs (its whole purpose); TRIS/CUSTOM triangulate.
+        if settings["preset"] == "QUADS":
+            _quadrangulate(duplicate)
+        else:
+            _triangulate(duplicate)
         _apply_weighted_normals(duplicate)
         _mark_lod(duplicate, 0, resolution)
         # Resolution (visual) LODs get no auto named properties: Blender's Auto LOD adds
