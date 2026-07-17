@@ -10,6 +10,12 @@ def _generate_resolution_lods(source, settings, visuals):
     generated = []
     source_snapshot = cmds.duplicate(source, returnRootsOnly=True)[0]
 
+    # Decimate with a faithful Garland-Heckbert QEM edge-collapse (a3ob.ui.autolod.qem) —
+    # the same algorithm as Blender's Decimate -> Collapse, giving the even, shape-
+    # preserving triangles Maya's sliver-prone polyReduce cannot. One progressive pass
+    # snapshots every LOD level at once; None means QEM is unavailable -> polyReduce.
+    qem_snaps = _qem_chain_for_ratios(source_snapshot, ratios)
+
     for index, ratio in enumerate((1.0, *ratios)):
         resolution = start_lod + index
         name = "{0}{1}".format(settings["lod_prefix"], resolution)
@@ -22,15 +28,20 @@ def _generate_resolution_lods(source, settings, visuals):
             duplicate = cmds.rename(source, name)
         else:
             duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
-        # Uniform decimation via polyRetopo (even, shape-preserving topology like
-        # Blender's Decimate). polyReduce is adaptive/QEM and leaves lumpy, uneven
-        # triangles on smooth shapes; _retopo_mesh rebuilds an even distribution,
-        # keeps hard-surface corners, and re-projects UVs from the full-res snapshot.
         if ratio < 1.0:
-            before, after, reduced_ok = _retopo_mesh(duplicate, source_snapshot, ratio)
-            if not reduced_ok:
-                cmds.delete(duplicate)
-                raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
+            applied = False
+            if qem_snaps is not None and ratio in qem_snaps:
+                applied = _apply_qem_snapshot(duplicate, source_snapshot, qem_snaps[ratio])
+            if not applied:
+                # polyReduce fallback (QEM unavailable or failed on this mesh).
+                try:
+                    cmds.polyMergeVertex(duplicate, d=0.0001, constructionHistory=False)
+                except RuntimeError:
+                    pass
+                before, after, reduced_ok = _reduce_mesh(duplicate, ratio)
+                if not reduced_ok:
+                    cmds.delete(duplicate)
+                    raise RuntimeError("Auto LOD failed to reduce {0} at ratio {1}: faces {2} -> {3}. Clean or rebuild nonmanifold geometry before generating LODs.".format(name, ratio, before, after))
         _triangulate(duplicate)
         _apply_weighted_normals(duplicate)
         _mark_lod(duplicate, 0, resolution)

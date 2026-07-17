@@ -171,40 +171,144 @@ def _create_bbox_lod(source, name, lod_type, parent, named_properties=(), find_c
     return cube
 
 
-def _retopo_mesh(transform, uv_source, keep_ratio):
-    """Uniform decimation via polyRetopo — even, shape-preserving topology like Blender's
-    Decimate (polyReduce is adaptive/QEM and gives lumpy, uneven triangles on smooth
-    shapes). ``preserveHardEdges`` keeps corners on hard-surface meshes; UVs are rebuilt
-    from ``uv_source`` (the full-res mesh) since retopo discards them. Falls back to the
-    QEM ``_reduce_mesh`` if retopo can't process the mesh."""
-    before = _face_count(transform)
-    if keep_ratio >= 1.0 or before <= 4:
-        return before, before, True
-    target = max(4, int(round(_face_count(uv_source) * keep_ratio)))
-    if _has_reduce_blockers(transform):
-        _cleanup_for_reduce(transform)
+def _extract_triangles(transform):
+    """Return (points Nx3 float array, triangle-index Mx3 array) for the transform's
+    first mesh, or ``None`` when unavailable (no mesh / numpy missing)."""
     try:
-        cmds.polyRetopo(
-            transform, targetFaceCount=target, targetFaceCountTolerance=10,
-            faceUniformity=1.0, topologyRegularity=1.0, preserveHardEdges=True,
-            constructionHistory=False,
-        )
-    except Exception as exc:  # command missing (headless) / unprocessable mesh -> QEM fallback
-        cmds.warning("Auto LOD polyRetopo failed on {0}: {1} — using polyReduce".format(transform, exc))
-        return _reduce_mesh(transform, keep_ratio)
-    after = _face_count(transform)
-    if after <= 0 or after >= before:
-        cmds.warning("Auto LOD polyRetopo did not reduce {0} ({1} -> {2}) — using polyReduce".format(transform, before, after))
-        return _reduce_mesh(transform, keep_ratio)
-    # Retopo rebuilds topology from scratch and drops UVs; project them back from the
-    # full-res source so textured LODs keep their mapping (unlike a bare remesh).
+        import numpy as np
+        import maya.api.OpenMaya as om
+    except Exception:
+        return None
+    shapes = _mesh_shapes(transform)
+    if not shapes:
+        return None
+    sel = om.MSelectionList()
+    sel.add(shapes[0])
+    fn = om.MFnMesh(sel.getDagPath(0))
+    pts = np.array([[p.x, p.y, p.z] for p in fn.getPoints(om.MSpace.kObject)])
+    _counts, tri_verts = fn.getTriangles()
+    faces = np.asarray(tri_verts, dtype=np.int64).reshape(-1, 3)
+    return pts, faces
+
+
+def _qem_chain_for_ratios(source, ratios):
+    """Decimate ``source`` once and snapshot at every ratio via the Blender-style QEM
+    collapse (``a3ob.ui.autolod.qem``). Returns ``{ratio: (points, faces)}`` or ``None``
+    if QEM is unavailable (numpy missing / headless) so callers fall back to polyReduce."""
+    ratios = [r for r in ratios if r < 1.0]
+    if not ratios:
+        return {}
+    data = _extract_triangles(source)
+    if data is None:
+        return None
+    try:
+        from a3ob.ui.autolod import qem
+    except Exception:
+        return None
+    points, faces = data
+    base = len(faces)
+    if base <= 4:
+        return None
+    ratio_target = {r: max(4, int(round(base * r))) for r in ratios}
+    try:
+        snaps = qem.decimate_chain(points, faces, ratio_target.values())
+    except Exception as exc:
+        cmds.warning("Auto LOD QEM decimation failed: {0} — using polyReduce".format(exc))
+        return None
+    return {r: snaps[t] for r, t in ratio_target.items() if t in snaps}
+
+
+def _triangle_shading_groups(shape):
+    """(shading-group names, per-triangle group-index list) for a mesh shape, so the
+    decimated LOD can be re-assigned the same materials face-by-face. (None, None) when
+    unavailable."""
+    try:
+        import maya.api.OpenMaya as om
+    except Exception:
+        return None, None
+    sel = om.MSelectionList()
+    sel.add(shape)
+    dag = sel.getDagPath(0)
+    fn = om.MFnMesh(dag)
+    counts, _tv = fn.getTriangles()
+    try:
+        shaders, poly_shader = fn.getConnectedShaders(dag.instanceNumber())
+    except Exception:
+        return None, None
+    sg_names = [om.MFnDependencyNode(s).name() for s in shaders]
+    tri_sg = []
+    for polygon, count in enumerate(counts):
+        idx = poly_shader[polygon] if polygon < len(poly_shader) else -1
+        tri_sg.extend([idx] * count)
+    return sg_names, tri_sg
+
+
+def _assign_qem_materials(new_shape, orig_faces, sg_names, tri_sg):
+    """Re-assign the decimated faces to the source's shading groups using each survivor's
+    original face index. Falls back to initialShadingGroup so a rebuilt mesh is never left
+    materialless (which shows as a green 'no shader' mesh and breaks material export)."""
+    from collections import defaultdict
+    groups = defaultdict(list)
+    if sg_names and tri_sg is not None:
+        for new_index, orig in enumerate(orig_faces):
+            idx = tri_sg[orig] if 0 <= orig < len(tri_sg) else -1
+            if 0 <= idx < len(sg_names):
+                groups[sg_names[idx]].append(new_index)
+    assigned = False
+    for sg, face_ids in groups.items():
+        if not cmds.objExists(sg):
+            continue
+        try:
+            cmds.sets(["{0}.f[{1}]".format(new_shape, i) for i in face_ids], forceElement=sg)
+            assigned = True
+        except Exception:
+            pass
+    if not assigned:
+        try:
+            cmds.sets(new_shape, forceElement="initialShadingGroup")
+        except Exception:
+            pass
+
+
+def _apply_qem_snapshot(transform, uv_source, snapshot):
+    """Replace ``transform``'s mesh with the decimated ``snapshot`` (points, faces,
+    orig_face_index), re-assign the source materials face-by-face, and re-project UVs from
+    the full-res ``uv_source``. Returns False on any failure so the caller can fall back to
+    polyReduce."""
+    try:
+        import maya.api.OpenMaya as om
+    except Exception:
+        return False
+    points, faces, orig_faces = snapshot
+    if len(faces) <= 0:
+        return False
+    old_shapes = _mesh_shapes(transform)
+    sg_names, tri_sg = (_triangle_shading_groups(old_shapes[0]) if old_shapes else (None, None))
+    try:
+        tsel = om.MSelectionList()
+        tsel.add(transform)
+        transform_obj = tsel.getDependNode(0)
+        for shape in old_shapes:
+            cmds.delete(shape)
+        mesh_fn = om.MFnMesh()
+        mpoints = [om.MPoint(float(p[0]), float(p[1]), float(p[2])) for p in points]
+        connects = [int(i) for f in faces for i in f]
+        mesh_fn.create(mpoints, [3] * len(faces), connects, parent=transform_obj)
+    except Exception as exc:
+        cmds.warning("Auto LOD QEM rebuild failed on {0}: {1}".format(transform, exc))
+        return False
+    new_shapes = _mesh_shapes(transform)
+    if new_shapes:
+        _assign_qem_materials(new_shapes[0], orig_faces, sg_names, tri_sg)
+    # QEM decimates geometry only; project the UVs back from the full-res source so
+    # textured LODs keep their mapping (Blender's collapse carries UVs the same way).
     if uv_source and cmds.objExists(uv_source):
         try:
             cmds.transferAttributes(uv_source, transform, transferUVs=2, sampleSpace=0, searchMethod=3)
             cmds.delete(transform, constructionHistory=True)
         except RuntimeError as exc:
             cmds.warning("Auto LOD UV transfer failed on {0}: {1}".format(transform, exc))
-    return before, after, True
+    return True
 
 
 def _reduce_mesh(transform, keep_ratio):
@@ -330,7 +434,11 @@ __all__ = [
     "_has_reduce_blockers",
     "_cleanup_for_reduce",
     "_parent",
-    "_retopo_mesh",
+    "_extract_triangles",
+    "_qem_chain_for_ratios",
+    "_triangle_shading_groups",
+    "_assign_qem_materials",
+    "_apply_qem_snapshot",
     "_mark_lod",
     "_mark_technical_set",
     "_set_named_properties",
