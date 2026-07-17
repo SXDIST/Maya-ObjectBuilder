@@ -8,6 +8,7 @@ and numpy for the byte conversion.
 """
 
 import os
+import re
 import hashlib
 
 import maya.cmds as cmds
@@ -86,38 +87,77 @@ _FILE_LINKS = (
 )
 
 
-def assign_paa_texture(shader, texture_path):
-    """Resolve+decode ``texture_path`` and connect it as ``shader``'s colour file texture.
-    Returns True when a texture was assigned, False otherwise (path unresolved / not .paa /
-    decode failed) — callers keep the plain lambert in that case."""
-    if not texture_path or not texture_path.lower().endswith(".paa"):
-        return False
-    resolved = resolve_paa_path(texture_path)
-    if not resolved:
-        return False
-    try:
-        png = paa_to_png(resolved)
-    except Exception as exc:  # decode/format error — keep going with a plain material
-        cmds.warning("MayaObjectBuilder: PAA decode failed for %s: %s" % (texture_path, exc))
-        return False
-    try:
-        # createNode (not shadingNode) so this also works during File > Import.
-        file_node = cmds.createNode("file", skipSelect=True)
-        place = cmds.createNode("place2dTexture", skipSelect=True)
-        for src, dst in _FILE_LINKS:
-            try:
-                cmds.connectAttr("%s.%s" % (place, src), "%s.%s" % (file_node, dst), force=True)
-            except RuntimeError:
-                pass
-        cmds.setAttr(file_node + ".fileTextureName", png, type="string")
+def _make_file_texture(png, color_space):
+    """Create a file+place2dTexture pair pointed at ``png``. createNode (not shadingNode) so
+    it also works during File > Import."""
+    file_node = cmds.createNode("file", skipSelect=True)
+    place = cmds.createNode("place2dTexture", skipSelect=True)
+    for src, dst in _FILE_LINKS:
         try:
-            cmds.setAttr(file_node + ".colorSpace", "sRGB", type="string")
+            cmds.connectAttr("%s.%s" % (place, src), "%s.%s" % (file_node, dst), force=True)
         except RuntimeError:
             pass
-        cmds.connectAttr(file_node + ".outColor", shader + ".color", force=True)
+    cmds.setAttr(file_node + ".fileTextureName", png, type="string")
+    try:
+        cmds.setAttr(file_node + ".colorSpace", color_space, type="string")
+    except RuntimeError:
+        pass
+    return file_node
+
+
+def _sibling_paa(texture_path, new_suffix):
+    """Derive a sibling texture path by swapping the trailing _co/_ca suffix (e.g. the
+    _nohq normal that shares the colour texture's base name). None if it doesn't apply."""
+    sibling = re.sub(r"_(co|ca)(\.paa)$", "_" + new_suffix + r"\2", texture_path, flags=re.IGNORECASE)
+    return sibling if sibling != texture_path else None
+
+
+def _decoded_png(texture_path):
+    resolved = resolve_paa_path(texture_path) if texture_path else None
+    if not resolved:
+        return None
+    try:
+        return paa_to_png(resolved)
+    except Exception as exc:  # decode/format error — non-fatal
+        cmds.warning("MayaObjectBuilder: PAA decode failed for %s: %s" % (texture_path, exc))
+        return None
+
+
+def assign_paa_texture(shader, texture_path):
+    """Decode ``texture_path`` and wire it onto ``shader``: colour + alpha transparency, and
+    (best-effort) the sibling ``_nohq`` normal as a tangent bump. Returns True when the
+    colour texture was assigned. Failures are non-fatal — the plain material stays."""
+    if not texture_path or not texture_path.lower().endswith(".paa"):
+        return False
+    png = _decoded_png(texture_path)
+    if not png:
+        return False
+    try:
+        color_file = _make_file_texture(png, "sRGB")
+        cmds.connectAttr(color_file + ".outColor", shader + ".color", force=True)
+        # Alpha -> transparency (foliage / _ca cut-outs). Opaque textures decode alpha=1
+        # so transparency stays 0; safe to always wire.
+        try:
+            cmds.connectAttr(color_file + ".outTransparency", shader + ".transparency", force=True)
+        except RuntimeError:
+            pass
     except RuntimeError as exc:
         cmds.warning("MayaObjectBuilder: could not assign texture %s: %s" % (texture_path, exc))
         return False
+
+    # Sibling normal map (_nohq) -> tangent bump on normalCamera (best effort; Arma's
+    # channel swizzle is not fully reproduced, so this is approximate surface detail).
+    if cmds.attributeQuery("normalCamera", node=shader, exists=True):
+        normal_png = _decoded_png(_sibling_paa(texture_path, "nohq"))
+        if normal_png:
+            try:
+                normal_file = _make_file_texture(normal_png, "Raw")
+                bump = cmds.createNode("bump2d", skipSelect=True)
+                cmds.setAttr(bump + ".bumpInterp", 1)  # Tangent Space Normals
+                cmds.connectAttr(normal_file + ".outAlpha", bump + ".bumpValue", force=True)
+                cmds.connectAttr(bump + ".outNormal", shader + ".normalCamera", force=True)
+            except RuntimeError:
+                pass
     return True
 
 

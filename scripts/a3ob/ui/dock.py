@@ -59,6 +59,7 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.named_value_combo = None
         self.named_items = {}
         self.material_list = None
+        self.texture_root_field = None
         self.material_texture = None
         self.material_rvmat = None
         self.material_items = {}

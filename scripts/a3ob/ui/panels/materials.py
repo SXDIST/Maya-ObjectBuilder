@@ -17,6 +17,19 @@ class MaterialsPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
+        from a3ob.mayabridge import paatex as _paatex
+        root_row = qt_widgets.QHBoxLayout()
+        root_row.addWidget(qt_widgets.QLabel("Texture root"))
+        self.texture_root_field = qt_widgets.QLineEdit()
+        self.texture_root_field.setPlaceholderText("Folder with .paa (P-drive / mod) — used to show textures on import")
+        self.texture_root_field.setText(_paatex.texture_root())
+        self.texture_root_field.editingFinished.connect(self._on_texture_root_edited)
+        root_browse = _icon_button(":/fileOpen.png", "...", "Select the .paa texture root folder")
+        root_browse.clicked.connect(self._browse_texture_root)
+        root_row.addWidget(self.texture_root_field, 1)
+        root_row.addWidget(root_browse)
+        layout.addLayout(root_row)
+
         head = qt_widgets.QHBoxLayout()
         head.addWidget(_hint("Pick a material, set its texture / rvmat paths. Edits save instantly."), 1)
         refresh = _icon_button(":/refresh.png", "↻", "Re-scan the current selection's materials")
@@ -44,6 +57,27 @@ class MaterialsPanelMixin:
 
         self.refresh_material_metadata()
         return widget
+
+
+    def _on_texture_root_edited(self):
+        from a3ob.mayabridge import paatex
+        paatex.set_texture_root(self.texture_root_field.text().strip())
+        paatex.assign_pending_textures()
+
+
+    def _browse_texture_root(self):
+        from a3ob.mayabridge import paatex
+        current = paatex.texture_root()
+        kwargs = {"fileMode": 3, "caption": "Select the .paa texture root folder"}
+        if current:
+            kwargs["startingDirectory"] = current
+        selected = cmds.fileDialog2(**kwargs)
+        if not selected:
+            return
+        self.texture_root_field.setText(selected[0])
+        paatex.set_texture_root(selected[0])
+        count = paatex.assign_pending_textures()
+        cmds.inViewMessage(assistMessage="Texture root set — textured %d material(s)" % count, position="midCenter", fade=True)
 
 
     def material_texture_path(self):
