@@ -71,6 +71,9 @@ def import_p3d():
     # rather than a custom flow. Native import merges the P3D into the current scene
     # without ever renaming it, so nothing turns the scene into a ".p3d project".
     load_plugin()
+    # Pre-select "Arma P3D" in the dialog's "Files of type" (Maya's native Import dialog
+    # otherwise defaults to the last-used type, e.g. Maya Binary/FBX).
+    cmds.optionVar(stringValue=("defaultFileImportType", TRANSLATOR_NAME))
     mel.eval('mayaObjectBuilderP3DSetFileAction("Import")')
     mel.eval("Import")
     _refresh_context_ui()
@@ -82,6 +85,8 @@ def export_p3d():
     # the current scene or switching the project — unlike the old file(rename=...) flow,
     # which left the scene named ".p3d" so the next Ctrl+S clobbered the exported model.
     load_plugin()
+    # Pre-select "Arma P3D" in the Export All dialog's "Files of type".
+    cmds.optionVar(stringValue=("defaultFileExportAllType", TRANSLATOR_NAME))
     mel.eval('mayaObjectBuilderP3DSetFileAction("Export")')
     mel.eval("Export")
 
