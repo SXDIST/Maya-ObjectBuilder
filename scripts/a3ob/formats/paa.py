@@ -18,6 +18,11 @@ try:
 except ImportError:  # pragma: no cover
     _np = None
 
+try:
+    import lzo as _lzo  # optional C LZO (python-lzo): far faster than the Python loop + frees the GIL
+except ImportError:
+    _lzo = None
+
 
 class PAA_Error(Exception):
     pass
@@ -61,10 +66,13 @@ class PAA_Type(IntEnum):
 # ---------------------------------------------------------------------------
 
 def lzo1x_decompress(file, expected):
+    src = file.read()  # pull the whole compressed block once; index it directly (no per-byte read)
+    if _lzo is not None:
+        return len(src), bytearray(_lzo.decompress(src, False, expected))  # C fast path
+
+    ip = 0
     state = 0
-    start = file.tell()
     output = bytearray()
-    struct_le16 = struct.Struct("<H")
 
     def check_free_space(length):
         free_space = expected - len(output)
@@ -78,70 +86,71 @@ def lzo1x_decompress(file, expected):
         output.extend(output[begin:(begin + (length % distance))])
 
     def get_length(x, mask):
+        nonlocal ip
         length = x & mask
         if not length:
             while True:
-                x = file.read(1)[0]
-                if x:
+                b = src[ip]; ip += 1
+                if b:
                     break
                 length += 255
-            length += mask + x
+            length += mask + b
         return length
 
-    x = file.read(1)[0]
+    x = src[ip]; ip += 1
     if x > 17:
         length = x - 17
         check_free_space(length)
-        output.extend(file.read(length))
+        output.extend(src[ip:ip + length]); ip += length
         state = min(4, length)
-        x = file.read(1)[0]
+        x = src[ip]; ip += 1
 
     while True:
         if x <= 15:
             if not state:
                 length = 3 + get_length(x, 15)
                 check_free_space(length)
-                output.extend(file.read(length))
+                output.extend(src[ip:ip + length]); ip += length
                 state = 4
             elif state < 4:
                 length = 2
                 state = x & 3
-                distance = (file.read(1)[0] << 2) + (x >> 2) + 1
+                distance = (src[ip] << 2) + (x >> 2) + 1; ip += 1
                 copy_match(distance, length)
                 check_free_space(state)
-                output.extend(file.read(state))
+                output.extend(src[ip:ip + state]); ip += state
             elif state == 4:
                 length = 3
                 state = x & 3
-                distance = (file.read(1)[0] << 2) + (x >> 2) + 2049
+                distance = (src[ip] << 2) + (x >> 2) + 2049; ip += 1
                 copy_match(distance, length)
                 check_free_space(state)
-                output.extend(file.read(state))
+                output.extend(src[ip:ip + state]); ip += state
         elif x > 127:
             state = x & 3
             length = 5 + ((x >> 5) & 3)
-            distance = (file.read(1)[0] << 3) + ((x >> 2) & 7) + 1
+            distance = (src[ip] << 3) + ((x >> 2) & 7) + 1; ip += 1
             copy_match(distance, length)
             check_free_space(state)
-            output.extend(file.read(state))
+            output.extend(src[ip:ip + state]); ip += state
         elif x > 63:
             state = x & 3
             length = 3 + ((x >> 5) & 1)
-            distance = (file.read(1)[0] << 3) + ((x >> 2) & 7) + 1
+            distance = (src[ip] << 3) + ((x >> 2) & 7) + 1; ip += 1
             copy_match(distance, length)
             check_free_space(state)
-            output.extend(file.read(state))
+            output.extend(src[ip:ip + state]); ip += state
         elif x > 31:
             length = 2 + get_length(x, 31)
-            extra = struct_le16.unpack(file.read(2))[0]
+            extra = src[ip] | (src[ip + 1] << 8); ip += 2
             distance = (extra >> 2) + 1
             state = extra & 3
             copy_match(distance, length)
             check_free_space(state)
-            output.extend(file.read(state))
+            output.extend(src[ip:ip + state]); ip += state
         else:
             length = 2 + get_length(x, 7)
-            extra = struct_le16.unpack(file.read(2))[0]
+            extra = src[ip] | (src[ip + 1] << 8); ip += 2
             distance = 16384 + ((x & 8) << 11) + (extra >> 2)
             state = extra & 3
             if distance == 16384:
@@ -150,14 +159,14 @@ def lzo1x_decompress(file, expected):
                 break
             copy_match(distance, length)
             check_free_space(state)
-            output.extend(file.read(state))
+            output.extend(src[ip:ip + state]); ip += state
 
-        x = file.read(1)[0]
+        x = src[ip]; ip += 1
 
     if expected - len(output):
         raise LZO_Error("Short output (expected %d, got %d)" % (expected, len(output)))
 
-    return file.tell() - start, output
+    return ip, output
 
 
 # ---------------------------------------------------------------------------
