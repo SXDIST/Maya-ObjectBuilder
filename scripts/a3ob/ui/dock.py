@@ -227,31 +227,37 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         layout = qt_widgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        if recent_key:
-            # Editable combo seeded with recently-used paths (see a3ob.ui.recent).
-            combo = qt_widgets.QComboBox()
-            combo.setEditable(True)
-            combo.setInsertPolicy(qt_widgets.QComboBox.NoInsert)
-            combo.addItem("")
-            for path in recent_paths(recent_key):
-                combo.addItem(path)
-            combo.setCurrentIndex(0)
-            input_widget = combo
-            field = combo.lineEdit()
-            field.setText("")
-        else:
-            field = qt_widgets.QLineEdit()
-            input_widget = field
+        # A plain QLineEdit (kept stable). Recent history is offered via a dropdown button
+        # rather than a QComboBox, whose internal line edit Qt silently recreates — that
+        # left a dangling reference and crashed the material refresh on selection change.
+        field = qt_widgets.QLineEdit()
         browse = _icon_button(":/fileOpen.png", "...", caption)
         clear = _icon_button(":/deleteActive.png", "X", f"Clear {label}")
         browse.clicked.connect(lambda: self._browse_qt_path(field, caption, mode, file_filter, recent_key))
         clear.clicked.connect(field.clear)
-        layout.addWidget(input_widget, 1)
+        layout.addWidget(field, 1)
+        if recent_key:
+            recent = _icon_button(":/menuIconEdit.png", "R", "Pick a recently-used path")
+            recent.clicked.connect(lambda: self._show_recent_paths_menu(field, recent_key, recent))
+            layout.addWidget(recent)
         layout.addWidget(browse)
         layout.addWidget(clear)
         container._line_edit = field
         container._recent_key = recent_key
         return container
+
+
+    def _show_recent_paths_menu(self, field, recent_key, anchor):
+        menu = qt_widgets.QMenu(self)
+        paths = recent_paths(recent_key)
+        if not paths:
+            action = menu.addAction("(no recent paths)")
+            action.setEnabled(False)
+        else:
+            for path in paths:
+                action = menu.addAction(path)
+                action.triggered.connect(lambda checked=False, value=path: field.setText(value))
+        menu.popup(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
 
     def _browse_qt_path(self, field, caption, mode, file_filter, recent_key=None):
