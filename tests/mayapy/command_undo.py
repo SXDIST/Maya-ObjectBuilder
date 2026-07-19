@@ -123,20 +123,76 @@ def test_update_proxy_undo():
 
 
 def test_proxy_undo():
-    """a3obProxy also creates a transform; the same mixing hazard applies."""
+    """a3obProxy -fromSelection creates BOTH a placeholder transform AND a proxy selection
+    objectSet (via cmds.sets, which never enters an MDagModifier). A prior version declared
+    the command undoable and routed only the placeholder through self.modifier, so the
+    objectSet survived Ctrl+Z as an orphan a3ob_proxy_* set — this must catch that."""
     transform = make_lod("undoProxyParent")
     shape = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
     cmds.select("%s.f[0]" % shape, replace=True)
-    before = set(cmds.ls(type="transform") or [])
+    before_transforms = set(cmds.ls(type="transform") or [])
+    before_sets = set(cmds.ls(type="objectSet") or [])
 
     cmds.a3obProxy(path="ca\dayz\p.p3d", index=1, fromSelection=True)
-    created = set(cmds.ls(type="transform") or []) - before
-    check(len(created) == 1, "expected one proxy transform, got %r" % (created,))
+    created_transforms = set(cmds.ls(type="transform") or []) - before_transforms
+    check(len(created_transforms) == 1, "expected one proxy transform, got %r" % (created_transforms,))
+    created_sets = set(cmds.ls(type="objectSet") or []) - before_sets
+    check(created_sets, "a3obProxy -fromSelection must create a proxy selection objectSet")
+    proxy_sets = [name for name in created_sets if name.startswith("a3ob_proxy")]
+    check(proxy_sets, "expected an a3ob_proxy_* objectSet, got %r" % (created_sets,))
 
     cmds.undo()
-    survived = set(cmds.ls(type="transform") or []) - before
-    check(not survived, "undo must remove the proxy transform, %r survived" % survived)
-    print("OK a3obProxy undoes its placeholder transform")
+    survived_transforms = set(cmds.ls(type="transform") or []) - before_transforms
+    check(not survived_transforms,
+          "undo must remove the proxy transform, %r survived" % survived_transforms)
+    survived_sets = set(cmds.ls(type="objectSet") or []) - before_sets
+    check(not survived_sets,
+          "undo must remove the proxy selection set, %r survived as an orphan" % survived_sets)
+    print("OK a3obProxy undoes both its placeholder transform and its selection set")
+
+
+def test_update_proxy_selection_set_undo():
+    """a3obUpdateProxy's OTHER branch — renaming/re-tagging an EXISTING proxy selection set
+    — had no coverage at all. It used to mix cmds.rename with modifier-less attr writes, so
+    the rename undid but the a3obSelectionName/a3obIsProxySelection attribute writes did not."""
+    transform = make_lod("undoUpdateProxySetLOD")
+    shape = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
+    cmds.select("%s.f[0]" % shape, replace=True)
+    before_sets = set(cmds.ls(type="objectSet") or [])
+
+    cmds.a3obProxy(path="ca\dayz\original.p3d", index=1, fromSelection=True)
+    created_sets = set(cmds.ls(type="objectSet") or []) - before_sets
+    check(len(created_sets) == 1, "expected exactly one proxy selection set, got %r" % (created_sets,))
+    proxy_set = created_sets.pop()
+
+    original_set_name = proxy_set
+    original_selection_name = cmds.getAttr(proxy_set + ".a3obSelectionName")
+
+    # noExpand: selecting a set by name normally selects its MEMBERS (that is how "quick
+    # select sets" work), not the set node itself — a3obUpdateProxy needs the node.
+    cmds.select(proxy_set, replace=True, noExpand=True)
+    cmds.a3obUpdateProxy(path="ca\dayz\\updated.p3d", index=9)
+
+    renamed_sets = set(cmds.ls(type="objectSet") or []) - before_sets
+    check(len(renamed_sets) == 1, "expected the same single set after rename, got %r" % (renamed_sets,))
+    renamed_set = renamed_sets.pop()
+    check(renamed_set != original_set_name,
+          "a3obUpdateProxy must have renamed the set, still %r" % renamed_set)
+    updated_selection_name = cmds.getAttr(renamed_set + ".a3obSelectionName")
+    check(updated_selection_name != original_selection_name,
+          "a3obUpdateProxy must have changed a3obSelectionName, still %r" % updated_selection_name)
+
+    cmds.undo()
+
+    after_undo_sets = set(cmds.ls(type="objectSet") or []) - before_sets
+    check(len(after_undo_sets) == 1, "expected the set to survive undo (just reverted), got %r" % (after_undo_sets,))
+    reverted_set = after_undo_sets.pop()
+    check(reverted_set == original_set_name,
+          "undo must restore the original set name %r, got %r" % (original_set_name, reverted_set))
+    check(cmds.getAttr(reverted_set + ".a3obSelectionName") == original_selection_name,
+          "undo must restore a3obSelectionName: %r -> %r"
+          % (original_selection_name, cmds.getAttr(reverted_set + ".a3obSelectionName")))
+    print("OK a3obUpdateProxy undoes a rename+retag of an existing proxy selection set")
 
 
 def test_set_flag_undo():
@@ -199,6 +255,7 @@ def main():
     test_create_lod_undo()
     test_update_proxy_undo()
     test_proxy_undo()
+    test_update_proxy_selection_set_undo()
     test_set_flag_undo()
     test_find_components_undo()
     test_set_material_undo()

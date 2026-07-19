@@ -216,21 +216,68 @@ def _delete_existing_component_sets(lod, mesh_path):
 # =============================================================================
 
 
+def _cmds_ensure_attr(node_name, attr_pair, kind):
+    """Add ``attr_pair`` to ``node_name`` via cmds.addAttr if it is not already there.
+
+    cmds.addAttr/setAttr (unlike attr.set_* with no modifier, or an MDagModifier) enter
+    Maya's own undo queue, which is what a non-undoable _Base command wrapped in
+    undo_chunk() relies on to make attribute writes on a PRE-EXISTING node revertible."""
+    import maya.cmds as cmds
+    long_name, short_name = attr_pair
+    if cmds.attributeQuery(long_name, node=node_name, exists=True):
+        return
+    kwargs = {"attributeType": kind} if kind != "string" else {"dataType": "string"}
+    cmds.addAttr(node_name, longName=long_name, shortName=short_name, keyable=True, **kwargs)
+
+
+def _cmds_set_bool_attr(node_name, attr_pair, value):
+    import maya.cmds as cmds
+    _cmds_ensure_attr(node_name, attr_pair, "bool")
+    cmds.setAttr(node_name + "." + attr_pair[0], bool(value))
+
+
+def _cmds_set_int_attr(node_name, attr_pair, value):
+    import maya.cmds as cmds
+    _cmds_ensure_attr(node_name, attr_pair, "long")
+    cmds.setAttr(node_name + "." + attr_pair[0], int(value))
+
+
+def _cmds_set_string_attr(node_name, attr_pair, value):
+    import maya.cmds as cmds
+    _cmds_ensure_attr(node_name, attr_pair, "string")
+    cmds.setAttr(node_name + "." + attr_pair[0], value or "", type="string")
+
+
 def update_proxy_selection_set(set_obj, path, index):
+    """Rename an existing proxy selection set and refresh its a3ob* metadata.
+
+    Both callers (a3obProxy, a3obUpdateProxy) are non-undoable _Base commands whose whole
+    body runs inside one undo_chunk() — every write here therefore has to go through cmds
+    (rename + addAttr/setAttr), never attr.set_* / MFnDependencyNode straight on the plug,
+    or the rename would undo on Ctrl+Z while the metadata silently stayed changed."""
     import maya.cmds as cmds
     selection_name = proxy_selection_name(path, index)
-    attr.set_string(set_obj, A.SELECTION_NAME, selection_name)
-    attr.set_bool(set_obj, A.IS_PROXY_SELECTION, True)
-    attr.mark_technical_set(set_obj)
-    cmds.rename(om.MFnDependencyNode(set_obj).name(), _sanitized_set_name(selection_name))
+    old_name = om.MFnDependencyNode(set_obj).name()
+    new_name = cmds.rename(old_name, _sanitized_set_name(selection_name))
+    _cmds_set_string_attr(new_name, A.SELECTION_NAME, selection_name)
+    _cmds_set_bool_attr(new_name, A.IS_PROXY_SELECTION, True)
+    _cmds_set_bool_attr(new_name, A.TECHNICAL_SET, True)
+    if cmds.attributeQuery("hiddenInOutliner", node=new_name, exists=True):
+        cmds.setAttr(new_name + ".hiddenInOutliner", True)
 
 
-def update_proxy_placeholder(proxy, path, index, modifier=None):
+def update_proxy_placeholder(proxy, path, index):
+    """Point a proxy placeholder transform at a new proxy path/index.
+
+    Same reasoning as update_proxy_selection_set: cmds.addAttr/setAttr, not attr.set_* /
+    MDagModifier, because both a3obProxy and a3obUpdateProxy are non-undoable _Base
+    commands that rely on undo_chunk() + cmds' own undo records for the whole body."""
     selection_name = proxy_selection_name(path, index)
-    attr.set_bool(proxy, A.IS_PROXY, True, modifier)
-    attr.set_string(proxy, A.PROXY_PATH, path, modifier)
-    attr.set_int(proxy, A.PROXY_INDEX, index, modifier)
-    attr.set_string(proxy, A.PROXY_SELECTION, selection_name, modifier)
+    node_name = om.MFnDagNode(proxy).fullPathName()
+    _cmds_set_bool_attr(node_name, A.IS_PROXY, True)
+    _cmds_set_string_attr(node_name, A.PROXY_PATH, path)
+    _cmds_set_int_attr(node_name, A.PROXY_INDEX, index)
+    _cmds_set_string_attr(node_name, A.PROXY_SELECTION, selection_name)
 
 
 def vertex_source_index_map(transform):
@@ -322,6 +369,10 @@ __all__ = [
     "selected_mesh_targets",
     "_component_set_belongs_to_target",
     "_delete_existing_component_sets",
+    "_cmds_ensure_attr",
+    "_cmds_set_bool_attr",
+    "_cmds_set_int_attr",
+    "_cmds_set_string_attr",
     "update_proxy_selection_set",
     "update_proxy_placeholder",
     "mass_values_for_lod",
