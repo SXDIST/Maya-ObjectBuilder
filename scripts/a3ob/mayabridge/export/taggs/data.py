@@ -37,13 +37,30 @@ def _add_mass_tagg(transform, lod):
     lod.taggs.append(tagg)
 
 
-def _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod):
+def _object_builder_set_objects():
+    """Every objectSet carrying a3ob metadata, in DG order.
+
+    The export used to read the MEMBERS of every set in the scene — shading engines, render
+    layers, deformer sets included — once per LOD, only to discover it was not ours. The
+    attribute check below is a plug lookup and settles that far more cheaply.
+
+    DG iteration order is kept on purpose: it decides the order the selection TAGGs land in
+    the file. Listing by attribute (cmds.ls("*.a3obSelectionName")) is faster still, but it
+    reorders them, and there is no reason to churn the output format for that."""
+    found = []
     it = om.MItDependencyNodes(om.MFn.kSet)
     while not it.isDone():
         set_obj = it.thisNode()
         it.next()
-        set_name = om.MFnDependencyNode(set_obj).name()
-        vertices, faces = _read_set_components(set_name, mesh_path)
+        dep = om.MFnDependencyNode(set_obj)
+        if dep.hasAttribute(A.SELECTION_NAME[0]) or dep.hasAttribute(A.FLAG_COMPONENT[0]):
+            found.append(set_obj)
+    return found
+
+
+def _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod):
+    for set_obj in _object_builder_set_objects():
+        vertices, faces = _read_set_components(set_obj, mesh_path)
         if not vertices and not faces:
             continue
 
@@ -129,25 +146,24 @@ def _add_generated_components(lod_type, mesh_path, vertex_source_indices, lod):
         lod.taggs.append(tagg)
 
 
-def _add_sharp_edges_tagg(transform, mesh_path, lod):
-    if not attr.get_bool(transform, A.HAS_SHARP_EDGES):
-        return
-    saved = _split_sharp_edges(attr.get_string(transform, A.SHARP_EDGES))
-    if saved:
-        tagg = p3d.Tagg()
-        tagg.name = "#SharpEdges#"
-        data = p3d.SharpEdgesTaggData()
-        data.edges = saved
-        tagg.data = data
-        lod.taggs.append(tagg)
-        return
+def _add_sharp_edges_tagg(transform, mesh_path, vertex_source_indices, lod):
+    """Write #SharpEdges# from the LIVE mesh; the stored blob is only a fallback.
+
+    Import now hardens these edges on the Maya mesh (``apply_sharp_edges``), so the mesh is
+    authoritative. Replaying the stored blob instead meant hardening or softening an edge in
+    Maya never reached the P3D."""
+    def to_source(vertex):
+        # Edge ids come from the Maya mesh; the TAGG indexes P3D source vertices.
+        if 0 <= vertex < len(vertex_source_indices):
+            return vertex_source_indices[vertex]
+        return vertex
 
     data = p3d.SharpEdgesTaggData()
     edge_it = om.MItMeshEdge(mesh_path)
     while not edge_it.isDone():
         if not edge_it.isSmooth:
-            first = edge_it.vertexId(0)
-            second = edge_it.vertexId(1)
+            first = to_source(edge_it.vertexId(0))
+            second = to_source(edge_it.vertexId(1))
             if 0 <= first < len(lod.vertices) and 0 <= second < len(lod.vertices):
                 data.edges.append((first, second))
         edge_it.next()
@@ -159,30 +175,58 @@ def _add_sharp_edges_tagg(transform, mesh_path, lod):
     lod.taggs.append(tagg)
 
 
-def _add_uvset_taggs(transform, lod):
-    saved = _split_uvset_taggs(attr.get_string(transform, A.UVSET_TAGGS))
-    if saved:
-        for data in saved:
-            tagg = p3d.Tagg()
-            tagg.name = "#UVSet#"
-            tagg.data = data
-            lod.taggs.append(tagg)
+def _append_uvset_tagg(lod, data):
+    tagg = p3d.Tagg()
+    tagg.name = "#UVSet#"
+    tagg.data = data
+    lod.taggs.append(tagg)
+
+
+def _add_uvset_taggs(transform, lod, extra_uv_corners=None):
+    """Write the #UVSet# TAGGs from the LIVE Maya mesh.
+
+    Every set now comes from the mesh itself: set 0 from the exported face corners, further
+    sets from real Maya UV sets (collected in the export loop so triangulation applies to
+    them too). Import creates those UV sets, so nothing has to be stashed on the transform —
+    the old ``a3obUVSetTaggs`` blob cost ~1.4 MB per LOD and, being replayed verbatim, threw
+    away any UV edit made in Maya.
+
+    The stored blob is still READ so scenes saved by older versions keep their extra sets."""
+    live = []
+    for face in lod.faces:
+        live.extend(face.uvs)
+
+    if not live:
+        # Mesh-less LOD: nothing to rebuild from, so a stored blob is all there is.
+        for data in _split_uvset_taggs(attr.get_string(transform, A.UVSET_TAGGS)):
+            _append_uvset_tagg(lod, data)
         return
 
-    count = max(1, attr.get_int(transform, A.UVSET_TAGG_COUNT, 0))
-    uvs = []
-    for face in lod.faces:
-        uvs.extend(face.uvs)
-    if not uvs:
-        return
-    for i in range(count):
-        tagg = p3d.Tagg()
-        tagg.name = "#UVSet#"
+    primary = p3d.UVSetTaggData()
+    primary.id = 0
+    primary.uvs = [p3d.Vec2(uv.u, uv.v) for uv in live]
+    _append_uvset_tagg(lod, primary)
+
+    next_id = 1
+    for corners in (extra_uv_corners or []):
+        if len(corners) != len(live):
+            continue  # a set that does not cover every corner would misalign with the faces
         data = p3d.UVSetTaggData()
-        data.id = i
-        data.uvs = [p3d.Vec2(uv.u, uv.v) for uv in uvs]
-        tagg.data = data
-        lod.taggs.append(tagg)
+        data.id = next_id
+        data.uvs = [p3d.Vec2(uv.u, uv.v) for uv in corners]
+        _append_uvset_tagg(lod, data)
+        next_id += 1
+
+    if next_id > 1:
+        return
+
+    # Legacy scenes: extra sets were never applied to the mesh, so fall back to the blob.
+    for data in _split_uvset_taggs(attr.get_string(transform, A.UVSET_TAGGS)):
+        if getattr(data, "id", 0) == 0 or len(data.uvs) != len(live):
+            continue
+        data.id = next_id
+        _append_uvset_tagg(lod, data)
+        next_id += 1
 
 
 # =============================================================================

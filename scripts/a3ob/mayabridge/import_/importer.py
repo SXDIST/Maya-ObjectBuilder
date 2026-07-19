@@ -14,7 +14,8 @@ import maya.api.OpenMaya as om
 import maya.cmds as cmds
 
 from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
+from a3ob.mayabridge.attributes import A
+from a3ob.mayabridge.progress import Progress
 
 from a3ob.mayabridge.import_.convert import *  # noqa: F401,F403
 from a3ob.mayabridge.import_.builders import *  # noqa: F401,F403
@@ -29,13 +30,21 @@ class MayaMeshImport:
         root_name = _create_transform(None, sanitized_name(stem))
 
         groups = {}
-        for lod in mlod.lods:
-            group_name = lod_group_name(lod.resolution.lod)
-            group = groups.get(group_name)
-            if group is None:
-                group = _create_transform(root_name, group_name)
-                groups[group_name] = group
-            self._import_lod(lod, group, created)
+        # Progress + Esc while a heavy model is built (see the export side for the rationale).
+        with Progress(len(mlod.lods)) as progress:
+            for index, lod in enumerate(mlod.lods):
+                if progress.cancelled():
+                    om.MGlobal.displayWarning(
+                        "P3D import cancelled after %d of %d LODs; the ones already created "
+                        "are kept" % (index, len(mlod.lods)))
+                    break
+                group_name = lod_group_name(lod.resolution.lod)
+                group = groups.get(group_name)
+                if group is None:
+                    group = _create_transform(root_name, group_name)
+                    groups[group_name] = group
+                self._import_lod(lod, group, created)
+                progress.step(index + 1)
         return created
 
     def _get_or_create_material(self, texture, material):
@@ -119,6 +128,8 @@ class MayaMeshImport:
             cmds.rename(om.MFnDagNode(mesh).fullPathName(), _leaf(transform_name) + "Shape")
 
             apply_uvs(mesh_fn, lod)
+            apply_extra_uv_sets(mesh_fn, lod)
+            apply_sharp_edges(mesh_fn, lod, vertex_remap)
             apply_normals(mesh_fn, lod, vertex_remap)
             self._assign_materials(mesh, lod)
             create_selection_sets(mesh, lod, vertex_remap)

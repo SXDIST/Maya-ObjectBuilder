@@ -41,12 +41,11 @@ def set_lod_metadata(transform, lod, vertex_map):
     if lod.vertices:
         attr.set_string(transform, A.SOURCE_VERTICES, vertex_values_string(lod.vertices))
 
-    textures = sorted({face.texture for face in lod.faces if face.texture})
-    materials = sorted({face.material for face in lod.faces if face.material})
-
+    # NOTE: a3obTextures / a3obMaterials / a3obSelections / a3obProxies used to be written
+    # here and were never read back by anything — every one of them is derivable from the
+    # scene itself (shader attrs, objectSets with a3obSelectionName, proxy transforms). They
+    # cost a full sweep over every face on import for nothing, so they are no longer written.
     properties = []
-    selections = []
-    proxies = []
     has_mass = False
     has_sharp_edges = False
     sharp_edges = ""
@@ -59,11 +58,6 @@ def set_lod_metadata(transform, lod, vertex_map):
         kind = tagg.data.kind
         if kind == "Property":
             properties.append("%s=%s" % (tagg.data.key, tagg.data.value))
-        elif kind == "Selection":
-            if tagg.is_proxy():
-                proxies.append(tagg.name)
-            else:
-                selections.append(tagg.name)
         elif kind == "Mass":
             has_mass = True
             if mass_values is None:
@@ -75,11 +69,7 @@ def set_lod_metadata(transform, lod, vertex_map):
             uv_set_count += 1
             uv_set_taggs.append(tagg.data)
 
-    attr.set_string(transform, A.TEXTURES, ";".join(textures))
-    attr.set_string(transform, A.MATERIALS, ";".join(materials))
     attr.set_string(transform, A.PROPERTIES, ";".join(properties))
-    attr.set_string(transform, A.SELECTIONS, ";".join(selections))
-    attr.set_string(transform, A.PROXIES, ";".join(proxies))
     attr.set_bool(transform, A.HAS_MASS, has_mass)
     if mass_values is not None:
         attr.set_string(transform, A.MASS_VALUES, float_values_string(mass_values))
@@ -87,8 +77,9 @@ def set_lod_metadata(transform, lod, vertex_map):
     if sharp_edges:
         attr.set_string(transform, A.SHARP_EDGES, sharp_edges)
     attr.set_int(transform, A.UVSET_TAGG_COUNT, uv_set_count)
-    if uv_set_taggs:
-        attr.set_string(transform, A.UVSET_TAGGS, uv_set_taggs_string(uv_set_taggs))
+    # a3obUVSetTaggs is deliberately NOT written any more: set 0 lives in the mesh's own UVs
+    # and the extra sets become real Maya UV sets (apply_extra_uv_sets). The blob was ~1.4 MB
+    # per LOD and, being replayed verbatim on export, discarded UV edits made in Maya.
 
 
 # =============================================================================
@@ -117,6 +108,82 @@ def apply_uvs(mesh_fn, lod):
         return
     mesh_fn.setUVs(u_values, v_values)
     mesh_fn.assignUVs(uv_counts, uv_ids)
+
+
+def apply_extra_uv_sets(mesh_fn, lod):
+    """Create a real Maya UV set for each #UVSet# TAGG beyond the first.
+
+    Set 0 is already on the mesh (apply_uvs). The rest used to survive only as a string blob
+    on the transform, invisible and uneditable in Maya; as real UV sets they show up in the
+    UV editor and are read straight back on export."""
+    sets = [tagg.data for tagg in lod.taggs
+            if tagg.data is not None and tagg.data.kind == "UVSet"]
+    if len(sets) < 2:
+        return 0
+
+    corner_total = sum(len(face.uvs) for face in lod.faces)
+    created = 0
+    for order, data in enumerate(sorted(sets, key=lambda d: d.id)[1:], start=1):
+        if len(data.uvs) != corner_total:
+            continue  # does not line up with the face corners — skip rather than corrupt
+        try:
+            name = mesh_fn.createUVSet("uvSet%d" % order)
+            u_values = om.MFloatArray()
+            v_values = om.MFloatArray()
+            uv_counts = om.MIntArray()
+            uv_ids = om.MIntArray()
+            cursor = 0
+            for face in lod.faces:
+                uv_counts.append(len(face.uvs))
+                for _corner in face.uvs:
+                    uv = data.uvs[cursor]
+                    uv_ids.append(len(u_values))
+                    u_values.append(uv.u)
+                    v_values.append(uv.v)
+                    cursor += 1
+            mesh_fn.setUVs(u_values, v_values, name)
+            mesh_fn.assignUVs(uv_counts, uv_ids, name)
+            created += 1
+        except Exception:  # noqa: BLE001 - never let an odd UV set abort the import
+            continue
+    return created
+
+
+def apply_sharp_edges(mesh_fn, lod, vertex_remap):
+    """Harden the edges listed in the #SharpEdges# TAGG on the Maya mesh.
+
+    Import used to only stash them in ``a3obSharpEdges``, leaving every edge smooth in Maya.
+    Export then had to replay that blob, which meant hardening or softening an edge in Maya
+    never reached the P3D. Applying them here makes the live mesh the single source of truth
+    for both directions."""
+    pairs = []
+    for tagg in lod.taggs:
+        if getattr(tagg.data, "kind", "") == "SharpEdges":
+            pairs.extend(tagg.data.edges)
+    if not pairs:
+        return 0
+
+    wanted = set()
+    for first, second in pairs:
+        a = vertex_remap.get(first)
+        b = vertex_remap.get(second)
+        if a is not None and b is not None and a != b:
+            wanted.add((min(a, b), max(a, b)))
+    if not wanted:
+        return 0
+
+    edge_it = om.MItMeshEdge(mesh_fn.object())
+    hardened = 0
+    while not edge_it.isDone():
+        key = (min(edge_it.vertexId(0), edge_it.vertexId(1)),
+               max(edge_it.vertexId(0), edge_it.vertexId(1)))
+        if key in wanted:
+            mesh_fn.setEdgeSmoothing(edge_it.index(), False)
+            hardened += 1
+        edge_it.next()
+    if hardened:
+        mesh_fn.cleanupEdgeSmoothing()
+    return hardened
 
 
 def apply_normals(mesh_fn, lod, vertex_remap):
@@ -160,6 +227,8 @@ __all__ = [
     "set_lod_metadata",
     "apply_uvs",
     "apply_normals",
+    "apply_sharp_edges",
+    "apply_extra_uv_sets",
     "MEMORY_LOCATOR_SCALE",
     "_leaf",
 ]

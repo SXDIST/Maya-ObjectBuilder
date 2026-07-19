@@ -69,12 +69,20 @@ def is_object_builder_metadata_set(set_obj):
 
 
 def _create_set_from_members(members, name, restriction=None):
-    set_fn = om.MFnSet()
-    if restriction is None:
-        restriction = om.MFnSet.kNone
-    set_obj = set_fn.create(members, restriction)
-    set_fn.setName(name)
-    return set_obj
+    """Create an objectSet holding ``members`` (an MSelectionList).
+
+    Built with cmds.sets rather than MFnSet.create: the API call never enters Maya's undo
+    queue, so every set made by a3obSetFlag / a3obFindComponents / proxy selections survived
+    Ctrl+Z and piled up in the scene. ``restriction`` is accepted for call-site compatibility
+    — no caller has ever passed anything but the default."""
+    import maya.cmds as cmds
+    strings = members.getSelectionStrings()
+    if not strings:
+        return NULL
+    created = cmds.sets(strings, name=name)
+    selection = om.MSelectionList()
+    selection.add(created)
+    return selection.getDependNode(0)
 
 
 def create_metadata_set(set_name, component, value):
@@ -217,16 +225,46 @@ def update_proxy_selection_set(set_obj, path, index):
     cmds.rename(om.MFnDependencyNode(set_obj).name(), _sanitized_set_name(selection_name))
 
 
-def update_proxy_placeholder(proxy, path, index):
+def update_proxy_placeholder(proxy, path, index, modifier=None):
     selection_name = proxy_selection_name(path, index)
-    attr.set_bool(proxy, A.IS_PROXY, True)
-    attr.set_string(proxy, A.PROXY_PATH, path)
-    attr.set_int(proxy, A.PROXY_INDEX, index)
-    attr.set_string(proxy, A.PROXY_SELECTION, selection_name)
+    attr.set_bool(proxy, A.IS_PROXY, True, modifier)
+    attr.set_string(proxy, A.PROXY_PATH, path, modifier)
+    attr.set_int(proxy, A.PROXY_INDEX, index, modifier)
+    attr.set_string(proxy, A.PROXY_SELECTION, selection_name, modifier)
+
+
+def vertex_source_index_map(transform):
+    """Maya vertex index -> P3D source vertex index, or [] when the LOD carries no remap.
+
+    Import dedupes/reorders vertices, so the Maya index space and the P3D source space are
+    NOT interchangeable. Masses are stored and exported in source order, while the UI edits
+    them per Maya vertex — without this map the two silently disagree."""
+    raw = attr.get_string(transform, A.VERTEX_SOURCE_INDICES)
+    if not raw:
+        return []
+    indices = []
+    for token in raw.split(";"):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            indices.append(int(token))
+        except ValueError:
+            return []  # malformed remap — fall back to identity rather than scramble masses
+    return indices
+
+
+def mass_slot_count(transform):
+    """How many mass slots this LOD stores: the P3D source vertex count when the LOD came
+    from an import (that is the space the mass TAGG uses), else the Maya vertex count."""
+    source_count = attr.get_int(transform, A.SOURCE_VERTEX_COUNT, 0)
+    if source_count > 0:
+        return source_count
+    return max(vertex_count_for_lod(transform), 0)
 
 
 def mass_values_for_lod(transform, default_value):
-    count = max(vertex_count_for_lod(transform), 0)
+    count = mass_slot_count(transform)
     values = [default_value] * count
     existing = split_semicolon(attr.get_string(transform, A.MASS_VALUES))
     for i in range(min(len(existing), len(values))):
@@ -234,7 +272,7 @@ def mass_values_for_lod(transform, default_value):
     return values
 
 
-def set_selected_mass_values(lod, value):
+def set_selected_mass_values(lod, value, modifier=None):
     members, selected_lod = selected_components()
     if members.length() == 0:
         return False
@@ -250,12 +288,15 @@ def set_selected_mass_values(lod, value):
         if component.isNull() or not component.hasFn(om.MFn.kMeshVertComponent):
             continue
         elements = om.MFnSingleIndexedComponent(component).getElements()
+        remap = vertex_source_index_map(lod)
         for index in elements:
-            if 0 <= index < len(masses):
-                masses[index] = value
+            # Selected components are Maya vertices; masses live in P3D source order.
+            slot = remap[index] if 0 <= index < len(remap) else index
+            if 0 <= slot < len(masses):
+                masses[slot] = value
 
-    attr.set_bool(lod, A.HAS_MASS, True)
-    attr.set_string(lod, A.MASS_VALUES, mass_values_string(masses))
+    attr.set_bool(lod, A.HAS_MASS, True, modifier)
+    attr.set_string(lod, A.MASS_VALUES, mass_values_string(masses), modifier)
     return True
 
 
@@ -284,5 +325,7 @@ __all__ = [
     "update_proxy_selection_set",
     "update_proxy_placeholder",
     "mass_values_for_lod",
+    "mass_slot_count",
+    "vertex_source_index_map",
     "set_selected_mass_values",
 ]
