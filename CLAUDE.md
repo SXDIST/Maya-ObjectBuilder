@@ -22,6 +22,7 @@ python tests/python/test_model_cfg.py
 python tests/python/test_paa.py          # PAA decoder; skips cleanly if tests/paa/*.paa are absent
 python tests/python/test_skinweights.py  # skin-weight outlier detection (pure math)
 python tests/python/test_qem.py          # QEM decimation invariants (no orphan vertices)
+python tests/python/test_influences.py   # influence name masks + never-strip-the-last rule
 
 # Python syntax checks (compile every .py that exists on disk — robust to package renames)
 python -m py_compile $(find scripts plug-ins tests -name '*.py')
@@ -38,6 +39,7 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/export_uses_live_mesh.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/scene_watch.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/plugin_teardown.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/influence_panel.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/dock_refresh_cost.py
 
 # Package release archive (plain file copy + zip, no build)
@@ -71,7 +73,7 @@ Two layers, split by whether they need Maya:
   monolith). `_qt.py` (guarded PySide6/shiboken/OpenMayaUI import layer), `widgets.py` (Qt helpers +
   `_CollapsibleSection`), `dock.py` (`MayaObjectBuilderDock` widget, assembled from the panel
   mixins), `panels/` package (one mixin per dock section — `lod`, `lod_list`, `metadata`,
-  `named_properties`, `materials`, `selections`, `validation`), `actions/` package (action wrappers +
+  `named_properties`, `materials`, `selections`, `skinning`, `validation`), `actions/` package (action wrappers +
   scene business logic by domain — `files`, `lod`, `materials`, `memory`, `metadata`, `named`,
   `selections`, `_common`), `entry.py` (menu/dock lifecycle/install + singletons), `constants.py`
   (pure data tables), `recent.py` (recent-path history backing store), `scene/` package (Qt-free scene
@@ -80,9 +82,10 @@ Two layers, split by whether they need Maya:
   `entry._build_qt_dock`; `objectBuilderMenu.py` is a thin facade re-exporting everything the plugin
   and the runpy-based mayapy tests reach.
 
-- **`plug-ins/MayaObjectBuilder.py`** — the main scripted plugin (API 2.0). Registers the sixteen
-  `a3ob*` commands, sources the MEL option box, opens the Python dock UI, and loads/unloads the
-  companion translator plugin.
+- **`plug-ins/MayaObjectBuilder.py`** — the main scripted plugin (API 2.0). Registers the seventeen
+  `a3ob*` commands (`_ALL_COMMANDS` = the fifteen in `commands/` plus the two in
+  `model_cfg_commands.py`), sources the MEL option box, opens the Python dock UI, and
+  loads/unloads the companion translator plugin.
 - **`plug-ins/MayaObjectBuilderTranslator.py`** — companion plugin (API 1.0). Registers the
   `Arma P3D` `MPxFileTranslator` and delegates all work to `a3ob.mayabridge.translator`.
   `MPxFileTranslator` exists only in API 1.0, while the commands need API 2.0, so the two cannot
@@ -120,6 +123,7 @@ Two layers, split by whether they need Maya:
 | `model.cfg` | `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py` |
 | Skin weights (rig) | `scripts/a3ob/mayabridge/skinweights.py` (Maya-free outlier math + bake format), `commands/skin.py` — **detection reports only**, repair is Maya's `Skin > Smooth Skin Weights` |
 | Weight transfer from body | `scripts/a3ob/mayabridge/skintransfer.py` (`transfer_to_target()`, `check_alignment()`, `ensure_reference()`, rigid far shells), command `a3obTransferSkin`, dock panel `ui/panels/skinning.py` |
+| Influence list / removal | `scripts/a3ob/mayabridge/influences.py` (Maya-free masks + removability), command `a3obInfluence` in `commands/influence.py` (`vertices_driven_by()`, `remove_influences()`, `set_paint_influence()`), dock section in `ui/panels/skinning.py` |
 | Stored weights kept current | `scripts/a3ob/mayabridge/weightsync.py` (`sync_all_lods()` on `kBeforeSave`; `install()`/`uninstall()` from the plugin's `initializePlugin`/`uninitializePlugin`) |
 | Pose testing / bind pose | `scripts/a3ob/mayabridge/posetest.py` (`find_spikes()`, `skeleton_is_posed()`), command `a3obTestPose`; bind-pose check runs inside `a3obValidate` |
 | Reference assets (body/skeleton) | `scripts/a3ob/mayabridge/references.py` — saved as `.ma` under `Documents/maya/MayaObjectBuilder/references/`, paths in optionVars; command `a3obReference` |
@@ -172,6 +176,23 @@ Two layers, split by whether they need Maya:
 - Export reads the DEFORMED mesh, so exporting a posed rig bakes the pose into the `.p3d`.
   `a3obValidate` warns via `posetest.skeleton_is_posed()`, which compares each joint against
   the skinCluster's `bindPreMatrix` (the joint's own `.bindPose` attribute does NOT work).
+  `bindPreMatrix` is a **sparse multi** indexed by `.matrix[]` LOGICAL indices, which do NOT
+  compact when an influence is removed — `enumerate(influences)` is the wrong index and made
+  `skeleton_is_posed()` report joints on a rig nobody had moved. Measured: after removing two
+  middle influences, `bindPreMatrix` kept `[0,1,2,3]` while `.matrix` held `[1,3]`. Use
+  `cmds.getAttr(skin + ".matrix", multiIndices=True)`. Removing a TRAILING influence does not
+  reproduce it, which is why a naive test passes.
+- Removing a skin influence never deletes its weight — every vertex must sum to 1.0, so the
+  weight moves to the influences still on that vertex, in the ratio they already carried.
+  `weightDistribution` does NOT govern that: `removeInfluence` measured identical under both
+  settings. It governs a subsequent PAINT stroke — flooding an influence to zero on a sleeve
+  whose neighbours are pure `Elbow` gave `Shoulder 0.76 / Elbow 0.24` under **Distance** and
+  `Elbow 1.0` under **Neighbors**. Transfers and removals set Neighbors for the rigger's later
+  painting, not to change what removal itself does.
+- `a3obProxy` / `a3obUpdateProxy` build objectSets, so they are NON-undoable + `undo_chunk()`
+  like the other set-building commands. They were `_UndoableBase` and left an orphan
+  `a3ob_proxy_*` set behind after Ctrl+Z — objectSets cannot go through an `MDagModifier`, so
+  the undoable shape is simply the wrong one for them.
 - `MSyntax.addFlag` accepts only ONE argument type per flag; the long flag name `set` is reserved.
   `a3obNamedProperty -set` therefore takes a single `"key=value"` string and its long alias is
   `-setproperty` (short `-s` unchanged). The long name `fix` is reserved the same way — `addFlag`
