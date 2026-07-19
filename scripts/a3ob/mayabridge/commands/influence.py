@@ -133,6 +133,40 @@ def _leave_paint_tool():
     return current
 
 
+def set_paint_influence(influence):
+    """Make ``influence`` the bone Paint Skin Weights is painting. Returns whether it took.
+
+    Clicking a bone in the dock's list should feel like clicking it in the tool's own
+    influence list — otherwise you pick a bone in one place and paint another. A no-op
+    unless the paint tool is actually the current context: there is nothing to point at
+    otherwise, and under mayapy there is no context at all.
+
+    Two routes, because the first is not present in every Maya build: the context's own
+    ``-influence`` flag, then the MEL handler the tool's UI itself calls when you click a
+    row in its list."""
+    from maya import mel
+
+    try:
+        context = cmds.currentCtx()
+    except Exception:  # noqa: BLE001 - no UI
+        return False
+    if not context or _PAINT_CONTEXT_STEM not in context:
+        return False
+
+    try:
+        cmds.artAttrSkinPaintCtx(context, edit=True, influence=influence)
+        return True
+    except Exception:  # noqa: BLE001 - flag absent in this build; try the tool's own path
+        pass
+
+    try:
+        mel.eval('artSkinInflListChanging "%s" 1' % influence)
+        mel.eval('artSkinInflListChanged %s' % context)
+        return True
+    except Exception:  # noqa: BLE001 - the tool moved on; not worth failing over
+        return False
+
+
 def _restore_tool(context):
     """Put the paint tool back. Never fatal: the removal already succeeded."""
     if not context:
@@ -250,4 +284,5 @@ __all__ = [
     "influence_names",
     "vertices_driven_by",
     "remove_influences",
+    "set_paint_influence",
 ]

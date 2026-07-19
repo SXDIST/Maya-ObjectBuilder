@@ -91,7 +91,10 @@ class SkinningPanelMixin:
         self.influence_list.setSelectionMode(
             qt_widgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.influence_list.setMaximumHeight(160)
-        self.influence_list.setToolTip("Bones driving the selected mesh.")
+        self.influence_list.setToolTip(
+            "Bones driving the selected mesh. Clicking one while Paint Skin Weights is "
+            "active makes it the bone you are painting.")
+        self.influence_list.itemSelectionChanged.connect(self.on_influence_highlighted)
         layout.addWidget(self.influence_list)
 
         influence_row = qt_widgets.QHBoxLayout()
@@ -136,6 +139,17 @@ class SkinningPanelMixin:
             return
         from a3ob.mayabridge.influences import leaf_name, match_names
 
+        # Rebuilding clears and re-selects rows, which fires itemSelectionChanged for every
+        # one of them. Without this guard a refresh would re-point the paint tool at whatever
+        # row happened to be restored last.
+        self._influence_refreshing = True
+        try:
+            self._rebuild_influence_list(leaf_name, match_names)
+        finally:
+            self._influence_refreshing = False
+
+    def _rebuild_influence_list(self, leaf_name, match_names):
+
         # Restore by the FULL name (UserRole), never by displayed text: leaf names collide
         # across namespaces (ns1:Head / ns2:Head both show "Head"), which is exactly the case
         # where restoring by leaf would re-select an influence the user never highlighted.
@@ -162,6 +176,21 @@ class SkinningPanelMixin:
 
     def _highlighted_influences(self):
         return [item.data(qt_core.Qt.ItemDataRole.UserRole) for item in self.influence_list.selectedItems()]
+
+    def on_influence_highlighted(self):
+        """Point Paint Skin Weights at the clicked bone.
+
+        Clicking a row here should do what clicking a row in the tool's own influence list
+        does — otherwise you pick a bone in one panel and keep painting another. Only for a
+        single highlighted row: painting has exactly one active influence, so a multi-select
+        (which is what Remove is for) has no meaningful answer. A no-op when the paint tool
+        is not the current context."""
+        if getattr(self, "_influence_refreshing", False):
+            return
+        picked = self._highlighted_influences()
+        if len(picked) != 1:
+            return
+        _paint_influence(picked[0])
 
     def run_select_influence_vertices(self):
         picked = self._highlighted_influences()
