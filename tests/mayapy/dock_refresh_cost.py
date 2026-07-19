@@ -89,7 +89,43 @@ def main():
     check(dock.rebuilds > before_force, "a forced refresh must rebuild even on the same LOD")
 
     print("OK dock refresh: component picking costs 0 rebuilds, LOD switch still refreshes")
+    test_sibling_mesh_switch_refreshes(dock)
     return 0
+
+
+def test_sibling_mesh_switch_refreshes(dock):
+    """Two meshes under ONE LOD must each refresh the panels when selected.
+
+    Reported from real use: the Influences list stayed empty until you typed something into
+    the filter box and deleted it again — the only thing that called the refresh directly.
+    The cause was the context key holding the LOD alone, so picking a different garment under
+    the same LOD looked like no change at all and the refresh short-circuited."""
+    parent = make_lod("lodShared")
+    first = cmds.polyCylinder(name="garmentA", r=1, h=2, ch=False)[0]
+    second = cmds.polyCylinder(name="garmentB", r=1, h=2, ch=False)[0]
+    cmds.parent(first, parent)
+    cmds.parent(second, parent)
+
+    cmds.select(first, replace=True)
+    entry._refresh_context_ui(False)
+    baseline = dock.rebuilds
+
+    cmds.select(second, replace=True)
+    entry._refresh_context_ui(False)
+    check(dock.rebuilds > baseline,
+          "selecting a sibling mesh under the same LOD must refresh the panels")
+
+    # ...and picking components on that mesh must still cost nothing.
+    settled = dock.rebuilds
+    shape = cmds.listRelatives(second, shapes=True, fullPath=True)[0]
+    for i in range(0, 60, 20):
+        cmds.select("%s.vtx[%d:%d]" % (shape, i, i + 19), replace=True)
+        entry._refresh_context_ui(False)
+    check(dock.rebuilds == settled,
+          "component picking on that mesh must still cost 0 rebuilds (%d extra)"
+          % (dock.rebuilds - settled))
+
+    print("OK sibling mesh switch refreshes, its components still cost nothing")
 
 
 if __name__ == "__main__":

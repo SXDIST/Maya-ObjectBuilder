@@ -184,6 +184,17 @@ def _remove_influences(names):
     return int(result or 0)
 
 
+def _paint_influence(name):
+    """Point Paint Skin Weights at one bone, so clicking the dock list matches clicking
+    the tool's own list. Silently does nothing when the paint tool is not active."""
+    load_plugin()
+    try:
+        from a3ob.mayabridge.commands.influence import set_paint_influence
+        return bool(set_paint_influence(name))
+    except Exception:  # noqa: BLE001 - a highlight must never break the panel
+        return False
+
+
 def _select_influence_vertices(name):
     """Select the vertices one influence drives. Returns how many."""
     load_plugin()
@@ -268,16 +279,36 @@ def _active_qt_dock():
 
 
 def _context_key():
-    """What the dock actually shows: the selected LOD transform.
+    """What the dock actually shows: the selected LOD transform AND the selected object.
 
-    Every panel below is rebuilt from this one node, so picking components *inside* a LOD
-    cannot change any of them."""
+    Most panels are rebuilt from the LOD alone, so picking components *inside* a LOD cannot
+    change them — and `objectsOnly` collapses every component of one mesh down to that mesh,
+    so a marquee drag across vertices leaves the key untouched and still costs no rebuild.
+
+    The object belongs in the key because the Influences panel follows the selected MESH,
+    not the LOD. Two garments parented under one LOD carry different bones, and keying on
+    the LOD alone left that panel showing the previous mesh's list — or nothing at all until
+    the user typed into the filter box and cleared it again, which was the only thing that
+    called the refresh directly."""
     # Imported lazily: a3ob.ui.scene has no Qt/dock deps, but entry is imported very early.
     from a3ob.ui.scene.lods import _selected_lod_transform
     try:
-        return _selected_lod_transform() or ""
+        lod = _selected_lod_transform() or ""
     except Exception:  # noqa: BLE001 - a refresh must never break selection
-        return ""
+        lod = ""
+    try:
+        objects = cmds.ls(selection=True, objectsOnly=True, long=True) or []
+        node = objects[0] if objects else ""
+        # Selecting a transform yields the transform; selecting its components yields the
+        # SHAPE. Collapsing the shape to its parent makes those two the same key, which is
+        # what keeps component picking at zero rebuilds — the object here is only meant to
+        # distinguish one mesh from another, never one component pick from the next.
+        if node and cmds.nodeType(node) != "transform":
+            parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
+            node = parents[0] if parents else node
+    except Exception:  # noqa: BLE001 - same
+        node = ""
+    return (lod, node)
 
 
 def _refresh_context_ui(force=True):
@@ -478,6 +509,7 @@ __all__ = [
     "_list_influences",
     "_remove_influences",
     "_select_influence_vertices",
+    "_paint_influence",
     "_add_reference_asset",
     "_save_reference_asset",
     "import_model_cfg",
