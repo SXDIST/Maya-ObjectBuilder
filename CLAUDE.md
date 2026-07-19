@@ -31,6 +31,7 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/skin_weights_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/skin_transfer.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/weights_survive_skeleton.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/weight_sync.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/command_undo.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/command_correctness.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/export_uses_live_mesh.py
@@ -116,7 +117,8 @@ Two layers, split by whether they need Maya:
 | Texture root / alpha UI | `scripts/a3ob/ui/panels/materials.py`; menu entry via `scripts/a3ob/ui/entry.py` |
 | `model.cfg` | `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py` |
 | Skin weights (rig) | `scripts/a3ob/mayabridge/skinweights.py` (Maya-free outlier math + bake format), `commands/skin.py` — **detection reports only**, repair is Maya's `Skin > Smooth Skin Weights` |
-| Weight transfer from body | `scripts/a3ob/mayabridge/skintransfer.py` (`transfer_to_target()`, `check_alignment()`, rigid far shells), command `a3obTransferSkin`, dock panel `ui/panels/skinning.py` |
+| Weight transfer from body | `scripts/a3ob/mayabridge/skintransfer.py` (`transfer_to_target()`, `check_alignment()`, `ensure_reference()`, rigid far shells), command `a3obTransferSkin`, dock panel `ui/panels/skinning.py` |
+| Stored weights kept current | `scripts/a3ob/mayabridge/weightsync.py` (`sync_all_lods()` on `kBeforeSave`; `install()`/`uninstall()` from the plugin's `initializePlugin`/`uninitializePlugin`) |
 | Pose testing / bind pose | `scripts/a3ob/mayabridge/posetest.py` (`find_spikes()`, `skeleton_is_posed()`), command `a3obTestPose`; bind-pose check runs inside `a3obValidate` |
 | Reference assets (body/skeleton) | `scripts/a3ob/mayabridge/references.py` — saved as `.ma` under `Documents/maya/MayaObjectBuilder/references/`, paths in optionVars; command `a3obReference` |
 | Import/export progress + cancel | `scripts/a3ob/mayabridge/progress.py` (`Progress`) — wraps API-1.0 `MComputation` |
@@ -152,6 +154,19 @@ Two layers, split by whether they need Maya:
 - Weights live in the `skinCluster`, which Maya deletes together with the joints: deleting a
   skeleton destroys every weight. `a3obBakeSkin` copies them onto the LOD transform
   (`a3obBakedWeights`) and export falls back to them; the live skinCluster always wins.
+  That copy is now also written by **import** (`import_/convert/mesh.py`
+  `_store_weight_selections`, indices in MAYA space) and refreshed on every **scene save**
+  (`weightsync.py`) — so a `.p3d` opened without its rig still exports its weights. Sync
+  happens on save, never on export: export must not silently mutate the user's scene.
+- The saved reference asset carries its **own skeleton**, so `skintransfer.ensure_reference()`
+  imports it and *keeps* it. Importing it, transferring, and deleting it again was the obvious
+  design and it is wrong: the garment binds to exactly those joints, so removing them takes the
+  skinCluster and every transferred weight with it. Editing weights and `a3obTestPose` need the
+  joints present anyway.
+- A `@contextlib.contextmanager` must not `yield` inside a `try` that swallows the exception
+  type its caller can raise: the caller's exception is thrown back in at the `yield`, and
+  falling through to a second `yield` turns it into `RuntimeError: generator didn't stop after
+  throw()`, masking the real error. This is why `ensure_reference` is a plain function.
 - Export reads the DEFORMED mesh, so exporting a posed rig bakes the pose into the `.p3d`.
   `a3obValidate` warns via `posetest.skeleton_is_posed()`, which compares each joint against
   the skinCluster's `bindPreMatrix` (the joint's own `.bindPose` attribute does NOT work).
