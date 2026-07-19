@@ -110,7 +110,20 @@ def skeleton_is_posed(tolerance=1e-4):
     seen = set()
     for skin in cmds.ls(type="skinCluster") or []:
         influences = cmds.skinCluster(skin, query=True, influence=True) or []
-        for index, joint in enumerate(influences):
+        # bindPreMatrix is a SPARSE multi, indexed by .matrix[] LOGICAL indices — those do
+        # NOT compact when an influence is removed. enumerate(influences) instead assumes a
+        # dense 0..N-1 range, which is only true if nothing was ever removed, or only the
+        # LAST influence was. Measured: a 4-joint rig (A,B,C,D) with A and C removed left
+        # influences = ['B', 'D'], bindPreMatrix multiIndices = [0,1,2,3] (untouched), but
+        # .matrix multiIndices = [1, 3] — the correct logical index for each surviving
+        # influence, in the same order cmds.skinCluster(...influence=True) returns them.
+        # Using enumerate() here compared B against bindPreMatrix[0] (A's old slot) and D
+        # against bindPreMatrix[1] (B's old slot), so a rig that was never posed reported
+        # every non-trailing-removed influence as "posed" — which fires on essentially every
+        # real DayZ rig, since skintransfer.finish_for_dayz() and a3obInfluence -ri both
+        # prune influences by name, not just off the end.
+        matrix_indices = cmds.getAttr("%s.matrix" % skin, multiIndices=True) or []
+        for index, joint in zip(matrix_indices, influences):
             if joint in seen:
                 continue
             try:

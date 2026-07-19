@@ -167,6 +167,37 @@ def test_bind_pose_detection():
     cmds.setAttr(tip + ".rotateX", 0)
     check(skeleton_is_posed() == [], "returning to bind pose must clear the warning")
     print("OK bind pose detection (posed rig reported, restored rig clean)")
+    test_bind_pose_detection_after_middle_influence_removal()
+
+
+def test_bind_pose_detection_after_middle_influence_removal():
+    """Regression: bindPreMatrix is a SPARSE multi indexed by .matrix[] LOGICAL indices,
+    which do NOT compact when an influence is removed. Removing a TRAILING influence never
+    exposed the bug (the surviving indices stay dense from 0), so this removes a MIDDLE one:
+    a 4-joint rig with B and C removed leaves influences=['A', 'D'] but the correct
+    bindPreMatrix slots are [0, 3], not [0, 1]. skintransfer.finish_for_dayz() and
+    a3obInfluence -ri both remove by name, not by trailing position, so this is the shape a
+    real DayZ rig hits on every transfer."""
+    from a3ob.mayabridge.posetest import skeleton_is_posed
+
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCylinder(name="middleRemoval", r=1, h=6, sx=8, sy=6, ch=False)[0]
+    cmds.select(clear=True)
+    a = cmds.joint(position=(0, -3, 0), name="A")
+    b = cmds.joint(position=(0, -1, 0), name="B")
+    c = cmds.joint(position=(0, 1, 0), name="C")
+    d = cmds.joint(position=(0, 3, 0), name="D")
+    skin = cmds.skinCluster(a, b, c, d, mesh, toSelectedBones=True, maximumInfluences=4)[0]
+
+    cmds.skinCluster(skin, edit=True, removeInfluence=[b, c])
+    check(cmds.skinCluster(skin, query=True, influence=True) == ["A", "D"],
+          "expected A and D to survive the removal")
+
+    posed = skeleton_is_posed()
+    check(posed == [],
+          "a rig that was never moved must read as bind pose after removing a middle "
+          "influence, got %r (mis-indexed bindPreMatrix would report the survivors)" % (posed,))
+    print("OK bind pose detection survives a middle-influence removal")
 
 
 if __name__ == "__main__":
