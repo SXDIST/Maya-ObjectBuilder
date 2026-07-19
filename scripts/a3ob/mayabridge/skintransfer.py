@@ -338,6 +338,17 @@ def finish_for_dayz(skin, mesh_path):
     shape = mesh_path.fullPathName()
     cmds.setAttr(skin + ".maxInfluences", MAX_INFLUENCES)
     cmds.setAttr(skin + ".maintainMaxInfluences", True)
+
+    # Weight is never deleted, only moved: every vertex must sum to 1.0, so zeroing an
+    # influence forces its weight onto the others. "Distance" (Maya's default) picks them
+    # by proximity to the bone and ignores what the surrounding geometry actually uses —
+    # measured on a sleeve whose neighbours are pure Elbow, zeroing Head gave Shoulder 0.76
+    # / Elbow 0.24. "Neighbors" gave Elbow 1.0. That is the difference between a rigger
+    # cleaning weights and a rigger watching head weight land on an arm.
+    try:
+        cmds.setAttr(skin + ".weightDistribution", 1)  # 1 = Neighbors
+    except RuntimeError:  # noqa: BLE001 - locked or connected; not worth failing over
+        pass
     cmds.skinPercent(skin, shape, pruneWeights=MIN_WEIGHT)
     cmds.setAttr(skin + ".normalizeWeights", 1)
     cmds.skinCluster(skin, edit=True, forceNormalizeWeights=True)

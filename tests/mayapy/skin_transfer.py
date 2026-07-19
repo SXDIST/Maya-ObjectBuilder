@@ -241,6 +241,13 @@ def main():
             check(value > MIN_ENCODABLE_WEIGHT,
                   "vertex %d keeps weight %.6f, which encodes to zero in the p3d" % (i, value))
 
+    # 3b. Redistribution must follow the neighbours, not bone proximity. Zeroing an
+    # influence cannot delete weight — it moves it — and "Distance" sends it to whichever
+    # bone is nearest, which is how head weight ends up on a sleeve.
+    check(cmds.getAttr(skin + ".weightDistribution") == 1,
+          "weightDistribution must be Neighbors (1), got %r"
+          % (cmds.getAttr(skin + ".weightDistribution"),))
+
     # 4. The reference body must be untouched.
     body_after = [weights_of(body_skin, body_shape, i)
                   for i in range(cmds.polyEvaluate(body, vertex=True))]
