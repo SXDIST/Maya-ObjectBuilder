@@ -1,22 +1,6 @@
-"""commands helper: geometry."""
-
-"""The ``a3ob*`` Maya commands (OpenMaya 2.0 MPxCommand).
-
-Port of ``src/commands/StubCommands.cpp``. Command names, flags and the resulting
-``a3ob*`` attribute schema are preserved exactly — this is the contract the Python UI
-and the ``tests/mayapy`` workflows depend on.
-
-First-cut note: these commands are functional but not yet wired for undo. The C++
-versions accumulated ``MDGModifier``/``MDagModifier`` operations; here operations are
-applied directly. Undo support can be layered on later without changing the surface.
-"""
-
-import re
+"""Mesh topology helpers: polygon validity checks and closed-face-island detection for a3obFindComponents and a3obValidate."""
 
 import maya.api.OpenMaya as om
-
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 
 from a3ob.mayabridge.commands.helpers.primitives import *  # noqa: F401,F403
 

@@ -1,19 +1,8 @@
-"""commands helper: scene."""
-
-"""The ``a3ob*`` Maya commands (OpenMaya 2.0 MPxCommand).
-
-Port of ``src/commands/StubCommands.cpp``. Command names, flags and the resulting
-``a3ob*`` attribute schema are preserved exactly — this is the contract the Python UI
-and the ``tests/mayapy`` workflows depend on.
-
-First-cut note: these commands are functional but not yet wired for undo. The C++
-versions accumulated ``MDGModifier``/``MDagModifier`` operations; here operations are
-applied directly. Undo support can be layered on later without changing the surface.
-"""
-
-import re
+"""Maya scene-query helpers: LOD/transform selection, DAG traversal, LOD attribute writes, and vertex-count utilities."""
 
 import maya.api.OpenMaya as om
+
+from a3ob.formats.p3d import LodResolution
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
@@ -110,7 +99,6 @@ def same_node(a, b):
 
 
 def set_lod_attributes(transform, lod_type, resolution, modifier=None):
-    from a3ob.formats.p3d import LodResolution
     signature = LodResolution.encode(lod_type, resolution)
     attr.set_bool(transform, A.IS_LOD, True, modifier)
     attr.set_int(transform, A.LOD_TYPE, lod_type, modifier)

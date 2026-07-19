@@ -144,7 +144,7 @@ def set_paint_influence(influence):
     Two routes, because the first is not present in every Maya build: the context's own
     ``-influence`` flag, then the MEL handler the tool's UI itself calls when you click a
     row in its list."""
-    from maya import mel
+    from maya import mel  # intentionally local: only needed on this code path, not in headless mayapy
 
     try:
         context = cmds.currentCtx()

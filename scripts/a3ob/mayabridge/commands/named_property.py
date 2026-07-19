@@ -1,5 +1,3 @@
-import re
-
 import maya.api.OpenMaya as om
 
 from a3ob.mayabridge import attributes as attr

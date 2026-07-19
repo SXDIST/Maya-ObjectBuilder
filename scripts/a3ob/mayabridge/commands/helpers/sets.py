@@ -1,18 +1,6 @@
-"""commands helper: sets."""
+"""ObjectSet creation and manipulation helpers for proxy placeholders, selection sets, and metadata sets."""
 
-"""The ``a3ob*`` Maya commands (OpenMaya 2.0 MPxCommand).
-
-Port of ``src/commands/StubCommands.cpp``. Command names, flags and the resulting
-``a3ob*`` attribute schema are preserved exactly — this is the contract the Python UI
-and the ``tests/mayapy`` workflows depend on.
-
-First-cut note: these commands are functional but not yet wired for undo. The C++
-versions accumulated ``MDGModifier``/``MDagModifier`` operations; here operations are
-applied directly. Undo support can be layered on later without changing the surface.
-"""
-
-import re
-
+import maya.cmds as cmds
 import maya.api.OpenMaya as om
 
 from a3ob.mayabridge import attributes as attr
@@ -75,7 +63,6 @@ def _create_set_from_members(members, name, restriction=None):
     queue, so every set made by a3obSetFlag / a3obFindComponents / proxy selections survived
     Ctrl+Z and piled up in the scene. ``restriction`` is accepted for call-site compatibility
     — no caller has ever passed anything but the default."""
-    import maya.cmds as cmds
     strings = members.getSelectionStrings()
     if not strings:
         return NULL
@@ -207,7 +194,6 @@ def _delete_existing_component_sets(lod, mesh_path):
             to_delete.append(om.MFnDependencyNode(set_obj).name())
         it.next()
     if to_delete:
-        import maya.cmds as cmds
         cmds.delete(to_delete)
 
 
@@ -222,7 +208,6 @@ def _cmds_ensure_attr(node_name, attr_pair, kind):
     cmds.addAttr/setAttr (unlike attr.set_* with no modifier, or an MDagModifier) enter
     Maya's own undo queue, which is what a non-undoable _Base command wrapped in
     undo_chunk() relies on to make attribute writes on a PRE-EXISTING node revertible."""
-    import maya.cmds as cmds
     long_name, short_name = attr_pair
     if cmds.attributeQuery(long_name, node=node_name, exists=True):
         return
@@ -231,19 +216,16 @@ def _cmds_ensure_attr(node_name, attr_pair, kind):
 
 
 def _cmds_set_bool_attr(node_name, attr_pair, value):
-    import maya.cmds as cmds
     _cmds_ensure_attr(node_name, attr_pair, "bool")
     cmds.setAttr(node_name + "." + attr_pair[0], bool(value))
 
 
 def _cmds_set_int_attr(node_name, attr_pair, value):
-    import maya.cmds as cmds
     _cmds_ensure_attr(node_name, attr_pair, "long")
     cmds.setAttr(node_name + "." + attr_pair[0], int(value))
 
 
 def _cmds_set_string_attr(node_name, attr_pair, value):
-    import maya.cmds as cmds
     _cmds_ensure_attr(node_name, attr_pair, "string")
     cmds.setAttr(node_name + "." + attr_pair[0], value or "", type="string")
 
@@ -255,7 +237,6 @@ def update_proxy_selection_set(set_obj, path, index):
     body runs inside one undo_chunk() — every write here therefore has to go through cmds
     (rename + addAttr/setAttr), never attr.set_* / MFnDependencyNode straight on the plug,
     or the rename would undo on Ctrl+Z while the metadata silently stayed changed."""
-    import maya.cmds as cmds
     selection_name = proxy_selection_name(path, index)
     old_name = om.MFnDependencyNode(set_obj).name()
     new_name = cmds.rename(old_name, _sanitized_set_name(selection_name))

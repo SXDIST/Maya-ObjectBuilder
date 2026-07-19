@@ -1,9 +1,5 @@
-import re
-
+import maya.cmds as cmds
 import maya.api.OpenMaya as om
-
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
@@ -35,7 +31,6 @@ class ProxyCommand(_Base):
         return s
 
     def doIt(self, args):
-        import maya.cmds as cmds
         with undo_chunk():
             argdb = om.MArgDatabase(self.syntax(), args)
             proxy_path = argdb.flagArgumentString("-p", 0) if argdb.isFlagSet("-p") else ""

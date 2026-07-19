@@ -1,9 +1,6 @@
-import re
-
 import maya.api.OpenMaya as om
 
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
+from a3ob.formats.p3d import LodResolution
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
@@ -24,8 +21,6 @@ class CreateLODCommand(_UndoableBase):
         return s
 
     def doIt(self, args):
-        import maya.cmds as cmds
-        from a3ob.formats.p3d import LodResolution
         argdb = om.MArgDatabase(self.syntax(), args)
         lod_type = argdb.flagArgumentInt("-lt", 0) if argdb.isFlagSet("-lt") else 0
         resolution = argdb.flagArgumentInt("-r", 0) if argdb.isFlagSet("-r") else 0

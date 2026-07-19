@@ -1,9 +1,5 @@
-import re
-
+import maya.cmds as cmds
 import maya.api.OpenMaya as om
-
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
@@ -25,7 +21,6 @@ class SetMaterialCommand(_Base):
     def doIt(self, args):
         # One Ctrl+Z must undo the whole command, not each cmds call inside it.
         with undo_chunk():
-            import maya.cmds as cmds
             argdb = om.MArgDatabase(self.syntax(), args)
             texture = argdb.flagArgumentString("-t", 0) if argdb.isFlagSet("-t") else ""
             material = argdb.flagArgumentString("-m", 0) if argdb.isFlagSet("-m") else ""

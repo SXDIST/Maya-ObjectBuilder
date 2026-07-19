@@ -1,9 +1,4 @@
-import re
-
 import maya.api.OpenMaya as om
-
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
