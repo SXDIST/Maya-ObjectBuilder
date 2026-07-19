@@ -11,7 +11,11 @@ from a3ob.ui.scene.attrs import *  # noqa: F401,F403
 def _mesh_shapes_from_selection():
     shapes = []
     seen = set()
-    for item in cmds.ls(selection=True, flatten=True, long=True) or []:
+    # NOT flatten=True: it expands "shape.vtx[0:5953]" into 5954 separate strings and this
+    # loop then hits Maya once per vertex — 743 ms for one whole-mesh selection, on every
+    # dock refresh. Unflattened, the same selection is a single entry (0.7 ms) and the
+    # ".split()" below resolves it to exactly the same shapes.
+    for item in cmds.ls(selection=True, long=True) or []:
         node = item.split(".", 1)[0]
         if not cmds.objExists(node):
             continue

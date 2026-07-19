@@ -31,6 +31,12 @@ DOCK_NAME = "MayaObjectBuilderWorkspaceControl"
 _ui_script_jobs = {}  # event_name -> scriptJob id
 
 
+_context_refresh_timer = None  # debounce for SelectionChanged
+
+
+_last_context_key = None  # LOD the dock was last rebuilt for
+
+
 _qt_dock_widget = None
 
 
@@ -119,6 +125,53 @@ def _run_validation(selection_only):
         cmds.undoInfo(stateWithoutFlush=False)
 
 
+def _run_skin_weights():
+    """Select skin-weight outlier vertices; returns how many were found."""
+    load_plugin()
+    result = cmds.a3obSkinWeights()
+    # MPxCommand.setResult comes back as a 1-element list under mayapy.
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
+def _transfer_skin(distance):
+    """Copy DayZ weights from the reference body onto the selected garments."""
+    load_plugin()
+    result = cmds.a3obTransferSkin(distance=distance)
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
+def _test_pose():
+    """Bend the rig and select vertices that deform unlike their neighbours."""
+    load_plugin()
+    result = cmds.a3obTestPose()
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
+def _bake_skin_weights():
+    """Copy live skin weights onto the LOD transforms so they outlive the skeleton."""
+    load_plugin()
+    result = cmds.a3obBakeSkin()
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
+def _add_reference_asset(kind):
+    load_plugin()
+    cmds.a3obReference(kind=kind)
+
+
+def _save_reference_asset(kind):
+    load_plugin()
+    cmds.a3obReference(kind=kind, store="1")
+
+
 def import_model_cfg(path=None):
     load_plugin()
     selected_path = path
@@ -183,10 +236,30 @@ def _active_qt_dock():
     return _qt_dock_widget
 
 
-def _refresh_context_ui():
+def _context_key():
+    """What the dock actually shows: the selected LOD transform.
+
+    Every panel below is rebuilt from this one node, so picking components *inside* a LOD
+    cannot change any of them."""
+    # Imported lazily: a3ob.ui.scene has no Qt/dock deps, but entry is imported very early.
+    from a3ob.ui.scene.lods import _selected_lod_transform
+    try:
+        return _selected_lod_transform() or ""
+    except Exception:  # noqa: BLE001 - a refresh must never break selection
+        return ""
+
+
+def _refresh_context_ui(force=True):
+    """Rebuild the dock panels. ``force=False`` skips the work when the shown LOD has not
+    changed — this is what makes component selection cheap (see _schedule_context_refresh)."""
+    global _last_context_key
     dock = _active_qt_dock()
     if dock is None:
         return
+    key = _context_key()
+    if not force and key == _last_context_key:
+        return
+    _last_context_key = key
     dock.refresh_lod_list()
     dock.refresh_lod_assignment()
     dock.refresh_named_properties()
@@ -195,14 +268,41 @@ def _refresh_context_ui():
     dock.refresh_mass_summary()
 
 
+def _schedule_context_refresh():
+    """Coalesce SelectionChanged into one deferred refresh.
+
+    Maya fires SelectionChanged for every step of a marquee drag, and a full rebuild scans
+    every objectSet in the scene — so reacting per event made component selection on a dense
+    mesh crawl. Debounce, then let the ``force=False`` key check drop it entirely when the
+    LOD did not change (the usual case while picking verts)."""
+    global _context_refresh_timer
+    if not QT_AVAILABLE or qt_core is None:
+        _refresh_context_ui(False)
+        return
+    if _context_refresh_timer is None:
+        _context_refresh_timer = qt_core.QTimer()
+        _context_refresh_timer.setSingleShot(True)
+        _context_refresh_timer.setInterval(150)
+        _context_refresh_timer.timeout.connect(lambda: _refresh_context_ui(False))
+    _context_refresh_timer.start()
+
+
 def _install_context_refresh_job(parent):
     global _ui_script_jobs
     _ui_script_jobs = {ev: jid for ev, jid in _ui_script_jobs.items()
                        if cmds.scriptJob(exists=jid)}
-    for event in ("SelectionChanged", "Undo", "Redo", "SceneOpened", "NewSceneOpened"):
+    # Selection is debounced and key-checked; the rest change data outright, so they force.
+    handlers = {
+        "SelectionChanged": _schedule_context_refresh,
+        "Undo": _refresh_context_ui,
+        "Redo": _refresh_context_ui,
+        "SceneOpened": _refresh_context_ui,
+        "NewSceneOpened": _refresh_context_ui,
+    }
+    for event, handler in handlers.items():
         if event in _ui_script_jobs:
             continue
-        job = cmds.scriptJob(event=[event, _refresh_context_ui], parent=parent, protected=True)
+        job = cmds.scriptJob(event=[event, handler], parent=parent, protected=True)
         _ui_script_jobs[event] = job
 
 
@@ -237,9 +337,11 @@ def _delete_qt_dock():
     global _qt_dock_widget
     widget = _active_qt_dock()
     if widget is not None:
-        timer = getattr(widget, "_poll_timer", None)
-        if timer is not None:
-            timer.stop()  # stop the auto-refresh poll before teardown (avoids exit-time crashes)
+        # Remove the Maya callbacks BEFORE the widget dies. One that outlives it would fire
+        # into freed Python objects — this is the exit-time crash class.
+        teardown = getattr(widget, "teardown", None)
+        if callable(teardown):
+            teardown()
         widget.setParent(None)
         widget.deleteLater()
     _qt_dock_widget = None
@@ -337,6 +439,12 @@ __all__ = [
     "_validate_scene_no_flush",
     "_validate_selection_no_flush",
     "_run_validation",
+    "_run_skin_weights",
+    "_transfer_skin",
+    "_test_pose",
+    "_bake_skin_weights",
+    "_add_reference_asset",
+    "_save_reference_asset",
     "import_model_cfg",
     "export_model_cfg",
     "_prompt",

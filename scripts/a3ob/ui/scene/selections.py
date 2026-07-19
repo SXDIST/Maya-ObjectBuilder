@@ -29,12 +29,26 @@ def _hide_object_builder_set(node):
         cmds.setAttr(f"{node}.hiddenInOutliner", True)
 
 
+def _object_builder_sets():
+    """Every a3ob objectSet, found through Maya's own attribute filter.
+
+    Listing all objectSets and probing each with attributeQuery cost 10-20 ms per dock
+    refresh; three attribute queries answered by Maya cost well under a millisecond."""
+    found = []
+    seen = set()
+    for attribute in ("a3obSelectionName", "a3obIsProxySelection", "a3obFlagComponent"):
+        for node in cmds.ls("*." + attribute, objectsOnly=True) or []:
+            if node not in seen and cmds.objectType(node, isType="objectSet"):
+                seen.add(node)
+                found.append(node)
+    return found
+
+
 def _normalize_object_builder_sets():
     cmds.undoInfo(stateWithoutFlush=False)
     try:
-        for node in cmds.ls(type="objectSet") or []:
-            if _is_object_builder_set(node):
-                _hide_object_builder_set(node)
+        for node in _object_builder_sets():
+            _hide_object_builder_set(node)
     finally:
         cmds.undoInfo(stateWithoutFlush=True)
 
@@ -42,8 +56,8 @@ def _normalize_object_builder_sets():
 def _selection_sets():
     _normalize_object_builder_sets()
     sets = []
-    for node in cmds.ls(type="objectSet") or []:
-        if not _is_object_builder_set(node) or not _attr_exists(node, "a3obSelectionName"):
+    for node in _object_builder_sets():
+        if not _attr_exists(node, "a3obSelectionName"):
             continue
         name = _safe_get_attr(node, "a3obSelectionName", "") or ""
         is_proxy = bool(_safe_get_attr(node, "a3obIsProxySelection", False))

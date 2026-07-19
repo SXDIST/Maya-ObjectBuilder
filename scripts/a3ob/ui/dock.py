@@ -9,6 +9,7 @@ from a3ob.ui.scene_ops import *  # noqa: F401,F403
 from a3ob.ui.actions import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.recent import recent_paths, remember_path
+from a3ob.ui.watch import SceneWatcher, ALL_PANELS
 
 from a3ob.ui.panels.lod_list import LodListPanelMixin
 from a3ob.ui.panels.lod import LodPanelMixin
@@ -17,9 +18,10 @@ from a3ob.ui.panels.named_properties import NamedPropertiesPanelMixin
 from a3ob.ui.panels.materials import MaterialsPanelMixin
 from a3ob.ui.panels.selections import SelectionsPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
+from a3ob.ui.panels.skinning import SkinningPanelMixin
 
 
-class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
@@ -70,14 +72,20 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.selection_mesh_context = None
         self._live_sections = {}   # panel title -> _CollapsibleSection (for auto-refresh)
         self._poll_snaps = {}      # panel title -> last scene snapshot
+        self._poll_lod = None      # selected LOD, resolved once per refresh
+        self._watched_lod = None   # LOD the per-node callbacks are currently pointed at
         self._build_ui()
         self.refresh_lod_assignment()
-        # Diff-based auto-refresh: keeps open live panels current after scene changes
-        # (e.g. reassigning a material) that don't fire a SelectionChanged event.
-        self._poll_timer = qt_core.QTimer(self)
-        self._poll_timer.setInterval(500)
-        self._poll_timer.timeout.connect(self._poll_live_panels)
-        self._poll_timer.start()
+        # Event-driven, not polled: Maya callbacks mark panels dirty and this timer only
+        # debounces the burst (a single scene edit can fire many callbacks). While nothing
+        # changes it never runs, so an idle dock costs nothing.
+        self._dirty_panels = set()
+        self._refresh_timer = qt_core.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(120)
+        self._refresh_timer.timeout.connect(self._refresh_dirty_panels)
+        self._watcher = SceneWatcher(self._on_scene_changed)
+        self._watcher.start()
 
 
     def _build_ui(self):
@@ -104,6 +112,7 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Proxies", self._build_proxies_section(), True, None),
             ("Memory Points", self._build_memory_points_section(), True, None),
+            ("Skinning", self._build_skinning_tab(), True, None),
             ("Validation", self._build_validation_tab(), True, None),
         ]
         self.memory_points_group = None
@@ -123,23 +132,7 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
 
-    # ---- diff-based auto-refresh of open live panels -------------------------------
-
-    def _poll_live_panels(self):
-        """Cheap timer tick: refresh an open live panel only when its scene snapshot changed."""
-        # Bail out if the C++ widget is gone (dock deleted / Maya shutting down) — polling a
-        # dead object or a torn-down scene is what produced the exit-time crash.
-        if qt_is_valid is not None and not qt_is_valid(self):
-            return
-        try:
-            self._poll_panel("LODs", self._lods_snapshot, self.refresh_lod_list)
-            self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
-                             defer=self._material_fields_focused())
-            self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
-            self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
-                             defer=self._named_fields_focused())
-        except Exception:
-            pass  # transient scene state during undo/scene-open/teardown — retry next tick
+    # ---- event-driven refresh of open live panels ----------------------------------
 
     def _poll_panel(self, title, snapshot_fn, refresh_fn, defer=False):
         section = self._live_sections.get(title)
@@ -168,21 +161,22 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         return False
 
     def _lods_snapshot(self):
-        lod = _selected_lod_transform()
+        lod = self._poll_lod
         active = _lod_name_from_transform(lod) if lod else None
-        return (active, tuple((r["node"], r["tris"], r["selections"]) for r in lod_overview()))
+        # Geometry fingerprint instead of lod_overview(): the latter re-triangulates every
+        # LOD mesh (19 ms) merely to decide whether anything changed. See lod_geometry_key().
+        return (active, lod_geometry_key())
 
     def _materials_snapshot(self):
         return tuple((i["shading_groups"][0], i["material_node"], i["texture"], i["material"])
                      for i in _material_nodes_for_selection())
 
     def _selections_snapshot(self):
-        lod = _selected_lod_transform()
+        lod = self._poll_lod
         label = _lod_name_from_transform(lod) if lod else None
         rows = []
-        for node in cmds.ls(type="objectSet") or []:
-            if not _attr_exists(node, "a3obSelectionName"):
-                continue
+        # Maya's own attribute filter, not "list every objectSet then probe each one".
+        for node in cmds.ls("*.a3obSelectionName", objectsOnly=True) or []:
             rows.append((node,
                          _safe_get_attr(node, "a3obSelectionName", "") or "",
                          bool(_safe_get_attr(node, "a3obIsProxySelection", False)),
@@ -195,17 +189,59 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         return _safe_get_attr(lod, "a3obProperties", "") if lod else ""
 
     def showEvent(self, event):
-        # Only poll while the dock is actually on screen; also restarts after a hide.
-        if getattr(self, "_poll_timer", None) is not None and not self._poll_timer.isActive():
-            self._poll_timer.start()
+        # Coming back on screen: the scene may have moved on while we were hidden.
+        self._on_scene_changed(ALL_PANELS)
         super().showEvent(event)
 
     def hideEvent(self, event):
-        # Stop polling when the dock is hidden (tab switched, closed, Maya exiting) so a
-        # stray tick never touches a torn-down scene.
-        if getattr(self, "_poll_timer", None) is not None:
-            self._poll_timer.stop()
+        # Drop any pending refresh so a stray tick never touches a torn-down scene.
+        if getattr(self, "_refresh_timer", None) is not None:
+            self._refresh_timer.stop()
         super().hideEvent(event)
+
+    def teardown(self):
+        """Remove the Maya callbacks. MUST run before the dock dies — a callback that
+        outlives it fires into freed Python objects and crashes Maya."""
+        if getattr(self, "_refresh_timer", None) is not None:
+            self._refresh_timer.stop()
+        watcher = getattr(self, "_watcher", None)
+        if watcher is not None:
+            watcher.stop()
+            self._watcher = None
+
+    def _on_scene_changed(self, hints):
+        """Callback sink: remember what to rebuild and (re)arm the debounce."""
+        self._dirty_panels.update(hints)
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _refresh_dirty_panels(self):
+        if qt_is_valid is not None and not qt_is_valid(self):
+            return
+        panels = self._dirty_panels
+        self._dirty_panels = set()
+        self._poll_lod = _selected_lod_transform()
+        self._watcher_retarget(self._poll_lod)
+        try:
+            if "LODs" in panels:
+                self._poll_panel("LODs", self._lods_snapshot, self.refresh_lod_list)
+            if "Materials" in panels:
+                self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
+                                 defer=self._material_fields_focused())
+            if "Selections" in panels:
+                self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
+            if "Named Properties" in panels:
+                self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
+                                 defer=self._named_fields_focused())
+        except Exception:
+            pass  # transient scene state during undo/scene-open/teardown — retry next event
+
+    def _watcher_retarget(self, lod_name):
+        watcher = getattr(self, "_watcher", None)
+        if watcher is not None and lod_name != getattr(self, "_watched_lod", None):
+            self._watched_lod = lod_name
+            watcher.retarget(lod_name)
 
     def _build_quick_actions(self):
         group = qt_widgets.QGroupBox("Quick Actions")
