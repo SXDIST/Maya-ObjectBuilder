@@ -166,24 +166,38 @@ class _Decimator:
     def snapshot(self):
         """The surviving geometry, renumbered.
 
-        Only vertices that a surviving face actually references are emitted. ``alive_v``
-        is NOT the same thing: a vertex stays alive when the last face around it collapses
-        into a degenerate one and gets dropped, which happens to a whole small shell (a
-        pouch, a patch, a buckle) long before the overall face target is reached. Emitting
-        such a vertex produces a point belonging to no face — it has no normal, and
-        ``polyNormalPerVertex`` segfaults Maya outright when it walks onto one. Measured
-        on a real DayZ garment: 5 orphans at ratio 0.25, 62 at 0.0625, and a dead session."""
+        The surviving faces are the single source of truth for which vertices exist: the
+        emitted set is exactly the set they reference, so the two sides cannot disagree.
+        That symmetry is the point, and it is enforced by construction rather than
+        checked, because BOTH ways of breaking it are bugs with teeth:
+
+        * Emitting a vertex no face references produces a point with no normal, and
+          ``polyNormalPerVertex`` segfaults Maya outright when it walks onto one —
+          measured on a real DayZ garment: 5 such points at ratio 0.25, 62 at 0.0625,
+          and a dead session.
+        * Emitting a face whose vertex was dropped is a dangling index into ``o2n``.
+
+        Note ``alive_v`` is deliberately NOT consulted here, in either direction. It
+        over-reports: a vertex stays alive after the last face around it collapses into a
+        degenerate one and is dropped, which happens to a whole small shell (a pouch, a
+        patch, a buckle) long before the overall face target is reached — so filtering on
+        ``used`` alone is what removes those. It never under-reports (a live face can
+        never reference a dead vertex: ``run_to`` only clears ``alive_v[b]`` after
+        remapping every face in ``vfaces[b]``, and a face is only ever dropped from a
+        ``vfaces`` entry once it is already dead), so intersecting with it would be a
+        no-op that merely made the two loops disagree about their input."""
+        # f[:3], not f: the face loop below emits three corners, so collecting more than
+        # three here would count a vertex as used that nothing ends up referencing.
         used = set()
         for fi, f in enumerate(self.F):
             if self.alive_f[fi]:
-                used.update(f)
+                used.update(f[:3])
 
         o2n = {}
         NV = []
-        for i in range(self.n):
-            if self.alive_v[i] and i in used:
-                o2n[i] = len(NV)
-                NV.append(self.V[i])
+        for i in sorted(used):
+            o2n[i] = len(NV)
+            NV.append(self.V[i])
 
         NF = []
         orig = []  # original face slot of each surviving face (for per-face material carry)
