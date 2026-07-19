@@ -1,18 +1,10 @@
-"""Shared action helpers."""
+"""Shared action helpers.
 
-import contextlib
+The undo context managers live in :mod:`a3ob.ui._undo` (a leaf ``entry`` can also
+import) and are re-exported here so the existing
+``from a3ob.ui.actions._common import _undo_chunk`` call sites keep working.
+"""
 
-import maya.cmds as cmds
+from a3ob.ui._undo import _undo_chunk, _undo_suspended
 
-
-@contextlib.contextmanager
-def _undo_chunk(name):
-    """Group Maya operations into a single named undo chunk."""
-    cmds.undoInfo(openChunk=True, chunkName=name)
-    try:
-        yield
-    finally:
-        cmds.undoInfo(closeChunk=True)
-
-
-__all__ = ["_undo_chunk"]
+__all__ = ["_undo_chunk", "_undo_suspended"]
