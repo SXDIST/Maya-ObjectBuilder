@@ -45,7 +45,13 @@ class MaterialsPanelMixin:
 
         self.material_list = qt_widgets.QListWidget()
         self.material_list.currentItemChanged.connect(lambda *_: self.select_material_metadata())
+        self.material_list.itemDoubleClicked.connect(lambda *_: self.run_select_material_faces())
         layout.addWidget(self.material_list, 1)
+
+        layout.addWidget(_qt_button(
+            "Select Faces", self.run_select_material_faces,
+            "Select the faces this material is assigned to, on the mesh(es) listed above "
+            "(double-clicking a row does the same).", ":/aselect.png"))
 
         form = qt_widgets.QFormLayout()
         self.material_texture = self._path_picker("Texture", "Select texture path", 1, "Texture (*.paa)", recent_key="texture")
@@ -63,6 +69,13 @@ class MaterialsPanelMixin:
 
         self.refresh_material_metadata()
         return widget
+
+
+    def run_select_material_faces(self):
+        count = select_faces_with_material()
+        if count:
+            cmds.inViewMessage(assistMessage="Selected %d face(s)" % count,
+                               position="midCenter", fade=True)
 
 
     def _on_paa_alpha_toggled(self, checked):

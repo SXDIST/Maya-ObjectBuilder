@@ -49,8 +49,29 @@ def _persist_selected_material_metadata():
     return item
 
 
+def select_faces_with_material():
+    """Select the faces the highlighted material is assigned to. Returns how many.
+
+    The scope is read BEFORE selecting: this replaces the selection, and the panel rebuilds
+    from whatever is selected, so computing the shapes afterwards would scope the result to
+    its own output."""
+    item = _selected_material_metadata_item()
+    if not item:
+        cmds.warning("Pick a material in the list first")
+        return 0
+    shapes = _mesh_shapes_from_selection()
+    faces = faces_with_material(item["shading_groups"], shapes)
+    if not faces:
+        cmds.warning("%s is not assigned to any face of the selected mesh(es)"
+                     % (item["material_node"] or "This material"))
+        return 0
+    cmds.select(faces, replace=True)
+    return len(cmds.ls(faces, flatten=True) or [])
+
+
 __all__ = [
     "_refresh_material_metadata",
     "_selected_material_metadata_item",
     "_persist_selected_material_metadata",
+    "select_faces_with_material",
 ]
