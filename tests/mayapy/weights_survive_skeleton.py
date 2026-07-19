@@ -107,7 +107,43 @@ def main():
     print("OK weights survive skeleton deletion (%s)"
           % ", ".join("%s=%d" % (b, n) for b, n in sorted(without_rig.items())))
     test_bind_pose_detection()
+    test_import_stores_weights_on_mesh()
     return 0
+
+
+def test_import_stores_weights_on_mesh():
+    """A .p3d imported without a skeleton must keep its weights as mesh data."""
+    from a3ob.formats.binary import BinaryReader
+    from a3ob.formats.p3d import MLOD
+    from a3ob.mayabridge.import_.importer import MayaMeshImport
+    from a3ob.mayabridge.skinweights import parse_bake_string
+
+    fixture = (_REPO / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d"
+               / "sample_1_character.p3d")
+    if not fixture.is_file():
+        print("SKIP import weight storage: fixture missing")
+        return
+
+    with BinaryReader(str(fixture)) as reader:
+        mlod = MLOD.read(reader)
+    expected = {tagg.name for lod in mlod.lods for tagg in lod.taggs
+                if isinstance(tagg.name, str) and not tagg.name.startswith("#")
+                and tagg.data is not None and tagg.data.kind == "Selection"}
+
+    cmds.file(new=True, force=True)
+    MayaMeshImport().import_mlod(mlod, str(fixture))
+
+    stored_bones = set()
+    for lod in cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []:
+        if not cmds.attributeQuery("a3obBakedWeights", node=lod, exists=True):
+            continue
+        text = cmds.getAttr(lod + ".a3obBakedWeights") or ""
+        stored_bones.update(name for name, _pairs in parse_bake_string(text))
+
+    check(stored_bones, "import must store weights on the LOD transforms")
+    check(stored_bones <= expected,
+          "stored bones must all come from the file: %r" % sorted(stored_bones - expected))
+    print("OK import stores %d bone selection(s) as mesh data" % len(stored_bones))
 
 
 def test_bind_pose_detection():
