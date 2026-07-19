@@ -164,19 +164,35 @@ class _Decimator:
                 self._push(a, vv)
 
     def snapshot(self):
+        """The surviving geometry, renumbered.
+
+        Only vertices that a surviving face actually references are emitted. ``alive_v``
+        is NOT the same thing: a vertex stays alive when the last face around it collapses
+        into a degenerate one and gets dropped, which happens to a whole small shell (a
+        pouch, a patch, a buckle) long before the overall face target is reached. Emitting
+        such a vertex produces a point belonging to no face — it has no normal, and
+        ``polyNormalPerVertex`` segfaults Maya outright when it walks onto one. Measured
+        on a real DayZ garment: 5 orphans at ratio 0.25, 62 at 0.0625, and a dead session."""
+        used = set()
+        for fi, f in enumerate(self.F):
+            if self.alive_f[fi]:
+                used.update(f)
+
         o2n = {}
         NV = []
         for i in range(self.n):
-            if self.alive_v[i]:
+            if self.alive_v[i] and i in used:
                 o2n[i] = len(NV)
                 NV.append(self.V[i])
+
         NF = []
         orig = []  # original face slot of each surviving face (for per-face material carry)
         for fi, f in enumerate(self.F):
             if self.alive_f[fi]:
                 NF.append([o2n[f[0]], o2n[f[1]], o2n[f[2]]])
                 orig.append(fi)
-        return np.array(NV), NF, orig
+        # An empty result must keep the (0, 3) shape callers index into.
+        return (np.array(NV) if NV else np.zeros((0, 3))), NF, orig
 
 
 def decimate(V, F, target_faces, preserve_boundary=True):

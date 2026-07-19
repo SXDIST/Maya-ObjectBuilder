@@ -357,11 +357,56 @@ def _quadrangulate(transform):
         cmds.warning("Auto LOD quadrangulate failed on {0}: {1}".format(transform, exc))
 
 
+def _has_locked_normals(transform):
+    """True as soon as one locked (user) normal is found.
+
+    Early exit makes the expensive case the harmless one: a mesh that IS locked answers
+    on its first normal, while a freshly built one costs a scan of a few thousand."""
+    import maya.api.OpenMaya as om
+
+    shapes = cmds.listRelatives(transform, shapes=True, fullPath=True,
+                                noIntermediate=True, type="mesh") or []
+    if not shapes:
+        return False
+    selection = om.MSelectionList()
+    selection.add(shapes[0])
+    mesh_fn = om.MFnMesh(selection.getDagPath(0))
+    for index in range(mesh_fn.numNormals):
+        try:
+            if mesh_fn.isNormalLocked(index):
+                return True
+        except Exception:  # noqa: BLE001 - index out of range on a malformed mesh
+            return False
+    return False
+
+
 def _apply_weighted_normals(transform):
+    """Soften edges by angle on meshes whose normals we are free to compute.
+
+    A mesh carrying LOCKED (user) normals is left completely alone. Those normals are
+    authored data — on a mesh imported from a .p3d they are what carries the smoothing,
+    with nearly every edge flagged hard underneath. Measured on the real garment:
+    unlocking the full-resolution LOD and softening by angle gave 500 soft edges against
+    19861 hard ones, i.e. a faceted model. The previous code was worse still — its first
+    step, `polySetToFaceNormal -setUserNormal`, overwrote those authored normals with flat
+    face normals outright.
+
+    The old third step, `polyNormalPerVertex -freezeNormal false`, did two things: nothing,
+    and crash. Nothing, because freezeNormal=False is not an unfreeze — measured on a
+    locked sphere, 1560 normals locked before the call and 1560 after (only
+    `-unFreezeNormal true` clears them). And crash, because that command SEGFAULTS Maya —
+    no exception, the session simply dies — when it walks a decimated mesh with nonmanifold
+    topology or lamina faces, which is exactly what QEM yields from an already-nonmanifold
+    garment (27 nonmanifold edges in, 79 out). Cleaning first does not reliably help: the
+    cleanup itself leaves nonmanifold vertices behind.
+
+    A QEM mesh is built from scratch by MFnMesh.create() and has no locked normals, so
+    `polySoftEdge` alone does the whole job there — and does it properly (3412 soft against
+    1468 hard on the same model, where the old pass locked everything to face normals)."""
     try:
-        cmds.polySetToFaceNormal(transform, setUserNormal=True)
+        if _has_locked_normals(transform):
+            return  # authored normals — not ours to recompute
         cmds.polySoftEdge(transform, angle=60, constructionHistory=False)
-        cmds.polyNormalPerVertex(transform, freezeNormal=False)
     except RuntimeError as exc:
         cmds.warning("Auto LOD normal pass failed on {0}: {1}".format(transform, exc))
 
