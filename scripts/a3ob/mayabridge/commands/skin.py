@@ -181,11 +181,18 @@ class TransferSkinCommand(_Base):
             return
 
         try:
-            reference = skintransfer.find_reference(targets, explicit)
+            reference, imported = skintransfer.ensure_reference(targets, explicit)
         except ValueError as error:
             om.MGlobal.displayError("a3obTransferSkin: %s" % error)
             self.setResult(0)
             return
+
+        if imported:
+            # The scene just gained a body and a skeleton; say so rather than letting the
+            # user wonder where they came from.
+            om.MGlobal.displayInfo(
+                "a3obTransferSkin: no body in the scene — added the saved reference "
+                "(%d top-level node(s)); it stays, the rig needs its joints" % len(imported))
 
         reference_key = reference.fullPathName()
         done = 0

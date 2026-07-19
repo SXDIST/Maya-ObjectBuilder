@@ -94,6 +94,35 @@ def find_reference(targets, explicit=""):
     return best
 
 
+def ensure_reference(targets, explicit="", kind="male_body"):
+    """The reference mesh to copy from, importing the saved asset if the scene has none.
+
+    Returns ``(mesh_path, imported_nodes)``. A reference already present is used as-is
+    and never touched, in which case ``imported_nodes`` is empty.
+
+    What is imported STAYS in the scene, body and skeleton both. Removing it again is
+    tempting — the scene would stay pristine — but the saved asset carries its own
+    skeleton, the garment gets bound to exactly those joints, and deleting them takes
+    the skinCluster (and therefore every transferred weight) with it. Keeping them is
+    also what a rigger needs: editing weights, painting them and ``a3obTestPose`` all
+    require the joints to be there. The convenience delivered here is not having to add
+    the body by hand, not a scene that cleans itself up."""
+    from a3ob.mayabridge import references
+
+    try:
+        return find_reference(targets, explicit), []
+    except ValueError:
+        pass  # nothing suitable in the scene — add the saved asset below
+
+    if not references.reference_path(kind):
+        raise ValueError(
+            "no skinned reference in the scene and no %s reference saved — add the body, or "
+            "save one with a3obReference" % references.KINDS[kind][1])
+
+    imported = references.add_reference(kind)
+    return find_reference(targets, explicit), imported
+
+
 def _bounding_box(mesh_path):
     """World-space bounds of the MESH ONLY.
 
@@ -346,6 +375,7 @@ __all__ = [
     "skin_cluster_of",
     "selected_mesh_shapes",
     "find_reference",
+    "ensure_reference",
     "check_alignment",
     "bind_to_reference",
     "transfer_weights",

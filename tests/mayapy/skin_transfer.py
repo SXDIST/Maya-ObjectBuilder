@@ -71,6 +71,62 @@ def build_scene():
     return body, body_skin, garment
 
 
+def test_reference_added_from_file():
+    """The body need not be in the scene: the saved reference is imported and used.
+
+    What it brings STAYS. The asset carries its own skeleton, the garment binds to
+    exactly those joints, and removing them again would delete the skinCluster and
+    every weight just transferred."""
+    import tempfile
+
+    from a3ob.mayabridge import references, skintransfer
+
+    body, _body_skin, garment = build_scene()
+
+    # Save to a throwaway path and restore the optionVar afterwards: the real reference
+    # asset is the user's own DayZ body and must not be overwritten by a test run.
+    option_var = references.KINDS["male_body"][0]
+    had_var = cmds.optionVar(exists=option_var)
+    previous = cmds.optionVar(query=option_var) if had_var else ""
+    scratch = os.path.join(tempfile.mkdtemp(prefix="ref-"), "body.ma")
+
+    try:
+        cmds.select(body, replace=True)
+        references.save_reference("male_body", scratch)
+        cmds.delete(body)
+        cmds.delete(cmds.ls(type="joint") or [])
+        check(not cmds.objExists(body), "the body must be gone from the scene")
+        check(not cmds.ls(type="joint"), "the skeleton must be gone from the scene")
+
+        cmds.select(garment, replace=True)
+        targets = skintransfer.selected_mesh_shapes()
+        reference, imported = skintransfer.ensure_reference(targets)
+        check(reference is not None, "a reference must be produced from the saved file")
+        check(imported, "the saved asset must have been imported, got %r" % (imported,))
+
+        count, _rigid = skintransfer.transfer_to_target(targets[0], reference)
+        check(count > 0, "transfer must run against the imported reference")
+
+        # The point of keeping the import: the rig is still there to edit and to export.
+        skin = skintransfer.skin_cluster_of(targets[0])
+        check(skin, "the garment must still carry the transferred skinCluster")
+        check(cmds.ls(type="joint"), "the imported skeleton must remain — the rig needs it")
+        influences = cmds.skinCluster(skin, query=True, influence=True) or []
+        check(influences, "the transferred skinCluster must keep its influences")
+
+        # A second call must reuse what is now in the scene rather than import again.
+        _again, imported_again = skintransfer.ensure_reference(targets)
+        check(not imported_again,
+              "a reference already in the scene must be reused, imported %r" % (imported_again,))
+    finally:
+        if had_var:
+            cmds.optionVar(stringValue=(option_var, previous))
+        else:
+            cmds.optionVar(remove=option_var)
+
+    print("OK reference added from file, rig kept, reused on the next call")
+
+
 def main():
     cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
     cmds.undoInfo(state=True, infinity=True)
@@ -147,6 +203,8 @@ def main():
 
     print("OK skin transfer: %d verts, %d rigid shell(s), DayZ rules satisfied, body untouched"
           % (count, rigidified))
+
+    test_reference_added_from_file()
     return 0
 
 
