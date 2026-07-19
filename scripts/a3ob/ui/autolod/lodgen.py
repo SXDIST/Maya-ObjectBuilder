@@ -64,13 +64,18 @@ def _generate_resolution_lods(source, settings, visuals):
 
 
 def _generate_geometry_lod(source, settings, geometries):
+    # No named properties. `1.000e+13` is the Geometry LOD's RESOLUTION SIGNATURE — the
+    # float in the LOD's resolution field that encodes its type, written by _mark_lod. The
+    # Blender add-on this was ported from mentions the string once, as a key in its
+    # signature -> LOD type table; it is not a property, and porting it into one put a junk
+    # "lod" row in Object Builder's Named Properties on every generated Geometry LOD. Same
+    # mistake as the autocenter=0 artifact above.
     if settings["geometry_type"] == "NONE":
         node = cmds.group(empty=True, name=settings["geometry_name"])
         _mark_lod(node, 6, 0)
-        _set_named_properties(node, (("lod", "1.000e+13"),))
         _parent(node, geometries)
         return node
-    return _create_bbox_lod(source, settings["geometry_name"], 6, geometries, (("lod", "1.000e+13"),), True)
+    return _create_bbox_lod(source, settings["geometry_name"], 6, geometries, (), True)
 
 
 def _generate_view_geometry_lod(source, settings, geometries):
