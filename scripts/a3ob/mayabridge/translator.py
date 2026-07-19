@@ -8,6 +8,7 @@ that calls :func:`do_read` / :func:`do_write` here; all real work stays in API 2
 """
 
 import maya.api.OpenMaya as om
+import maya.cmds as cmds
 
 from ..formats.p3d import MLOD
 from .mesh_import import MayaMeshImport
@@ -56,13 +57,15 @@ def do_read(expanded_full_name, raw_name, options_string):
     if option_enabled(options, "validateMeshes", False):
         om.MGlobal.executeCommand("a3obValidate")
     # Decode/assign .paa colour textures AFTER the import finishes — Maya's File > Import DG
-    # context blocks creating and connecting the file texture node inline.
-    try:
-        import maya.cmds as cmds
-        cmds.evalDeferred("import a3ob.mayabridge.paatex as _pt; _pt.assign_pending_textures()", lowestPriority=True)
-    except Exception:
-        pass
+    # context blocks creating and connecting the file texture node inline. The geometry is
+    # already imported, so surface a scheduling failure loudly (mirror exporter.py) rather
+    # than let the "Imported ... LOD count" info line print regardless.
     om.MGlobal.displayInfo("Imported P3D MLOD LOD count: %d" % len(created))
+    try:
+        cmds.evalDeferred("import a3ob.mayabridge.paatex as _pt; _pt.assign_pending_textures()", lowestPriority=True)
+    except Exception as error:  # noqa: BLE001 - mirror C++ catch-all
+        om.MGlobal.displayError("P3D texture assignment scheduling failed: %s" % error)
+        return False
 
 
 def do_write(expanded_full_name, options_string, export_active):

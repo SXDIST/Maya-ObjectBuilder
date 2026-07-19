@@ -117,7 +117,7 @@ def _lod_vertex_count(node):
                                     fullPath=True, noIntermediate=True) or []:
         try:
             total += cmds.polyEvaluate(shape, vertex=True)
-        except Exception:
+        except RuntimeError:  # noqa: BLE001 - transient shape state (undo/scene-open); partial total is fine
             pass
     return total
 

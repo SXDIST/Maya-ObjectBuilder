@@ -21,6 +21,28 @@ from a3ob.ui.panels.validation import ValidationPanelMixin
 from a3ob.ui.panels.skinning import SkinningPanelMixin
 
 
+# Panels that have already warned this session. Reset to an empty set when the plugin
+# reloads (module re-import). Stored at module level so _warn_panel_once is testable
+# without a full dock instance.
+_dock_warned_panels: set = set()
+
+
+def _warn_panel_once(title: str, exc: Exception) -> None:
+    """Warn once per panel per session when a dock refresh raises.
+
+    Panels rebuild on every SelectionChanged, so a recurring error would flood the Script
+    Editor. After the first warning per panel, further failures are silently ignored until
+    the plugin is reloaded (which re-imports this module and clears the set)."""
+    if title in _dock_warned_panels:
+        return
+    _dock_warned_panels.add(title)
+    cmds.warning(
+        "MayaObjectBuilder dock panel '%s' raised %s: %s "
+        "(further errors for this panel are suppressed until the plugin is reloaded)"
+        % (title, type(exc).__name__, exc)
+    )
+
+
 class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -223,19 +245,31 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self._dirty_panels = set()
         self._poll_lod = _selected_lod_transform()
         self._watcher_retarget(self._poll_lod)
-        try:
-            if "LODs" in panels:
+        # Each panel is wrapped individually: one broken panel must not blank the rest.
+        # Transient failures (undo/scene-open/teardown) warn exactly once per session so the
+        # Script Editor stays quiet — _warn_panel_once deduplicates by panel name.
+        if "LODs" in panels:
+            try:
                 self._poll_panel("LODs", self._lods_snapshot, self.refresh_lod_list)
-            if "Materials" in panels:
+            except Exception as exc:  # noqa: BLE001 - transient scene state; warn once
+                _warn_panel_once("LODs", exc)
+        if "Materials" in panels:
+            try:
                 self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
                                  defer=self._material_fields_focused())
-            if "Selections" in panels:
+            except Exception as exc:  # noqa: BLE001
+                _warn_panel_once("Materials", exc)
+        if "Selections" in panels:
+            try:
                 self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
-            if "Named Properties" in panels:
+            except Exception as exc:  # noqa: BLE001
+                _warn_panel_once("Selections", exc)
+        if "Named Properties" in panels:
+            try:
                 self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
                                  defer=self._named_fields_focused())
-        except Exception:
-            pass  # transient scene state during undo/scene-open/teardown — retry next event
+            except Exception as exc:  # noqa: BLE001
+                _warn_panel_once("Named Properties", exc)
 
     def _watcher_retarget(self, lod_name):
         watcher = getattr(self, "_watcher", None)
@@ -308,4 +342,4 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
                 remember_path(recent_key, path)
 
 
-__all__ = ["MayaObjectBuilderDock"]
+__all__ = ["MayaObjectBuilderDock", "_dock_warned_panels", "_warn_panel_once"]

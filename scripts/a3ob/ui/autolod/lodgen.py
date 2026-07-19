@@ -1,5 +1,4 @@
 from maya import cmds
-from maya import mel
 
 
 from a3ob.ui.autolod.helpers import *  # noqa: F401,F403

@@ -1,8 +1,5 @@
 """settings."""
 
-from maya import cmds
-from maya import mel
-
 
 
 

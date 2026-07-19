@@ -55,16 +55,6 @@ def _split_vertex_values(value):
     return vertices
 
 
-def _split_sharp_edges(value):
-    edges = []
-    for part in _split_semicolon(value):
-        sep = part.find(",")
-        if sep == -1:
-            continue
-        edges.append((int(part[:sep]), int(part[sep + 1:])))
-    return edges
-
-
 def _split_uvset_taggs(value):
     taggs = []
     for group in value.split("|"):
@@ -308,7 +298,6 @@ __all__ = [
     "_split_float_values",
     "_split_index_values",
     "_split_vertex_values",
-    "_split_sharp_edges",
     "_split_uvset_taggs",
     "_split_properties",
     "_resolve_lod_path",

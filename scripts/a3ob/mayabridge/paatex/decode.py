@@ -8,6 +8,7 @@ cached under ``a3ob_paa_cache_v3`` in Maya's user tmp dir. Decoded rows are bott
 
 import os
 import struct
+import zlib
 import hashlib
 
 import maya.cmds as cmds
@@ -31,8 +32,11 @@ def _write_png(path, rgba):
     is thread-safe and ~10x faster than MImage. Input rows are bottom-to-top (as the DXT
     decoders emit); a standard PNG is top-to-bottom, so the rows are flipped on write — this
     reproduces exactly what MImage.setPixels/writeToFile did (verified vs the game's _co.png)."""
+    # numpy is an OPTIONAL accelerator with a pure-Python fallback in a3ob.formats.paa;
+    # import lazily so the paatex.decode module still loads (and _cache_dir stays reachable
+    # from paatex.materials) even when numpy is missing — the decoded work then errors at
+    # call time with a clear ImportError instead of blocking module import.
     import numpy as np
-    import zlib
     rows = np.ascontiguousarray(rgba[::-1])  # bottom-to-top -> top-to-bottom
     height, width = rows.shape[:2]
     raw = np.empty((height, 1 + width * 4), dtype=np.uint8)

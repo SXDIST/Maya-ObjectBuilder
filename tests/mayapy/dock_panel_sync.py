@@ -168,6 +168,53 @@ def test_lod_list_follows_the_scene():
     check(_lod_list_target(None, None) is None, "nothing to highlight")
 
 
+def test_broken_panel_warns_once_not_on_repeat():
+    """A dock panel that raises on refresh must warn exactly once per session.
+
+    Two regressions guarded here:
+    1. One broken panel was silently swallowing the error for ALL panels (the old single
+       try/except around _refresh_dirty_panels) — now each panel is wrapped individually.
+    2. Panels rebuild on every SelectionChanged, so a recurring error without dedup would
+       flood the Script Editor — _warn_panel_once deduplicates by panel name.
+
+    Positive control comes first: silence is meaningless without proof the callback works."""
+    cmds.file(new=True, force=True)
+    from a3ob.ui import dock as dock_module
+    dock_module._dock_warned_panels.clear()
+
+    said = []
+    callback = om1.MCommandMessage.addCommandOutputCallback(
+        lambda message, message_type, data: said.append(message))
+    try:
+        # Positive control: cmds.warning must reach the callback or the silence check
+        # below would pass vacuously even if _warn_panel_once does nothing at all.
+        cmds.warning("dock_test_panel_control_signal")
+        check(any("dock_test_panel_control_signal" in m for m in said),
+              "the output callback must hear cmds.warning — dedup check below would be vacuous")
+        said.clear()
+
+        # First call for "Materials" must warn.
+        dock_module._warn_panel_once("Materials", RuntimeError("scene mid-edit"))
+        materials_warnings = [m for m in said if "Materials" in m]
+        check(len(materials_warnings) == 1,
+              "first panel failure must warn once, got %d: %r" % (len(materials_warnings), materials_warnings))
+
+        # Second call for the same panel must stay silent.
+        dock_module._warn_panel_once("Materials", RuntimeError("same panel again"))
+        materials_warnings = [m for m in said if "Materials" in m]
+        check(len(materials_warnings) == 1,
+              "repeated failure for the same panel must not re-warn, got %d" % len(materials_warnings))
+
+        # A DIFFERENT panel still warns (dedup is per-panel, not global).
+        dock_module._warn_panel_once("LODs", RuntimeError("different panel"))
+        lod_warnings = [m for m in said if "LODs" in m]
+        check(len(lod_warnings) == 1,
+              "a different panel must still warn once, got %d: %r" % (len(lod_warnings), lod_warnings))
+    finally:
+        om1.MMessage.removeCallback(callback)
+        dock_module._dock_warned_panels.clear()  # leave state clean for later tests
+
+
 def main():
     test_selections_are_filtered_by_lod_node()
     test_legacy_named_orphan_still_surfaces()
@@ -175,6 +222,7 @@ def main():
     test_a_lod_still_wins_over_the_plain_mesh()
     test_list_influences_is_silent()
     test_lod_list_follows_the_scene()
+    test_broken_panel_warns_once_not_on_repeat()
     print("dock panel sync: OK")
 
 

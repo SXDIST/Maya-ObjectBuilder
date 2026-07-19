@@ -9,7 +9,7 @@ import maya.cmds as cmds
 
 from a3ob.mayabridge.paatex.settings import alpha_transparency_enabled
 from a3ob.mayabridge.paatex.resolve import resolve_paa_path
-from a3ob.mayabridge.paatex.decode import paa_to_png, decode_normal_png, decode_smdi_png
+from a3ob.mayabridge.paatex.decode import _cache_dir, paa_to_png, decode_normal_png, decode_smdi_png
 from a3ob.mayabridge.paatex.channels import _material_channels, _roughness_from_power
 
 
@@ -60,7 +60,7 @@ def preferred_shader_type():
     try:
         if cmds.pluginInfo("mtoa", query=True, loaded=True):
             return "aiStandardSurface"
-    except Exception:
+    except Exception:  # noqa: BLE001 - undetectable plugin state must not fail material creation
         pass
     return "blinn"
 
@@ -161,8 +161,8 @@ def assign_paa_texture(shader, texture_path, material_path=None):
             cmds.warning("MayaObjectBuilder: normal wiring failed: %s" % exc)
     try:
         _wire_specular(shader, channels, is_ai)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - a broken spec channel must not fail an import
+        cmds.warning("MayaObjectBuilder: specular wiring failed: %s" % exc)
     return True
 
 
@@ -202,7 +202,7 @@ def apply_alpha_transparency_setting():
         if resolved:
             try:
                 _png, cutout = paa_to_png(resolved)
-            except Exception:
+            except Exception:  # noqa: BLE001 - undecodable texture: treat as not-cutout
                 cutout = False
         is_ai = cmds.nodeType(shader) == "aiStandardSurface"
         transp_attr = shader + (".opacityR" if is_ai else ".transparency")
@@ -220,7 +220,6 @@ def _prefetch_pending(pending):
     cmds.internalVar are not thread-safe); the workers only run the numpy/zlib decoders, which
     release the GIL, so the DXT decode + PNG write of many textures overlap. Best-effort — a
     failed decode just falls through to the per-shader warning in assign_paa_texture."""
-    from a3ob.mayabridge.paatex.decode import _cache_dir
     _cache_dir()  # resolve+create the cache dir on the main thread before spawning workers
     jobs = {}     # (fn, resolved_path) -> dedupe shared textures across materials
     for _shader, texture, material in pending:
@@ -240,8 +239,8 @@ def _prefetch_pending(pending):
         for future in [pool.submit(fn, path) for (fn, path) in jobs]:
             try:
                 future.result()
-            except Exception:
-                pass  # non-fatal; the sequential assign below will warn on the missing decode
+            except Exception:  # noqa: BLE001 - non-fatal; assign_paa_texture will warn on the missing decode
+                pass
 
 
 def assign_pending_textures():
@@ -268,8 +267,8 @@ def assign_pending_textures():
         return 0
     try:
         _prefetch_pending(pending)  # parallel decode into cache; the wiring below is cache-only
-    except Exception:
-        pass  # fall back to lazy per-shader decode inside assign_paa_texture
+    except Exception as exc:  # noqa: BLE001 - fall back to lazy per-shader decode in assign_paa_texture
+        cmds.warning("MayaObjectBuilder: PAA prefetch failed, falling back to serial decode: %s" % exc)
     count = 0
     for shader, texture, material in pending:
         if assign_paa_texture(shader, texture, material or None):

@@ -2,6 +2,7 @@
 
 import maya.cmds as cmds
 
+from a3ob.mayabridge import paatex as _paatex  # one module-level import; no cycle (mayabridge never reaches a3ob.ui)
 from a3ob.ui._qt import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
 from a3ob.ui.widgets import *  # noqa: F401,F403
@@ -17,7 +18,6 @@ class MaterialsPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        from a3ob.mayabridge import paatex as _paatex
         root_row = qt_widgets.QHBoxLayout()
         root_row.addWidget(qt_widgets.QLabel("Texture root"))
         self.texture_root_field = qt_widgets.QLineEdit()
@@ -79,20 +79,17 @@ class MaterialsPanelMixin:
 
 
     def _on_paa_alpha_toggled(self, checked):
-        from a3ob.mayabridge import paatex
-        paatex.set_alpha_transparency(checked)
-        paatex.apply_alpha_transparency_setting()
+        _paatex.set_alpha_transparency(checked)
+        _paatex.apply_alpha_transparency_setting()
 
 
     def _on_texture_root_edited(self):
-        from a3ob.mayabridge import paatex
-        paatex.set_texture_root(self.texture_root_field.text().strip())
-        paatex.assign_pending_textures()
+        _paatex.set_texture_root(self.texture_root_field.text().strip())
+        _paatex.assign_pending_textures()
 
 
     def _browse_texture_root(self):
-        from a3ob.mayabridge import paatex
-        current = paatex.texture_root()
+        current = _paatex.texture_root()
         kwargs = {"fileMode": 3, "caption": "Select the .paa texture root folder"}
         if current:
             kwargs["startingDirectory"] = current
@@ -100,8 +97,8 @@ class MaterialsPanelMixin:
         if not selected:
             return
         self.texture_root_field.setText(selected[0])
-        paatex.set_texture_root(selected[0])
-        count = paatex.assign_pending_textures()
+        _paatex.set_texture_root(selected[0])
+        count = _paatex.assign_pending_textures()
         cmds.inViewMessage(assistMessage="Texture root set — textured %d material(s)" % count, position="midCenter", fade=True)
 
 

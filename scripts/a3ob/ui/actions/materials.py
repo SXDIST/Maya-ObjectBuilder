@@ -8,12 +8,6 @@ from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.actions._common import _undo_chunk  # noqa: F401
 
 
-def _refresh_material_metadata():
-    dock = _active_qt_dock()
-    if dock is not None:
-        dock.refresh_material_metadata()
-
-
 def _selected_material_metadata_item():
     dock = _active_qt_dock()
     if dock is not None:
@@ -70,7 +64,6 @@ def select_faces_with_material():
 
 
 __all__ = [
-    "_refresh_material_metadata",
     "_selected_material_metadata_item",
     "_persist_selected_material_metadata",
     "select_faces_with_material",

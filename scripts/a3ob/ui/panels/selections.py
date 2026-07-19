@@ -1,7 +1,5 @@
 """selections panel of the MayaObjectBuilder dock."""
 
-import maya.cmds as cmds
-
 from a3ob.ui._qt import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
 from a3ob.ui.widgets import *  # noqa: F401,F403

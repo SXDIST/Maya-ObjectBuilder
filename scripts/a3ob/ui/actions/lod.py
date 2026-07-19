@@ -72,21 +72,6 @@ def assign_lod_to_selection():
         _refresh_lod_assignment_ui()
 
 
-def create_empty_lod():
-    load_plugin()
-    selection = cmds.ls(selection=True) or []
-    cmds.select(clear=True)
-    definition = _selected_lod_definition()
-    resolution = _lod_resolution_value(definition)
-    node = _mark_selection_as_lod(definition, resolution)
-    if node:
-        cmds.select(node, replace=True)
-    elif selection:
-        cmds.select(selection, replace=True)
-    _refresh_context_ui()
-    _refresh_lod_assignment_ui()
-
-
 LOD_ATTRS = (
     "a3obIsLOD", "a3obLodType", "a3obResolution",
     "a3obResolutionSignature", "a3obSourceVertexCount", "a3obSourceFaceCount",
@@ -138,7 +123,6 @@ __all__ = [
     "_mark_selection_as_lod",
     "create_lod_type",
     "assign_lod_to_selection",
-    "create_empty_lod",
     "LOD_ATTRS",
     "_remove_lod_from_selection",
     "generate_auto_lods_from_ui",

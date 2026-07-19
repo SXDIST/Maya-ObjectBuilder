@@ -1,7 +1,10 @@
 """meshops."""
 
+from collections import defaultdict
+
 from maya import cmds
 from maya import mel
+import maya.api.OpenMaya as om
 
 
 
@@ -176,8 +179,7 @@ def _extract_triangles(transform):
     first mesh, or ``None`` when unavailable (no mesh / numpy missing)."""
     try:
         import numpy as np
-        import maya.api.OpenMaya as om
-    except Exception:
+    except Exception:  # noqa: BLE001 - numpy is an optional accelerator
         return None
     shapes = _mesh_shapes(transform)
     if not shapes:
@@ -222,10 +224,6 @@ def _triangle_shading_groups(shape):
     """(shading-group names, per-triangle group-index list) for a mesh shape, so the
     decimated LOD can be re-assigned the same materials face-by-face. (None, None) when
     unavailable."""
-    try:
-        import maya.api.OpenMaya as om
-    except Exception:
-        return None, None
     sel = om.MSelectionList()
     sel.add(shape)
     dag = sel.getDagPath(0)
@@ -247,7 +245,6 @@ def _assign_qem_materials(new_shape, orig_faces, sg_names, tri_sg):
     """Re-assign the decimated faces to the source's shading groups using each survivor's
     original face index. Falls back to initialShadingGroup so a rebuilt mesh is never left
     materialless (which shows as a green 'no shader' mesh and breaks material export)."""
-    from collections import defaultdict
     groups = defaultdict(list)
     if sg_names and tri_sg is not None:
         for new_index, orig in enumerate(orig_faces):
@@ -261,13 +258,13 @@ def _assign_qem_materials(new_shape, orig_faces, sg_names, tri_sg):
         try:
             cmds.sets(["{0}.f[{1}]".format(new_shape, i) for i in face_ids], forceElement=sg)
             assigned = True
-        except Exception:
+        except RuntimeError:  # noqa: BLE001 - face index may not exist after decimation; try remaining groups
             pass
     if not assigned:
         try:
             cmds.sets(new_shape, forceElement="initialShadingGroup")
-        except Exception:
-            pass
+        except RuntimeError as exc:  # noqa: BLE001 - both paths failed; warn so the rigger knows
+            cmds.warning("Auto LOD: could not assign any material to {0}: {1}".format(new_shape, exc))
 
 
 def _apply_qem_snapshot(transform, uv_source, snapshot):
@@ -275,10 +272,6 @@ def _apply_qem_snapshot(transform, uv_source, snapshot):
     orig_face_index), re-assign the source materials face-by-face, and re-project UVs from
     the full-res ``uv_source``. Returns False on any failure so the caller can fall back to
     polyReduce."""
-    try:
-        import maya.api.OpenMaya as om
-    except Exception:
-        return False
     points, faces, orig_faces = snapshot
     if len(faces) <= 0:
         return False
@@ -362,8 +355,6 @@ def _has_locked_normals(transform):
 
     Early exit makes the expensive case the harmless one: a mesh that IS locked answers
     on its first normal, while a freshly built one costs a scan of a few thousand."""
-    import maya.api.OpenMaya as om
-
     shapes = cmds.listRelatives(transform, shapes=True, fullPath=True,
                                 noIntermediate=True, type="mesh") or []
     if not shapes:
@@ -439,8 +430,6 @@ def _propagate_named_selections(source, target, full_resolution=True):
 
 
 def _create_memory_mesh(transform, points):
-    import maya.api.OpenMaya as om
-
     selection = om.MSelectionList()
     selection.add(transform)
     parent = selection.getDependNode(0)

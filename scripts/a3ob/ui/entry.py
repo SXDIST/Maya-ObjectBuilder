@@ -10,6 +10,8 @@ import maya.mel as mel
 from a3ob.ui._qt import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
 from a3ob.ui._undo import _undo_suspended
+# No cycle: a3ob.ui.scene.lods only reaches maya.cmds + a3ob.ui.constants + attrs.
+from a3ob.ui.scene.lods import _selected_lod_transform  # noqa: F401
 
 
 # scripts/ dir (…/scripts/a3ob/ui/entry.py -> parents[2] = scripts/), so the .mel
@@ -102,12 +104,6 @@ def _validate_scene_no_flush():
     load_plugin()
     with _undo_suspended():
         cmds.a3obValidate()
-
-
-def _validate_selection_no_flush():
-    load_plugin()
-    with _undo_suspended():
-        cmds.a3obValidate(selectionOnly=True)
 
 
 def _run_validation(selection_only):
@@ -291,8 +287,6 @@ def _context_key():
     the LOD alone left that panel showing the previous mesh's list — or nothing at all until
     the user typed into the filter box and cleared it again, which was the only thing that
     called the refresh directly."""
-    # Imported lazily: a3ob.ui.scene has no Qt/dock deps, but entry is imported very early.
-    from a3ob.ui.scene.lods import _selected_lod_transform
     try:
         lod = _selected_lod_transform() or ""
     except Exception:  # noqa: BLE001 - a refresh must never break selection
@@ -386,7 +380,8 @@ def _build_qt_dock(control):
     parent = _qt_workspace_parent(control)
     if parent is None:
         return False
-    from a3ob.ui.dock import MayaObjectBuilderDock  # local import avoids an import cycle
+    # KEEP lazy: dock imports from actions which imports from entry → cycle if moved to top.
+    from a3ob.ui.dock import MayaObjectBuilderDock
     _qt_dock_widget = MayaObjectBuilderDock(parent)
     layout = parent.layout()
     if layout is None:
@@ -501,7 +496,6 @@ __all__ = [
     "import_p3d",
     "export_p3d",
     "_validate_scene_no_flush",
-    "_validate_selection_no_flush",
     "_run_validation",
     "_run_skin_weights",
     "_transfer_skin",

@@ -3,6 +3,7 @@
 import re  # noqa: F401
 
 import maya.cmds as cmds
+import maya.api.OpenMaya as om
 
 from a3ob.ui.constants import LOD_TYPE_NAMES, RESOLUTION_LOD_TYPE, MEMORY_LOD_TYPE  # noqa: F401
 from a3ob.ui.scene.attrs import *  # noqa: F401,F403
@@ -58,7 +59,7 @@ def _lod_node_for_set(set_node):
                     return cmds.ls(current, long=True)[0]
                 parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
                 current = parents[0] if parents else ""
-    except Exception:
+    except RuntimeError:  # noqa: BLE001 - set or its members may be stale during scene edit; "" means "Other" bucket
         pass
     return ""
 
@@ -136,7 +137,6 @@ def lod_geometry_key():
     every 500 ms while the LOD panel is open). MFnMesh's cached counts answer in 0.01 ms and
     still change whenever the geometry does, which is all a change detector needs — the real
     triangle count is computed only when the panel actually redraws."""
-    import maya.api.OpenMaya as om
     key = []
     for node in _lod_transforms():
         for shape in cmds.listRelatives(node, allDescendents=True, type="mesh",
@@ -157,7 +157,7 @@ def _lod_triangle_count(node):
                                     fullPath=True, noIntermediate=True) or []:
         try:
             total += cmds.polyEvaluate(shape, triangle=True)
-        except Exception:
+        except RuntimeError:  # noqa: BLE001 - transient shape state (undo/scene-open); partial total is fine
             pass
     return total
 

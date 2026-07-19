@@ -12,6 +12,7 @@ vectors are normalized first.
 import os
 
 import maya.api.OpenMaya as om
+import maya.cmds as cmds
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
@@ -32,7 +33,6 @@ def _warn_about_missing_weights(lod_entries):
 
     Returns the LOD names that lack weights, so this stays testable without capturing log
     output (MGlobal cannot be monkey-patched)."""
-    import maya.cmds as cmds
     if not (cmds.ls(type="joint") or []):
         return []  # nothing rigged here; a static model is expected to have no weights
 

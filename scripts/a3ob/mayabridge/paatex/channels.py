@@ -3,6 +3,7 @@
 import re
 import math
 
+from a3ob.formats.rvmat import parse_rvmat_file
 from a3ob.mayabridge.paatex.resolve import resolve_paa_path
 
 
@@ -26,7 +27,6 @@ def _material_channels(color_texture, material_path):
         rvmat = resolve_paa_path(material_path)
     if rvmat:
         try:
-            from a3ob.formats.rvmat import parse_rvmat_file
             parsed = parse_rvmat_file(rvmat)
             textures = parsed["textures"]
             if textures.get("color"):
@@ -35,8 +35,9 @@ def _material_channels(color_texture, material_path):
             channels["spec"] = textures.get("spec")
             channels["specular"] = parsed["specular"]
             channels["specular_power"] = parsed["specular_power"]
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - unreadable/odd rvmat must not fail an import
+            # Fall back to the _nohq/_smdi siblings of the colour texture below.
+            print("MayaObjectBuilder: rvmat parse failed for %s: %s" % (rvmat, exc))
     if not channels["normal"]:
         channels["normal"] = _sibling_paa(color_texture, "nohq")
     if not channels["spec"]:

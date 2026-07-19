@@ -149,17 +149,6 @@ def sharp_edges_string(edges_data):
     return ";".join("%d,%d" % (a, b) for a, b in edges_data.edges)
 
 
-def uv_set_taggs_string(taggs):
-    parts = []
-    for tagg in taggs:
-        piece = [str(tagg.id)]
-        for uv in tagg.uvs:
-            piece.append(_num(uv.u))
-            piece.append(_num(uv.v))
-        parts.append(",".join(piece))
-    return "|".join(parts)
-
-
 def parse_proxy_name(name):
     match = _PROXY_PARSE_RE.match(name)
     if not match:
@@ -190,6 +179,5 @@ __all__ = [
     "vertex_values_string",
     "index_values_string",
     "sharp_edges_string",
-    "uv_set_taggs_string",
     "parse_proxy_name",
 ]
