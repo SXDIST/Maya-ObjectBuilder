@@ -71,8 +71,8 @@ class SkinningPanelMixin:
 
         layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
                                "the buttons act on what you highlight in it. Removing a "
-                               "bone moves its weight to the bones the neighbouring "
-                               "vertices use — weight is never deleted, only moved."))
+                               "bone moves its weight to the vertex's remaining bones — "
+                               "weight is never deleted, only moved."))
 
         filter_row = qt_widgets.QHBoxLayout()
         filter_row.addWidget(qt_widgets.QLabel("Filter"))
@@ -100,7 +100,7 @@ class SkinningPanelMixin:
             "Select the vertices the highlighted bone actually drives.", ":/aselect.png"))
         influence_row.addWidget(_qt_button(
             "Remove", self.run_remove_influences,
-            "Remove the highlighted bones; their weight moves to what the neighbours use.",
+            "Remove the highlighted bones; their weight moves to each vertex's remaining bones.",
             ":/delete.png"))
         layout.addLayout(influence_row)
 
@@ -181,7 +181,7 @@ class SkinningPanelMixin:
         removed = _remove_influences(picked)
         self.refresh_influences()
         self._set_skinning_summary(
-            "Removed {0} influence(s); weight moved to the neighbours' bones.".format(removed)
+            "Removed {0} influence(s); weight moved to each vertex's remaining bones.".format(removed)
             if removed else "Nothing removed — see the script editor for why.")
 
     def _set_skinning_summary(self, text):

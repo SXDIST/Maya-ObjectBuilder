@@ -6,12 +6,16 @@ painting. Everything needed to make the decision is visible only inside the pain
 and the operation is only available outside it. This command is the scriptable half of the
 dock's Influences panel.
 
-Removing an influence never deletes its weight. Every vertex must sum to 1.0, so the weight
-moves to the other influences, and the skinCluster's ``weightDistribution`` decides which:
-"Distance" hands it to the nearest bone and "Neighbors" to whatever the surrounding
-vertices already use. Distance is Maya's default and is how head weight ends up on an arm,
-so removal switches to Neighbors first — during removal, not after, because the
-redistribution happens as part of it.
+Removing an influence never deletes its weight. Every vertex must sum to 1.0, so its weight
+is redistributed to the influences still on that vertex, in the ratio they were already
+carrying — measured: removeInfluence gave identical results under both
+``weightDistribution`` settings. That setting does not govern removal at all; it governs
+what a SUBSEQUENT weight-paint stroke does when it floods an influence to zero, where
+"Distance" hands the freed weight to the nearest bone (measured handing a sleeve's weight
+to Shoulder over the correct Elbow) and "Neighbors" to whatever the surrounding vertices
+use (the correct Elbow, 1.0). Removal switches to Neighbors first so the skinCluster is
+left in the right state for whoever paints on it next, not because it changes what removal
+itself does.
 """
 
 import maya.api.OpenMaya as om
@@ -164,7 +168,11 @@ def remove_influences(shape, requested):
     try:
         with undo_chunk():
             try:
-                # Neighbors, and BEFORE the removal: redistribution happens during it.
+                # Neighbors — not for this removal (removeInfluence redistributes to the
+                # surviving influences in the ratio the vertex already carried either way;
+                # weightDistribution has no measurable effect on it), but for whichever
+                # weight-paint stroke comes next on this skinCluster. Set here, once, so a
+                # rigger who never opens this setting still gets the correct behaviour.
                 cmds.setAttr(skin + ".weightDistribution", 1)
             except RuntimeError:
                 pass  # locked or driven by a connection; not worth failing over
@@ -222,8 +230,8 @@ class InfluenceCommand(_Base):
                 om.MGlobal.displayWarning("a3obInfluence: %s" % reason)
             else:
                 om.MGlobal.displayInfo(
-                    "a3obInfluence: removed %d influence(s) — weight moved to the bones the "
-                    "neighbouring vertices use: %s"
+                    "a3obInfluence: removed %d influence(s) — weight moved to the remaining "
+                    "bones on each vertex: %s"
                     % (len(removed), ", ".join(inf.leaf_name(name) for name in removed)))
             self.setResult(len(removed))
             return
