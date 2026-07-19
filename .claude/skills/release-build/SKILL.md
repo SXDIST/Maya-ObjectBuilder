@@ -15,7 +15,7 @@ Ask for a version if the user did not provide one.
 
 ## Prerequisites to verify first
 
-- `scripts/package_release.ps1`
+- `tools/package_release.ps1`
 - `install/install_maya.py`
 - `MayaObjectBuilder.mod` or a documented generator/template
 - `scripts/objectBuilderMenu.py`
@@ -28,7 +28,7 @@ If required packaging files are missing, stop and report blockers. Do not fabric
 ## Documented command
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <version>
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version <version>
 ```
 
 ## Release flow when prerequisites exist
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <v
 The plugin is pure Python — packaging is a plain file copy plus zip, with no build step.
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <version>
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version <version>
 ```
 
 ## Expected outputs

@@ -11,7 +11,7 @@ if (-not (Test-Path $Maya)) {
 }
 
 Write-Host "Registering MayaObjectBuilder dev module (edit-in-place)..."
-& $Mayapy -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0, r'$RepoRoot/scripts'); import dev_install; dev_install.install(load=False)"
+& $Mayapy -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0, r'$RepoRoot/tools'); import dev_install; dev_install.install(load=False)"
 
 Write-Host "Launching Maya 2027 (plugin autoloads from plug-ins/MayaObjectBuilder.py)..."
 Start-Process -FilePath $Maya

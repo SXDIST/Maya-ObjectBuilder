@@ -25,14 +25,14 @@ plug-ins/MayaObjectBuilder.py
 Does dev_install (writes the `.mod`) + launches Maya, no build:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/launch_maya_debug.ps1
+powershell -ExecutionPolicy Bypass -File tools/launch_maya_debug.ps1
 ```
 
 ## Alternative manual steps
 
 ```bash
 # 1. Register the repo as a Maya module (edit-in-place)
-"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'scripts'); import dev_install; dev_install.install(load=False)"
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'tools'); import dev_install; dev_install.install(load=False)"
 # 2. Launch interactive Maya (plugin autoloads from plug-ins/MayaObjectBuilder.py)
 "/c/Program Files/Autodesk/Maya2027/bin/maya.exe"
 ```

@@ -10,7 +10,7 @@ Run inside Maya (or mayapy) — e.g. from the Script Editor::
 
 or in this session's shell with the ``!`` prefix::
 
-    ! "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0, r'<repo>/scripts'); import dev_install; dev_install.install(load=False)"
+    ! "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0, r'<repo>/tools'); import dev_install; dev_install.install(load=False)"
 """
 
 from pathlib import Path

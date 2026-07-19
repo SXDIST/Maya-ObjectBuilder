@@ -50,11 +50,6 @@ New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "install") | Out-
 $exclude = @("__pycache__", "*.pyc", "*.pyo")
 Copy-Item (Join-Path $RepoRoot "plug-ins") (Join-Path $StageDir "plug-ins") -Recurse -Exclude $exclude
 Copy-Item (Join-Path $RepoRoot "scripts") (Join-Path $StageDir "scripts") -Recurse -Exclude $exclude
-# Drop dev-only helpers and build scripts from the shipped scripts/ folder.
-foreach ($devFile in @("dev_install.py", "package_release.ps1", "launch_maya_debug.ps1")) {
-    $p = Join-Path $StageDir (Join-Path "scripts" $devFile)
-    if (Test-Path $p) { Remove-Item $p -Force }
-}
 Get-ChildItem -Path (Join-Path $StageDir "scripts") -Recurse -Include "__pycache__" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
 
 Copy-Item (Join-Path $RepoRoot "install/mayaObjectBuilderInstall.py") (Join-Path $StageDir "install/mayaObjectBuilderInstall.py")

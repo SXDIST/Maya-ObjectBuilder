@@ -12,7 +12,7 @@ Do not invent missing release files and do not claim success unless the archive 
 
 Documented release command:
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <version>
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version <version>
 ```
 
 Expected generated outputs:
@@ -21,7 +21,7 @@ Expected generated outputs:
 - a SHA256 checksum file next to the archive
 
 Required prerequisites to verify first:
-- `scripts/package_release.ps1`
+- `tools/package_release.ps1`
 - `install/install_maya.py`
 - `MayaObjectBuilder.mod` or a documented generator/template
 - `scripts/objectBuilderMenu.py`
@@ -40,7 +40,7 @@ Rules:
 
 Release flow when prerequisites exist:
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version <version>
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version <version>
 ```
 
 Validation:

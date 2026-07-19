@@ -12,9 +12,9 @@ Run from the repository root.
 
 ```bash
 # Register this repo as a Maya module (edit-in-place, no copy). Run inside Maya/mayapy:
-#   import dev_install; dev_install.install()
+#   import sys; sys.path.insert(0, r"<repo>/tools"); import dev_install; dev_install.install()
 # or headless to just write the .mod:
-"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'scripts'); import dev_install; dev_install.install(load=False)"
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'tools'); import dev_install; dev_install.install(load=False)"
 
 # Pure-Python format tests (no Maya)
 python tests/python/test_p3d_roundtrip.py
@@ -50,7 +50,7 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/sharp_edges_follow_normals.py
 
 # Package release archive (plain file copy + zip, no build)
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version 0.1.0
 ```
 
 Full validation after code changes: the `tests/python` tests → `py_compile` → the `tests/mayapy` workflows.
@@ -102,13 +102,17 @@ Two layers, split by whether they need Maya:
   the plugin and the runpy-based mayapy tests keep importing UI names from this path.
 - **`scripts/objectBuilderAutoLOD.py`** — facade over `a3ob.ui.autolod` (auto-LOD generator).
 - **`scripts/mayaObjectBuilderP3DOptions.mel`** — Maya File > Import/Export option box.
-- **`scripts/dev_install.py`** — writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at
-  this repo (edit-in-place local install). `install/` holds the drag-into-Maya end-user installer.
+- **`tools/`** — developer-only tooling, deliberately OUTSIDE `scripts/` (which is on both
+  `PYTHONPATH` and `MAYA_SCRIPT_PATH`, so anything there is importable in every Maya session).
+  `tools/dev_install.py` writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at this repo
+  (edit-in-place local install); `tools/launch_maya_debug.ps1` and `tools/package_release.ps1` are
+  the debug-launch and release-packaging scripts. `install/` holds the drag-into-Maya end-user
+  installer. Nothing in `tools/` ships in a release.
 - `tests/python/` — pure-Python format tests. `tests/mayapy/` — Maya integration workflows.
 
 ## Installation model
 
-- **Local dev:** `scripts/dev_install.py` writes a `.mod` in `Documents/maya/modules/` whose module
+- **Local dev:** `tools/dev_install.py` writes a `.mod` in `Documents/maya/modules/` whose module
   root is this repo, so Maya loads `plug-ins/` and `scripts/` from here with no copy. A committed
   `MayaObjectBuilder.mod` (root `.`) also makes the repo a drop-in module on `MAYA_MODULE_PATH`.
 - **End users:** drag `install/mayaObjectBuilderInstall.py` into Maya. It copies `plug-ins/` +
@@ -408,5 +412,5 @@ Each locator transform's short name becomes the P3D named selection name.
 
 - `Arma3ObjectBuilder-master/` — reference only (gitignored; clone if missing).
 - `dist/`, `build/` — generated artifacts; installer sources live in `install/` and release
-  packaging uses `scripts/package_release.ps1`.
+  packaging uses `tools/package_release.ps1`.
 - Blender test workflows — require Blender and are not part of the normal validation checklist.

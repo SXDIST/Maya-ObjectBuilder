@@ -83,6 +83,7 @@ The installer copies/updates only the runtime files in `Documents/maya/MayaObjec
 Work on the plugin straight from this repository — **no copy, no build**. Inside Maya or `mayapy`:
 
 ```python
+import sys; sys.path.insert(0, r"<path to this repo>/tools")
 import dev_install
 dev_install.install()
 ```
@@ -93,7 +94,7 @@ This writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at this repo
 <summary>Headless variant (write the <code>.mod</code> without loading)</summary>
 
 ```bash
-"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'scripts'); import dev_install; dev_install.install(load=False)"
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" -c "import maya.standalone as s; s.initialize(); import sys; sys.path.insert(0,'tools'); import dev_install; dev_install.install(load=False)"
 ```
 
 </details>
@@ -186,7 +187,7 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 Register the dev module and launch Maya (no build):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/launch_maya_debug.ps1
+powershell -ExecutionPolicy Bypass -File tools/launch_maya_debug.ps1
 ```
 
 This registers the edit-in-place module via `dev_install` and starts Maya 2027; the plugin autoloads from `plug-ins/MayaObjectBuilder.py`.
@@ -198,7 +199,7 @@ This registers the edit-in-place module via `dev_install` and starts Maya 2027; 
 Plain file copy + zip — **no compilation**:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File tools/package_release.ps1 -Version 0.1.0
 ```
 
 Stages `dist/MayaObjectBuilder-v<version>-win64/`, creates the `.zip`, and writes a SHA256 checksum next to the archive.
