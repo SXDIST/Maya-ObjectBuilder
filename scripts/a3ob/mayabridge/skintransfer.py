@@ -156,15 +156,23 @@ def _overlap_fraction(target_box, reference_box):
     return overlap / (extent[0] * extent[1] * extent[2])
 
 
-def check_alignment(target_path, reference_path, scale_tolerance=4.0):
-    """Refuse to transfer when the reference is not lined up with the target.
+def check_alignment(target_path, reference_path, scale_tolerance=100.0):
+    """Report — never refuse — when the reference does not look lined up with the target.
 
     Copying by closest point is meaningless unless the two meshes occupy the same space, and a
     mismatch produces confident-looking garbage rather than an error. Seen for real: a DayZ
     body authored in centimetres (180 units tall) sitting in a scene where the garments are in
     metres (1.8 units) — 100x apart, so every 'closest' body point was the wrong one.
 
-    Returns an explanatory string when the pair is unusable, or '' when it looks fine."""
+    Neither test can actually tell that case from a small accessory, which is why the result
+    is advisory. Measured on a real outfit against a 2.30-unit body, every part correctly
+    fitted and within 0.08 of the body surface: jacket ratio 1.63, helmet 5.0, headphone cup
+    8.9, helmet patch 59.1 — and the pouches score 0.00 volume overlap because their boxes sit
+    outside the body's. The old blocking thresholds (ratio 4, overlap 0.5) rejected most of a
+    legitimate model. `scale_tolerance` is now set past the largest measured legitimate ratio,
+    so it only catches an order-of-magnitude error.
+
+    Returns an explanatory string when the pair looks odd, or '' when it looks fine."""
     target_box = _bounding_box(target_path)
     reference_box = _bounding_box(reference_path)
 
@@ -175,9 +183,9 @@ def check_alignment(target_path, reference_path, scale_tolerance=4.0):
 
     ratio = max(target_size, reference_size) / min(target_size, reference_size)
     if ratio > scale_tolerance:
-        return ("reference '%s' is %.0fx the size of '%s' — they are in different units "
-                "(a body authored in centimetres next to garments in metres, for instance). "
-                "Scale them to match before transferring."
+        return ("reference '%s' is %.0fx the size of '%s' — check the units (a body authored "
+                "in centimetres next to garments in metres looks like this). Transferring "
+                "anyway; undo if the weights come out wrong."
                 % (reference_path.partialPathName(), ratio, target_path.partialPathName()))
 
     # Volume overlap, not a plain intersects(): two boxes touching at a corner "intersect"
@@ -185,9 +193,9 @@ def check_alignment(target_path, reference_path, scale_tolerance=4.0):
     # the boxes clipped by a few centimetres and the transfer would have been nonsense.
     fraction = _overlap_fraction(target_box, reference_box)
     if fraction < 0.5:
-        return ("only %.0f%% of '%s' lies inside '%s' — they are not aligned (different "
-                "orientation, or the garment is not fitted on the body). A closest-point "
-                "transfer needs them to occupy the same space."
+        return ("only %.0f%% of '%s' lies inside '%s' — normal for a pouch or a strap that "
+                "hangs off the body, but it also looks like this when the orientation is "
+                "wrong. Transferring anyway; undo if the weights come out wrong."
                 % (fraction * 100.0, target_path.partialPathName(),
                    reference_path.partialPathName()))
     return ""
@@ -349,9 +357,13 @@ def transfer_to_target(target_path, reference_path, far_distance=DEFAULT_FAR_DIS
     if not reference_skin:
         raise ValueError("reference mesh has no skinCluster")
 
+    # Advisory, not a gate. Refusing here blocked a legitimate model: a helmet patch is
+    # 59x smaller than the body and a belt pouch overlaps its bounding box by 0%, and no
+    # bounding-box test tells either from a real unit mismatch. A wrong transfer is visible
+    # and undoes in one step; a refusal just stops the work.
     problem = check_alignment(target_path, reference_path)
     if problem:
-        raise ValueError(problem)
+        om.MGlobal.displayWarning("a3obTransferSkin: %s" % problem)
 
     target_skin = bind_to_reference(target_path, reference_skin)
     transfer_weights(reference_skin, target_skin)

@@ -135,6 +135,48 @@ def test_reference_added_from_file():
     print("OK reference added from file, rig kept, reused on the next call")
 
 
+def test_small_accessory_still_transfers():
+    """A patch is legitimately a fraction of the body's size and must still transfer.
+
+    Measured on a real DayZ outfit against a 2.30-unit body: the jacket sits at a size
+    ratio of 1.63, the helmet at 5.0, a headphone cup at 8.9 and a helmet patch at 59.1 —
+    all correctly fitted, all within 0.08 of the body surface. A blocking ratio test
+    cannot tell those from a genuine unit mismatch, so alignment only warns."""
+    from a3ob.mayabridge import skintransfer
+
+    body, _body_skin, _garment = build_scene()
+
+    # A patch: tiny next to the body, but sitting right on its surface.
+    patch = cmds.polyCube(name="patch", w=0.12, h=0.12, d=0.02, ch=False)[0]
+    cmds.setAttr(patch + ".translateX", 1.0)
+    cmds.setAttr(patch + ".translateY", 1.0)
+
+    patch_path = skintransfer.selected_mesh_shapes.__globals__["_shape_of"](patch)
+    body_path = skintransfer.selected_mesh_shapes.__globals__["_shape_of"](body)
+
+    # Being much smaller than the body is not itself suspicious any more.
+    check(not skintransfer.check_alignment(patch_path, body_path),
+          "a patch-sized target must not be flagged at all: %r"
+          % (skintransfer.check_alignment(patch_path, body_path),))
+
+    count, _rigid = skintransfer.transfer_to_target(patch_path, body_path)
+    check(count > 0, "a small accessory must still receive weights")
+    check(skintransfer.skin_cluster_of(patch_path),
+          "the patch must carry a skinCluster after the transfer")
+
+    # A genuine order-of-magnitude mismatch must still be REPORTED — and still not refuse,
+    # because the report is advice now, not a gate.
+    strayed = cmds.polyCube(name="strayed", w=0.01, h=0.01, d=0.01, ch=False)[0]
+    cmds.setAttr(strayed + ".translateX", 1.0)
+    strayed_path = skintransfer.selected_mesh_shapes.__globals__["_shape_of"](strayed)
+    check(skintransfer.check_alignment(strayed_path, body_path),
+          "a 100x size gap must still produce a warning message")
+    count, _rigid = skintransfer.transfer_to_target(strayed_path, body_path)
+    check(count > 0, "even a flagged pair must transfer — the check advises, it does not gate")
+
+    print("OK small accessory transfers; a gross mismatch warns without refusing")
+
+
 def main():
     cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
     cmds.undoInfo(state=True, infinity=True)
@@ -212,6 +254,7 @@ def main():
     print("OK skin transfer: %d verts, %d rigid shell(s), DayZ rules satisfied, body untouched"
           % (count, rigidified))
 
+    test_small_accessory_still_transfers()
     test_reference_added_from_file()
     return 0
 
