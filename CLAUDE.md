@@ -20,6 +20,7 @@ Run from the repository root.
 python tests/python/test_p3d_roundtrip.py
 python tests/python/test_model_cfg.py
 python tests/python/test_paa.py          # PAA decoder; skips cleanly if tests/paa/*.paa are absent
+python tests/python/test_skinweights.py  # skin-weight outlier detection (pure math)
 
 # Python syntax checks (compile every .py that exists on disk — robust to package renames)
 python -m py_compile $(find scripts plug-ins tests -name '*.py')
@@ -27,12 +28,20 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 # Maya workflow tests (load the plugin, exercise import/export + commands + UI)
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/skin_weights_workflow.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/skin_transfer.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/weights_survive_skeleton.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/command_undo.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/command_correctness.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/export_uses_live_mesh.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/scene_watch.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/dock_refresh_cost.py
 
 # Package release archive (plain file copy + zip, no build)
 powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version 0.1.0
 ```
 
-Full validation after code changes: both `tests/python` format tests → `py_compile` → both `tests/mayapy` workflows.
+Full validation after code changes: the `tests/python` tests → `py_compile` → the `tests/mayapy` workflows.
 
 ## High-level architecture
 
@@ -68,7 +77,7 @@ Two layers, split by whether they need Maya:
   `entry._build_qt_dock`; `objectBuilderMenu.py` is a thin facade re-exporting everything the plugin
   and the runpy-based mayapy tests reach.
 
-- **`plug-ins/MayaObjectBuilder.py`** — the main scripted plugin (API 2.0). Registers the eleven
+- **`plug-ins/MayaObjectBuilder.py`** — the main scripted plugin (API 2.0). Registers the sixteen
   `a3ob*` commands, sources the MEL option box, opens the Python dock UI, and loads/unloads the
   companion translator plugin.
 - **`plug-ins/MayaObjectBuilderTranslator.py`** — companion plugin (API 1.0). Registers the
@@ -106,6 +115,12 @@ Two layers, split by whether they need Maya:
 | Texture → material wiring | `scripts/a3ob/mayabridge/paatex/` (`materials.assign_paa_texture()`/`assign_pending_textures()`/`preferred_shader_type()`, `resolve.resolve_paa_path()`, `decode.decode_normal_png()`/`decode_smdi_png()`) |
 | Texture root / alpha UI | `scripts/a3ob/ui/panels/materials.py`; menu entry via `scripts/a3ob/ui/entry.py` |
 | `model.cfg` | `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py` |
+| Skin weights (rig) | `scripts/a3ob/mayabridge/skinweights.py` (Maya-free outlier math + bake format), `commands/skin.py` — **detection reports only**, repair is Maya's `Skin > Smooth Skin Weights` |
+| Weight transfer from body | `scripts/a3ob/mayabridge/skintransfer.py` (`transfer_to_target()`, `check_alignment()`, rigid far shells), command `a3obTransferSkin`, dock panel `ui/panels/skinning.py` |
+| Pose testing / bind pose | `scripts/a3ob/mayabridge/posetest.py` (`find_spikes()`, `skeleton_is_posed()`), command `a3obTestPose`; bind-pose check runs inside `a3obValidate` |
+| Reference assets (body/skeleton) | `scripts/a3ob/mayabridge/references.py` — saved as `.ma` under `Documents/maya/MayaObjectBuilder/references/`, paths in optionVars; command `a3obReference` |
+| Import/export progress + cancel | `scripts/a3ob/mayabridge/progress.py` (`Progress`) — wraps API-1.0 `MComputation` |
+| Dock scene notifications | `scripts/a3ob/ui/watch.py` (`SceneWatcher`) — Maya callbacks, NOT polling |
 | Attribute schema | `scripts/a3ob/mayabridge/attributes.py` (long+short `a3ob*` names) |
 | UI dock/menu | `scripts/a3ob/ui/dock.py` (`MayaObjectBuilderDock`), `entry.py` (`show_plugin_ui()`); `objectBuilderMenu.py` is a facade |
 | Command registration | `plug-ins/MayaObjectBuilder.py`, `initializePlugin()` / `uninitializePlugin()` |
@@ -114,9 +129,49 @@ Two layers, split by whether they need Maya:
 ## Port-specific gotchas (Maya Python API differences vs the former C++)
 
 - `MPxFileTranslator` is API‑1.0 only → the translator lives in the companion plugin (above).
+- `MComputation` is **also API‑1.0 only** — `maya.api.OpenMaya` has no equivalent despite the
+  devkit shipping the C++ header. `mayabridge/progress.py` imports it from `maya.OpenMaya` and
+  degrades to a no-op when unavailable. devKit documents the C++ API; the 2.0 Python bindings
+  do not cover all of it, so verify a class exists before designing around it.
+- `MFnSet.getMembers()` returns an `MSelectionList`, which holds only ONE component type per
+  DAG path: for a set containing both vertices and faces of the same mesh it returns the
+  vertices and **silently drops every face** (measured: 1250 faces became 0). Selection
+  membership is therefore listed with `cmds.sets(query=True)`; only the ownership test uses
+  the API (`export/parse.py` `_read_set_components`).
+- `MMeshIntersector.create(node, matrix)` does NOT accept world-space points alongside the
+  matrix — points must be in the mesh's own object space. Passing world points returned 1.009
+  where the true distance was 0.0186 (`skintransfer.shell_distances`).
+- `om.MGlobal` is an immutable type: it cannot be monkey-patched in tests. Functions that warn
+  should also RETURN what they found (`exporter._warn_about_missing_weights`).
+- Undo: `_UndoableBase` (`commands/helpers/base.py`) routes changes through an `MDagModifier`.
+  Once a command declares itself undoable, EVERY change it makes must go through that
+  modifier — a `cmds.createNode` inside such a command survives Ctrl+Z, leaving orphans.
+  Commands that build objectSets instead stay non-undoable and wrap their body in
+  `undo_chunk()` so `cmds` records collapse into one user-visible step. `MFnSet.create()` never
+  enters the undo queue at all — sets are created with `cmds.sets`.
+- Weights live in the `skinCluster`, which Maya deletes together with the joints: deleting a
+  skeleton destroys every weight. `a3obBakeSkin` copies them onto the LOD transform
+  (`a3obBakedWeights`) and export falls back to them; the live skinCluster always wins.
+- Export reads the DEFORMED mesh, so exporting a posed rig bakes the pose into the `.p3d`.
+  `a3obValidate` warns via `posetest.skeleton_is_posed()`, which compares each joint against
+  the skinCluster's `bindPreMatrix` (the joint's own `.bindPose` attribute does NOT work).
 - `MSyntax.addFlag` accepts only ONE argument type per flag; the long flag name `set` is reserved.
   `a3obNamedProperty -set` therefore takes a single `"key=value"` string and its long alias is
-  `-setproperty` (short `-s` unchanged).
+  `-setproperty` (short `-s` unchanged). The long name `fix` is reserved the same way — `addFlag`
+  raises "Unexpected Internal Failure" and the interpreter dies at command dispatch, so
+  `a3obSkinWeights` uses `-repair` (short `-r`). Maya builds a command's syntax lazily, on
+  its FIRST dispatch, from a C++ callback that cannot absorb a Python exception — so such a
+  flag kills the session and loses unsaved work. `initializePlugin` therefore calls every
+  `syntax()` up front (`_syntax_is_safe`) and skips the offending command instead.
+- Selecting from API 2.0 is `MGlobal.setActiveSelectionList(list, MGlobal.kReplaceList)`;
+  `MGlobal.select` does not exist there.
+- The dock rebuilds every panel from the selected LOD, and that scans every objectSet in the
+  scene. `SelectionChanged` fires per marquee-drag step, so `entry._schedule_context_refresh`
+  debounces it and `_refresh_context_ui(force=False)` drops the work when the selected LOD is
+  unchanged — component picking on a dense mesh must cost zero rebuilds
+  (`tests/mayapy/dock_refresh_cost.py` guards this).
+- Weight cleanup belongs to Maya (`Skin > Smooth Skin Weights` / `Prune Small Weights`), not
+  to this plugin: `a3obSkinWeights` finds and selects suspect vertices and writes nothing.
 - Under `mayapy` standalone, `MPxCommand.setResult` values come back from `cmds` as a 1-element
   list (unlike the C++ scalar). Consumers (`objectBuilderMenu`, `objectBuilderAutoLOD`, the workflow
   tests) unwrap `[name] -> name`.
