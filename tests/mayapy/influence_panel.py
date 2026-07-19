@@ -33,6 +33,8 @@ maya.standalone.initialize()
 
 import maya.cmds as cmds  # noqa: E402
 
+from a3ob.mayabridge.commands.influence import vertices_driven_by  # noqa: E402
+
 
 def check(condition, message):
     if not condition:
@@ -79,6 +81,56 @@ def build():
     return mesh, shape, skin
 
 
+def build_namespace_collision():
+    """A cylinder skinned to two joints that share a leaf name under different namespaces.
+
+    Reproduces the ns1:Head / ns2:Head collision: two influences with the same bare
+    "Head" leaf, each driving a distinct half of the mesh."""
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCylinder(name="collarNS", r=1, h=6, sx=8, sy=6, ch=False)[0]
+    shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
+
+    cmds.namespace(add="ns1")
+    cmds.namespace(add="ns2")
+    cmds.select(clear=True)
+    head1 = cmds.rename(cmds.joint(position=(0, -3, 0), name="Head"), "ns1:Head")
+    cmds.select(clear=True)
+    head2 = cmds.rename(cmds.joint(position=(0, 3, 0), name="Head"), "ns2:Head")
+
+    skin = cmds.skinCluster(head1, head2, mesh, toSelectedBones=True, maximumInfluences=1)[0]
+    total = cmds.polyEvaluate(mesh, vertex=True)
+    half = total // 2
+    for vertex in range(total):
+        weights = (1.0, 0.0) if vertex < half else (0.0, 1.0)
+        cmds.skinPercent(skin, "%s.vtx[%d]" % (shape, vertex),
+                         transformValue=[(head1, weights[0]), (head2, weights[1])])
+    return shape, head1, head2, half, total
+
+
+def test_namespace_collision():
+    """ns1:Head and ns2:Head share the leaf 'Head' — exact paths must resolve to the right
+    half of the mesh, and the bare, ambiguous leaf must be refused rather than guessed."""
+    shape, head1, head2, half, total = build_namespace_collision()
+
+    exact1 = vertices_driven_by(shape, head1)
+    check(len(exact1) == half,
+          "ns1:Head exact match must return only its own half, got %d" % len(exact1))
+    exact2 = vertices_driven_by(shape, head2)
+    check(len(exact2) == total - half,
+          "ns2:Head exact match must return only its own half, got %d" % len(exact2))
+    check(set(exact1).isdisjoint(exact2),
+          "ns1:Head and ns2:Head must not resolve to overlapping vertices, got %r"
+          % (set(exact1) & set(exact2),))
+
+    ambiguous = vertices_driven_by(shape, "Head")
+    check(ambiguous == [],
+          "a bare 'Head' shared by two namespaced influences is ambiguous and must return "
+          "[] rather than silently picking one, got %r" % (ambiguous,))
+
+    print("OK a3obInfluence resolves ns1:Head/ns2:Head by exact path and refuses the "
+          "ambiguous bare leaf name")
+
+
 def main():
     cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
     cmds.undoInfo(state=True, infinity=True)
@@ -108,7 +160,9 @@ def main():
     check(all(".vtx[" in item for item in selected),
           "the selection must be vertex components, got %r" % (selected[:3],))
 
-    # 3. Removing — the weight must land where the neighbours are, not on the nearest bone
+    # 3. Removing — the weight must land on a surviving influence in the ratio the vertex
+    # already carried (the seed in build() pins that ratio to Head), and none of it may be
+    # lost: the vertex must stay normalized afterward.
     cmds.select(mesh, replace=True)
     removed = int(unwrap(cmds.a3obInfluence(removeInfluences="Face_Jawbone,Face_Chin")) or 0)
     check(removed == 2, "both facial bones must be removed, got %d" % removed)
@@ -126,7 +180,8 @@ def main():
     check(abs(sum(values) - 1.0) < 1e-4, "the vertex must stay normalized, got %r" % (values,))
     head_index = [n.split("|")[-1] for n in left].index("Head")
     check(values[head_index] > 0.5,
-          "the facial weight must have moved to Head like its neighbours, got %r" % (values,))
+          "the removed weight must have landed on Head, the surviving influence the vertex's "
+          "own pre-removal ratio favoured, got %r" % (values,))
 
     # 4. Refusing to strip the mesh bare — the mesh is still selected from step 3 (neither
     # a3obInfluence nor a refusal touches the selection), and re-selecting it here would push
@@ -144,6 +199,9 @@ def main():
           "one undo must restore the removed influences, got %r" % (sorted(restored),))
 
     print("OK a3obInfluence lists, selects, removes to neighbours, refuses to strip, undoes")
+
+    # 6. Namespace collision: two influences sharing a leaf name must not be confused
+    test_namespace_collision()
     return 0
 
 

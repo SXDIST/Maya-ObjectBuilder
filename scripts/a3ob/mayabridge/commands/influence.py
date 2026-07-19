@@ -76,9 +76,25 @@ def vertices_driven_by(shape, influence, threshold=sw.MIN_ENCODABLE_WEIGHT):
     skin_selection.add(skin)
     skin_fn = oma.MFnSkinCluster(skin_selection.getDependNode(0))
 
+    # The dock passes a bare leaf name (what the user typed or clicked), so an exact
+    # partialPathName() match is tried FIRST and, if found, wins outright — that is the
+    # only way to disambiguate a fully-qualified caller like "ns1:Head" from "ns2:Head".
+    # Only when there is no exact hit do we fall back to leaf-name matching, which is what
+    # makes a short name typed in the dock work at all. But a scene with referenced rigs
+    # can carry the very same leaf under two different namespaces, and if the fallback ever
+    # matched more than one influence, silently picking the first would paint the wrong half
+    # of the mesh with no error — so an ambiguous leaf match returns nothing instead.
     names = [path.partialPathName() for path in skin_fn.influenceObjects()]
-    leaf = inf.leaf_name(influence)
-    index = next((i for i, name in enumerate(names) if inf.leaf_name(name) == leaf), -1)
+    index = next((i for i, name in enumerate(names) if name == influence), -1)
+    if index < 0:
+        leaf = inf.leaf_name(influence)
+        matches = [i for i, name in enumerate(names) if inf.leaf_name(name) == leaf]
+        if len(matches) > 1:
+            om.MGlobal.displayWarning(
+                "a3obInfluence: '%s' is ambiguous — it matches %s; use the full path to "
+                "pick one" % (influence, ", ".join(names[i] for i in matches)))
+            return []
+        index = matches[0] if matches else -1
     if index < 0:
         return []
 
