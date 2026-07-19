@@ -53,6 +53,7 @@ class FakeDock:
     refresh_material_metadata = _count
     refresh_selection_manager = _count
     refresh_mass_summary = _count
+    refresh_influences = _count
 
 
 def main():

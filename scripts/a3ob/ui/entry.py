@@ -162,6 +162,37 @@ def _bake_skin_weights():
     return int(result or 0)
 
 
+def _list_influences():
+    """Influence names of the selected mesh's skinCluster."""
+    load_plugin()
+    result = cmds.a3obInfluence(listInfluences=True)
+    if result is None:
+        return []
+    if isinstance(result, str):
+        return [result]
+    return list(result)
+
+
+def _remove_influences(names):
+    """Remove the named influences from the selected mesh. Returns how many went."""
+    load_plugin()
+    if not names:
+        return 0
+    result = cmds.a3obInfluence(removeInfluences=",".join(names))
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
+def _select_influence_vertices(name):
+    """Select the vertices one influence drives. Returns how many."""
+    load_plugin()
+    result = cmds.a3obInfluence(selectVertices=name)
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
 def _add_reference_asset(kind):
     load_plugin()
     cmds.a3obReference(kind=kind)
@@ -266,6 +297,7 @@ def _refresh_context_ui(force=True):
     dock.refresh_material_metadata()
     dock.refresh_selection_manager(True)
     dock.refresh_mass_summary()
+    dock.refresh_influences()
 
 
 def _schedule_context_refresh():
@@ -443,6 +475,9 @@ __all__ = [
     "_transfer_skin",
     "_test_pose",
     "_bake_skin_weights",
+    "_list_influences",
+    "_remove_influences",
+    "_select_influence_vertices",
     "_add_reference_asset",
     "_save_reference_asset",
     "import_model_cfg",

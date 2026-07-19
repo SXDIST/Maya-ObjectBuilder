@@ -69,6 +69,41 @@ class SkinningPanelMixin:
             "Copy the live skinCluster weights onto the LOD transforms before deleting a rig.",
             ":/save.png"))
 
+        layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
+                               "the buttons act on what you highlight in it. Removing a "
+                               "bone moves its weight to the bones the neighbouring "
+                               "vertices use — weight is never deleted, only moved."))
+
+        filter_row = qt_widgets.QHBoxLayout()
+        filter_row.addWidget(qt_widgets.QLabel("Filter"))
+        self.influence_filter = qt_widgets.QLineEdit(
+            cmds.optionVar(query="MayaObjectBuilder_influence_filter")
+            if cmds.optionVar(exists="MayaObjectBuilder_influence_filter") else "")
+        self.influence_filter.setPlaceholderText("Face_*   (blank shows everything)")
+        self.influence_filter.setToolTip(
+            "Shell-style mask matched against the bone name, e.g. Face_* or Eye*. "
+            "Leave blank to list every influence.")
+        self.influence_filter.textChanged.connect(self.refresh_influences)
+        filter_row.addWidget(self.influence_filter)
+        layout.addLayout(filter_row)
+
+        self.influence_list = qt_widgets.QListWidget()
+        self.influence_list.setSelectionMode(
+            qt_widgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.influence_list.setMaximumHeight(160)
+        self.influence_list.setToolTip("Bones driving the selected mesh.")
+        layout.addWidget(self.influence_list)
+
+        influence_row = qt_widgets.QHBoxLayout()
+        influence_row.addWidget(_qt_button(
+            "Select Vertices", self.run_select_influence_vertices,
+            "Select the vertices the highlighted bone actually drives.", ":/aselect.png"))
+        influence_row.addWidget(_qt_button(
+            "Remove", self.run_remove_influences,
+            "Remove the highlighted bones; their weight moves to what the neighbours use.",
+            ":/delete.png"))
+        layout.addLayout(influence_row)
+
         self.skinning_summary = _hint("")
         layout.addWidget(self.skinning_summary)
         return widget
@@ -94,6 +129,59 @@ class SkinningPanelMixin:
         self._set_skinning_summary(
             "Baked weights onto {0} LOD(s) — they now survive deleting the rig.".format(baked)
             if baked else "Nothing baked: no skinned LOD found.")
+
+    def refresh_influences(self):
+        """Repopulate the influence list from the selected mesh, keeping the highlight."""
+        if getattr(self, "influence_list", None) is None:
+            return
+        from a3ob.mayabridge.influences import match_names
+
+        previously = {item.text() for item in self.influence_list.selectedItems()}
+        names = _list_influences()
+        pattern = self.influence_filter.text().strip() if self.influence_filter else ""
+        shown = match_names(names, pattern) if pattern else names
+
+        self.influence_list.clear()
+        for name in shown:
+            # The list shows the short, readable leaf name, but -removeInfluences matches
+            # EXACTLY while -selectVertices only falls back to leaf matching (and refuses an
+            # ambiguous bare leaf across namespaces/DAG paths). So the full name the command
+            # needs travels as the item's data role; only the label is the trimmed leaf.
+            leaf = name.split("|")[-1].split(":")[-1]
+            item = qt_widgets.QListWidgetItem(leaf)
+            item.setData(qt_core.Qt.ItemDataRole.UserRole, name)
+            self.influence_list.addItem(item)
+        for index in range(self.influence_list.count()):
+            item = self.influence_list.item(index)
+            if item.text() in previously:
+                item.setSelected(True)
+
+        if pattern:
+            cmds.optionVar(stringValue=("MayaObjectBuilder_influence_filter", pattern))
+
+    def _highlighted_influences(self):
+        return [item.data(qt_core.Qt.ItemDataRole.UserRole) for item in self.influence_list.selectedItems()]
+
+    def run_select_influence_vertices(self):
+        picked = self._highlighted_influences()
+        if not picked:
+            self._set_skinning_summary("Highlight a bone in the list first.")
+            return
+        count = _select_influence_vertices(picked[0])
+        self._set_skinning_summary(
+            "{0} drives {1} vertex(es) — selected.".format(picked[0], count) if count
+            else "{0} drives no vertices worth exporting.".format(picked[0]))
+
+    def run_remove_influences(self):
+        picked = self._highlighted_influences()
+        if not picked:
+            self._set_skinning_summary("Highlight the bones to remove first.")
+            return
+        removed = _remove_influences(picked)
+        self.refresh_influences()
+        self._set_skinning_summary(
+            "Removed {0} influence(s); weight moved to the neighbours' bones.".format(removed)
+            if removed else "Nothing removed — see the script editor for why.")
 
     def _set_skinning_summary(self, text):
         if getattr(self, "skinning_summary", None) is not None:
