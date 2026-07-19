@@ -1,5 +1,19 @@
 # Influence Panel — Design
 
+> **Correction, measured during implementation.** This document states that
+> `weightDistribution` must be set before removal because "redistribution happens *during*
+> removal". That is wrong. `removeInfluence` produced identical results under both settings:
+> Neck 0.9901 / Head 0.0099 with no surviving weight on the target bone, and Head 1.0 once
+> the vertex carried a seed weight there. Removal redistributes in the ratio the vertex
+> already holds, whatever the mode.
+>
+> `weightDistribution` earns its place on the **painting** path instead, where it was
+> measured to matter: flooding an influence to zero on a sleeve whose neighbours are pure
+> `Elbow` gives Shoulder 0.76 / Elbow 0.24 under Distance and Elbow 1.0 under Neighbors.
+> Setting Neighbors is still correct — it serves the rigger's later painting, which is the
+> workflow this feature exists for. Only the reason below is wrong. The shipped code and
+> tests carry the corrected wording.
+
 **Goal:** remove unwanted bones from a garment without leaving Paint Skin Weights and
 without hunting for joints in the Outliner.
 

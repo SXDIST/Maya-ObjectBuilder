@@ -1,5 +1,19 @@
 # Influence Panel — Implementation Plan
 
+> **EXECUTED. Correction, measured during implementation.** The constraint below and several
+> code comments in this plan claim `weightDistribution` must be set before removal "because
+> redistribution happens during the removal". Measurement disproves it: `removeInfluence`
+> gave identical results under both settings — Neck 0.9901 / Head 0.0099 with no surviving
+> weight on the target bone, Head 1.0 once the vertex carried a seed weight there. Removal
+> redistributes in the ratio the vertex already holds, whatever the mode.
+>
+> The setting matters on the **painting** path: flooding an influence to zero on a sleeve
+> whose neighbours are pure `Elbow` gives Shoulder 0.76 / Elbow 0.24 under Distance and
+> Elbow 1.0 under Neighbors. Setting Neighbors remains correct, for the rigger's later
+> painting. The plan text below is left as written — it is the record of what was planned —
+> but the shipped code and tests carry the corrected wording. Do not copy the rationale out
+> of this document.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove unwanted bones from a garment inside the dock — see them, check where they sit, drop them — without leaving Paint Skin Weights or hunting joints in the Outliner.
