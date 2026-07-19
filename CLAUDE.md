@@ -37,6 +37,7 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/command_correctness.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/export_uses_live_mesh.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/scene_watch.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/plugin_teardown.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/dock_refresh_cost.py
 
 # Package release archive (plain file copy + zip, no build)
