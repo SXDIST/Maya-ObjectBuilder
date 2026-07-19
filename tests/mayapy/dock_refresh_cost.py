@@ -8,34 +8,13 @@ selecting components inside one LOD triggers no rebuild, while switching LOD sti
 Run:  mayapy.exe tests/mayapy/dock_refresh_cost.py
 """
 
-import os
-import sys
+import _harness
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
-
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
 from a3ob.ui import entry  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
-def make_lod(name):
-    transform = cmds.polySphere(name=name, subdivisionsX=20, subdivisionsY=20, ch=False)[0]
-    cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
-    cmds.setAttr(transform + ".a3obIsLOD", True)
-    cmds.addAttr(transform, longName="a3obLodType", attributeType="long")
-    cmds.addAttr(transform, longName="a3obResolution", attributeType="long")
-    return transform
 
 
 class FakeDock:
@@ -57,8 +36,8 @@ class FakeDock:
 
 
 def main():
-    first = make_lod("lodA")
-    second = make_lod("lodB")
+    first = _harness.make_lod("lodA", kind="sphere")
+    second = _harness.make_lod("lodB", kind="sphere")
 
     dock = FakeDock()
     entry._active_qt_dock = lambda: dock
@@ -67,30 +46,29 @@ def main():
     cmds.select(first, replace=True)
     entry._refresh_context_ui(False)
     after_first = dock.rebuilds
-    check(after_first > 0, "selecting a LOD must rebuild the dock once")
+    _harness.check(after_first > 0, "selecting a LOD must rebuild the dock once")
 
     # Picking components inside the SAME LOD: the dock shows nothing derived from them.
     shape = cmds.listRelatives(first, shapes=True, fullPath=True)[0]
     for i in range(0, 200, 20):
         cmds.select("%s.vtx[%d:%d]" % (shape, i, i + 19), replace=True)
         entry._refresh_context_ui(False)
-    check(dock.rebuilds == after_first,
+    _harness.check(dock.rebuilds == after_first,
           "component selection inside one LOD must not rebuild the dock (%d extra rebuilds)"
           % (dock.rebuilds - after_first))
 
     # Switching to another LOD must still rebuild.
     cmds.select(second, replace=True)
     entry._refresh_context_ui(False)
-    check(dock.rebuilds > after_first, "switching LOD must rebuild the dock")
+    _harness.check(dock.rebuilds > after_first, "switching LOD must rebuild the dock")
 
     # Undo/scene events force a rebuild even when the LOD is unchanged.
     before_force = dock.rebuilds
     entry._refresh_context_ui()
-    check(dock.rebuilds > before_force, "a forced refresh must rebuild even on the same LOD")
+    _harness.check(dock.rebuilds > before_force, "a forced refresh must rebuild even on the same LOD")
 
     print("OK dock refresh: component picking costs 0 rebuilds, LOD switch still refreshes")
     test_sibling_mesh_switch_refreshes(dock)
-    return 0
 
 
 def test_sibling_mesh_switch_refreshes(dock):
@@ -100,7 +78,7 @@ def test_sibling_mesh_switch_refreshes(dock):
     the filter box and deleted it again — the only thing that called the refresh directly.
     The cause was the context key holding the LOD alone, so picking a different garment under
     the same LOD looked like no change at all and the refresh short-circuited."""
-    parent = make_lod("lodShared")
+    parent = _harness.make_lod("lodShared", kind="sphere")
     first = cmds.polyCylinder(name="garmentA", r=1, h=2, ch=False)[0]
     second = cmds.polyCylinder(name="garmentB", r=1, h=2, ch=False)[0]
     cmds.parent(first, parent)
@@ -112,7 +90,7 @@ def test_sibling_mesh_switch_refreshes(dock):
 
     cmds.select(second, replace=True)
     entry._refresh_context_ui(False)
-    check(dock.rebuilds > baseline,
+    _harness.check(dock.rebuilds > baseline,
           "selecting a sibling mesh under the same LOD must refresh the panels")
 
     # ...and picking components on that mesh must still cost nothing.
@@ -121,7 +99,7 @@ def test_sibling_mesh_switch_refreshes(dock):
     for i in range(0, 60, 20):
         cmds.select("%s.vtx[%d:%d]" % (shape, i, i + 19), replace=True)
         entry._refresh_context_ui(False)
-    check(dock.rebuilds == settled,
+    _harness.check(dock.rebuilds == settled,
           "component picking on that mesh must still cost 0 rebuilds (%d extra)"
           % (dock.rebuilds - settled))
 
@@ -129,8 +107,5 @@ def test_sibling_mesh_switch_refreshes(dock):
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL dock_refresh_cost: %s" % error, file=sys.stderr)
-        raise
+    import sys
+    sys.exit(_harness.run(main))

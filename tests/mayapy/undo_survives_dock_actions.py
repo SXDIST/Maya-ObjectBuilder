@@ -124,4 +124,5 @@ def main():
 
 
 if __name__ == "__main__":
-    _harness.run(main)
+    import sys
+    sys.exit(_harness.run(main))

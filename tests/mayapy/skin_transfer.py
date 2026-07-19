@@ -17,23 +17,14 @@ Run:  mayapy.exe tests/mayapy/skin_transfer.py
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
+import maya.cmds as cmds
 
-import maya.cmds as cmds  # noqa: E402
-
-from a3ob.mayabridge import skintransfer  # noqa: E402
-from a3ob.mayabridge.skinweights import MIN_ENCODABLE_WEIGHT  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+from a3ob.mayabridge import skintransfer
+from a3ob.mayabridge.skinweights import MIN_ENCODABLE_WEIGHT
 
 
 def weights_of(skin, shape, vertex):
@@ -98,33 +89,33 @@ def test_reference_added_from_file():
         references.save_reference("male_body", scratch)
         cmds.delete(body)
         cmds.delete(cmds.ls(type="joint") or [])
-        check(not cmds.objExists(body), "the body must be gone from the scene")
-        check(not cmds.ls(type="joint"), "the skeleton must be gone from the scene")
+        _harness.check(not cmds.objExists(body), "the body must be gone from the scene")
+        _harness.check(not cmds.ls(type="joint"), "the skeleton must be gone from the scene")
 
         cmds.select(garment, replace=True)
         targets = skintransfer.selected_mesh_shapes()
         reference, imported = skintransfer.ensure_reference(targets)
-        check(reference is not None, "a reference must be produced from the saved file")
-        check(imported, "the saved asset must have been imported, got %r" % (imported,))
+        _harness.check(reference is not None, "a reference must be produced from the saved file")
+        _harness.check(imported, "the saved asset must have been imported, got %r" % (imported,))
 
         # An asset that arrives invisible reads as a failed import.
         for node in imported:
-            check(cmds.getAttr(node + ".visibility"),
+            _harness.check(cmds.getAttr(node + ".visibility"),
                   "imported reference node %r must arrive visible" % (node,))
 
         count, _rigid = skintransfer.transfer_to_target(targets[0], reference)
-        check(count > 0, "transfer must run against the imported reference")
+        _harness.check(count > 0, "transfer must run against the imported reference")
 
         # The point of keeping the import: the rig is still there to edit and to export.
         skin = skintransfer.skin_cluster_of(targets[0])
-        check(skin, "the garment must still carry the transferred skinCluster")
-        check(cmds.ls(type="joint"), "the imported skeleton must remain — the rig needs it")
+        _harness.check(skin, "the garment must still carry the transferred skinCluster")
+        _harness.check(cmds.ls(type="joint"), "the imported skeleton must remain — the rig needs it")
         influences = cmds.skinCluster(skin, query=True, influence=True) or []
-        check(influences, "the transferred skinCluster must keep its influences")
+        _harness.check(influences, "the transferred skinCluster must keep its influences")
 
         # A second call must reuse what is now in the scene rather than import again.
         _again, imported_again = skintransfer.ensure_reference(targets)
-        check(not imported_again,
+        _harness.check(not imported_again,
               "a reference already in the scene must be reused, imported %r" % (imported_again,))
     finally:
         if had_var:
@@ -155,13 +146,13 @@ def test_small_accessory_still_transfers():
     body_path = skintransfer.selected_mesh_shapes.__globals__["_shape_of"](body)
 
     # Being much smaller than the body is not itself suspicious any more.
-    check(not skintransfer.check_alignment(patch_path, body_path),
+    _harness.check(not skintransfer.check_alignment(patch_path, body_path),
           "a patch-sized target must not be flagged at all: %r"
           % (skintransfer.check_alignment(patch_path, body_path),))
 
     count, _rigid = skintransfer.transfer_to_target(patch_path, body_path)
-    check(count > 0, "a small accessory must still receive weights")
-    check(skintransfer.skin_cluster_of(patch_path),
+    _harness.check(count > 0, "a small accessory must still receive weights")
+    _harness.check(skintransfer.skin_cluster_of(patch_path),
           "the patch must carry a skinCluster after the transfer")
 
     # A genuine order-of-magnitude mismatch must still be REPORTED — and still not refuse,
@@ -169,16 +160,16 @@ def test_small_accessory_still_transfers():
     strayed = cmds.polyCube(name="strayed", w=0.01, h=0.01, d=0.01, ch=False)[0]
     cmds.setAttr(strayed + ".translateX", 1.0)
     strayed_path = skintransfer.selected_mesh_shapes.__globals__["_shape_of"](strayed)
-    check(skintransfer.check_alignment(strayed_path, body_path),
+    _harness.check(skintransfer.check_alignment(strayed_path, body_path),
           "a 100x size gap must still produce a warning message")
     count, _rigid = skintransfer.transfer_to_target(strayed_path, body_path)
-    check(count > 0, "even a flagged pair must transfer — the check advises, it does not gate")
+    _harness.check(count > 0, "even a flagged pair must transfer — the check advises, it does not gate")
 
     print("OK small accessory transfers; a gross mismatch warns without refusing")
 
 
 def main():
-    cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
+    cmds.loadPlugin(os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py"))
     cmds.undoInfo(state=True, infinity=True)
 
     body, body_skin, garment = build_scene()
@@ -190,9 +181,9 @@ def main():
 
     cmds.select(garment, replace=True)
     targets = skintransfer.selected_mesh_shapes()
-    check(len(targets) == 1, "expected one selected mesh, got %d" % len(targets))
+    _harness.check(len(targets) == 1, "expected one selected mesh, got %d" % len(targets))
     reference = skintransfer.find_reference(targets)
-    check("body" in reference.fullPathName(),
+    _harness.check("body" in reference.fullPathName(),
           "reference must be the skinned body, got %s" % reference.fullPathName())
 
     cmds.undoInfo(openChunk=True)
@@ -203,8 +194,8 @@ def main():
 
     skin = skintransfer.skin_cluster_of(targets[0])
     influences = cmds.skinCluster(skin, query=True, influence=True) or []
-    check(count > 0, "no vertices processed")
-    check(rigidified == 1, "the detached pouch must be rigidified exactly once, got %d" % rigidified)
+    _harness.check(count > 0, "no vertices processed")
+    _harness.check(rigidified == 1, "the detached pouch must be rigidified exactly once, got %d" % rigidified)
 
     # 1. Fitted part follows the body: a vertex near the top must be Upper-dominated.
     upper_index = influences.index([i for i in influences if i.endswith("Upper")][0])
@@ -214,20 +205,20 @@ def main():
         if position[1] > 2.5 and abs(position[0]) < 1.5:  # on the sleeve, not the pouch
             top_vertex = i
             break
-    check(top_vertex is not None, "no sleeve vertex found near the top")
+    _harness.check(top_vertex is not None, "no sleeve vertex found near the top")
     top_weights = weights_of(skin, garment_shape, top_vertex)
-    check(top_weights[upper_index] > 0.8,
+    _harness.check(top_weights[upper_index] > 0.8,
           "top of the sleeve must follow Upper like the body does, got %r" % (top_weights,))
 
     # 2. The pouch shell must be rigid: identical weights on every one of its vertices.
     pouch_vertices = [i for i in range(count)
                       if cmds.pointPosition("%s.vtx[%d]" % (garment_shape, i), world=True)[0] > 2.0]
-    check(len(pouch_vertices) == 8, "expected the 8 pouch vertices, got %d" % len(pouch_vertices))
+    _harness.check(len(pouch_vertices) == 8, "expected the 8 pouch vertices, got %d" % len(pouch_vertices))
     reference_weights = weights_of(skin, garment_shape, pouch_vertices[0])
-    check(sum(reference_weights) > 0.0, "the pouch must carry weights, got %r" % (reference_weights,))
+    _harness.check(sum(reference_weights) > 0.0, "the pouch must carry weights, got %r" % (reference_weights,))
     for vertex in pouch_vertices[1:]:
         current = weights_of(skin, garment_shape, vertex)
-        check(all(abs(a - b) < 1e-4 for a, b in zip(current, reference_weights)),
+        _harness.check(all(abs(a - b) < 1e-4 for a, b in zip(current, reference_weights)),
               "pouch vertex %d differs from its shell: %r vs %r"
               % (vertex, current, reference_weights))
 
@@ -235,27 +226,27 @@ def main():
     for i in range(count):
         values = weights_of(skin, garment_shape, i)
         used = [v for v in values if v > 0.0]
-        check(len(used) <= 4, "vertex %d has %d influences (max 4)" % (i, len(used)))
-        check(abs(sum(values) - 1.0) < 1e-3, "vertex %d is not normalized: %.5f" % (i, sum(values)))
+        _harness.check(len(used) <= 4, "vertex %d has %d influences (max 4)" % (i, len(used)))
+        _harness.check(abs(sum(values) - 1.0) < 1e-3, "vertex %d is not normalized: %.5f" % (i, sum(values)))
         for value in used:
-            check(value > MIN_ENCODABLE_WEIGHT,
+            _harness.check(value > MIN_ENCODABLE_WEIGHT,
                   "vertex %d keeps weight %.6f, which encodes to zero in the p3d" % (i, value))
 
     # 3b. Redistribution must follow the neighbours, not bone proximity. Zeroing an
     # influence cannot delete weight — it moves it — and "Distance" sends it to whichever
     # bone is nearest, which is how head weight ends up on a sleeve.
-    check(cmds.getAttr(skin + ".weightDistribution") == 1,
+    _harness.check(cmds.getAttr(skin + ".weightDistribution") == 1,
           "weightDistribution must be Neighbors (1), got %r"
           % (cmds.getAttr(skin + ".weightDistribution"),))
 
     # 4. The reference body must be untouched.
     body_after = [weights_of(body_skin, body_shape, i)
                   for i in range(cmds.polyEvaluate(body, vertex=True))]
-    check(body_before == body_after, "the reference body's weights were modified")
+    _harness.check(body_before == body_after, "the reference body's weights were modified")
 
     # 5. One undo must take the whole thing back.
     cmds.undo()
-    check(not skintransfer.skin_cluster_of(targets[0]),
+    _harness.check(not skintransfer.skin_cluster_of(targets[0]),
           "undo must remove the skinCluster the transfer created")
 
     print("OK skin transfer: %d verts, %d rigid shell(s), DayZ rules satisfied, body untouched"
@@ -267,8 +258,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL skin_transfer: %s" % error, file=sys.stderr)
-        raise
+    sys.exit(_harness.run(main))

@@ -20,23 +20,14 @@ import os
 import sys
 import tempfile
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
+import maya.cmds as cmds
+import maya.api.OpenMaya as om
 
-import maya.cmds as cmds  # noqa: E402
-import maya.api.OpenMaya as om  # noqa: E402
-
-from a3ob.formats.p3d import MLOD  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+from a3ob.formats.p3d import MLOD
 
 
 def new_scene():
@@ -97,7 +88,7 @@ def exported_sharp_edges(lod_transform, name):
 
     path = os.path.join(tempfile.gettempdir(), name)
     cmds.select(lod_transform, replace=True)
-    check(MayaMeshExport().export_mlod(path, ExportOptions(selected_only=True)),
+    _harness.check(MayaMeshExport().export_mlod(path, ExportOptions(selected_only=True)),
           "export failed for %s" % lod_transform)
     mlod = MLOD.read_file(path)
     return sum(len(tagg.data.edges) for lod in mlod.lods for tagg in lod.taggs
@@ -115,15 +106,15 @@ def test_locked_smooth_normals_beat_a_stale_hard_flag():
     cmds.polySoftEdge(mesh, angle=0, ch=False)                 # flag every edge hard
 
     hard, soft = edge_flags(shape)
-    check(soft == 0 and hard > 0,
+    _harness.check(soft == 0 and hard > 0,
           "the fixture must reproduce all-hard flags, got %d hard / %d soft" % (hard, soft))
 
     # ... while the normals themselves stayed smooth: adjacent faces still agree.
     fn = om.MFnMesh(om.MSelectionList().add(shape).getDagPath(0))
-    check(fn.getFaceVertexNormal(0, fn.getPolygonVertices(0)[0]).length() > 0, "normals exist")
+    _harness.check(fn.getFaceVertexNormal(0, fn.getPolygonVertices(0)[0]).length() > 0, "normals exist")
 
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_locked.p3d")
-    check(written == 0,
+    _harness.check(written == 0,
           "smooth locked normals must not export as sharp edges, got %d" % written)
 
 
@@ -135,10 +126,10 @@ def test_a_genuinely_hard_edge_is_still_written():
     cmds.polySoftEdge(mesh, angle=0, ch=False)
 
     hard, soft = edge_flags(shape)
-    check(soft == 0 and hard == 12, "a cube has 12 edges, all hard, got %d/%d" % (hard, soft))
+    _harness.check(soft == 0 and hard == 12, "a cube has 12 edges, all hard, got %d/%d" % (hard, soft))
 
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_cube.p3d")
-    check(written == 12, "every faceted edge of the cube must be written, got %d" % written)
+    _harness.check(written == 12, "every faceted edge of the cube must be written, got %d" % written)
 
 
 def test_hand_hardened_edges_with_unlocked_normals_round_trip():
@@ -156,12 +147,12 @@ def test_hand_hardened_edges_with_unlocked_normals_round_trip():
     cmds.polySoftEdge(picked, angle=0, ch=False)          # harden a known handful
 
     locked = cmds.polyNormalPerVertex(shape + ".vtx[*]", query=True, freezeNormal=True) or []
-    check(not any(locked), "this case is about UNLOCKED normals")
+    _harness.check(not any(locked), "this case is about UNLOCKED normals")
     hard, _soft = edge_flags(shape)
-    check(hard == len(picked), "expected %d hand-hardened edges, got %d" % (len(picked), hard))
+    _harness.check(hard == len(picked), "expected %d hand-hardened edges, got %d" % (len(picked), hard))
 
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_hand.p3d")
-    check(written == hard,
+    _harness.check(written == hard,
           "every hand-hardened edge must be exported: %d hardened, %d written"
           % (hard, written))
 
@@ -175,12 +166,12 @@ def test_a_shallow_but_real_crease_is_kept():
     cmds.move(0, 0.0005, 0, "%s.vtx[1]" % shape, "%s.vtx[4]" % shape, relative=True)
     cmds.polySoftEdge(mesh, angle=180, ch=False)
     inner = interior_edges(shape)
-    check(len(inner) == 1, "a 2x1 plane has one interior edge, got %r" % (inner,))
+    _harness.check(len(inner) == 1, "a 2x1 plane has one interior edge, got %r" % (inner,))
     cmds.polySoftEdge("%s.e[%d]" % (shape, inner[0]), angle=0, ch=False)
-    check(hard_interior_edges(shape) == 1, "that edge must now be hard")
+    _harness.check(hard_interior_edges(shape) == 1, "that edge must now be hard")
 
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_shallow.p3d")
-    check(written == 1, "a shallow crease is still a crease, got %d" % written)
+    _harness.check(written == 1, "a shallow crease is still a crease, got %d" % written)
 
 
 def test_coplanar_hardened_edge_with_unlocked_normals_is_kept():
@@ -195,10 +186,10 @@ def test_coplanar_hardened_edge_with_unlocked_normals_is_kept():
     cmds.polySoftEdge(mesh, angle=180, ch=False)
     inner = interior_edges(shape)
     cmds.polySoftEdge("%s.e[%d]" % (shape, inner[0]), angle=0, ch=False)  # hard, but flat
-    check(hard_interior_edges(shape) == 1,
+    _harness.check(hard_interior_edges(shape) == 1,
           "the fixture needs one hardened coplanar edge, got %d" % hard_interior_edges(shape))
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_coplanar.p3d")
-    check(written == 1, "a hand-set hard edge is kept even when flat, got %d" % written)
+    _harness.check(written == 1, "a hand-set hard edge is kept even when flat, got %d" % written)
 
 
 def test_locked_normals_that_really_differ_are_still_written():
@@ -210,9 +201,9 @@ def test_locked_normals_that_really_differ_are_still_written():
     cmds.polyNormalPerVertex(mesh, freezeNormal=True)    # ... and locked that way
 
     locked = cmds.polyNormalPerVertex(shape + ".vtx[*]", query=True, freezeNormal=True) or []
-    check(any(locked), "the fixture needs locked normals")
+    _harness.check(any(locked), "the fixture needs locked normals")
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_lockedhard.p3d")
-    check(written == 12, "a locked-faceted cube keeps all 12 edges, got %d" % written)
+    _harness.check(written == 12, "a locked-faceted cube keeps all 12 edges, got %d" % written)
 
 
 def test_a_smooth_mesh_writes_nothing():
@@ -220,7 +211,7 @@ def test_a_smooth_mesh_writes_nothing():
     mesh = cmds.polySphere(name="ball", ch=False)[0]
     cmds.polySoftEdge(mesh, angle=180, ch=False)
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_smooth.p3d")
-    check(written == 0, "a fully smooth mesh has no sharp edges, got %d" % written)
+    _harness.check(written == 0, "a fully smooth mesh has no sharp edges, got %d" % written)
 
 
 def test_open_border_edges_are_not_sharp():
@@ -230,10 +221,10 @@ def test_open_border_edges_are_not_sharp():
     cmds.polySoftEdge(mesh, angle=0, ch=False)   # all four borders flagged hard
     shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
     hard, _soft = edge_flags(shape)
-    check(hard == 4, "the fixture needs four hard border edges, got %d" % hard)
+    _harness.check(hard == 4, "the fixture needs four hard border edges, got %d" % hard)
 
     written = exported_sharp_edges(mark_lod(mesh), "a3ob_sharp_border.p3d")
-    check(written == 0, "border edges must not be exported as sharp, got %d" % written)
+    _harness.check(written == 0, "border edges must not be exported as sharp, got %d" % written)
 
 
 def main():
@@ -249,5 +240,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    sys.exit(_harness.run(main))

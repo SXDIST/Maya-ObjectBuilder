@@ -13,23 +13,13 @@ so every generated Geometry LOD arrived in Object Builder carrying a junk proper
 Run:  mayapy.exe tests/mayapy/autolod_properties.py
 """
 
-import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
-
-import maya.cmds as cmds  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+import maya.cmds as cmds
 
 
 def properties_on(node):
@@ -54,8 +44,8 @@ def test_box_geometry_lod_has_no_invented_properties():
         source, {"geometry_type": "BOX", "geometry_name": "Geometry"}, parent)
 
     found = properties_on(node)
-    check(found == [], "a generated Geometry LOD carries no named properties, got %r" % (found,))
-    check(cmds.getAttr(node + ".a3obLodType") == 6, "it is still a Geometry LOD")
+    _harness.check(found == [], "a generated Geometry LOD carries no named properties, got %r" % (found,))
+    _harness.check(cmds.getAttr(node + ".a3obLodType") == 6, "it is still a Geometry LOD")
 
 
 def test_empty_geometry_lod_has_no_invented_properties():
@@ -67,7 +57,7 @@ def test_empty_geometry_lod_has_no_invented_properties():
         source, {"geometry_type": "NONE", "geometry_name": "Geometry"}, parent)
 
     found = properties_on(node)
-    check(found == [], "an empty Geometry LOD carries none either, got %r" % (found,))
+    _harness.check(found == [], "an empty Geometry LOD carries none either, got %r" % (found,))
 
 
 def test_a_property_the_user_sets_is_still_kept():
@@ -82,7 +72,7 @@ def test_a_property_the_user_sets_is_still_kept():
 
     cmds.select(node, replace=True)
     cmds.a3obNamedProperty(s="autocenter=0")
-    check(properties_on(node) == ["autocenter=0"],
+    _harness.check(properties_on(node) == ["autocenter=0"],
           "a deliberately set property must survive, got %r" % (properties_on(node),))
 
 
@@ -94,5 +84,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    sys.exit(_harness.run(main))

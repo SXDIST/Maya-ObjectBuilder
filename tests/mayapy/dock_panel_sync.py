@@ -16,16 +16,11 @@ instead of being told the node:
 Run:  mayapy.exe tests/mayapy/dock_panel_sync.py
 """
 
-import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 import maya.OpenMaya as om1  # noqa: E402 - API 1.0 has the command-output callback
@@ -184,5 +179,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    sys.exit(_harness.run(main))

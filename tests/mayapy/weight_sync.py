@@ -11,20 +11,11 @@ import os
 import sys
 import tempfile
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
-
-import maya.cmds as cmds  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+import maya.cmds as cmds
 
 
 def build():
@@ -42,17 +33,17 @@ def build():
 
 
 def main():
-    cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
+    cmds.loadPlugin(os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py"))
     from a3ob.mayabridge import weightsync
 
     transform = build()
-    check(not cmds.attributeQuery("a3obBakedWeights", node=transform, exists=True),
+    _harness.check(not cmds.attributeQuery("a3obBakedWeights", node=transform, exists=True),
           "nothing should be stored before the first sync")
 
     updated = weightsync.sync_all_lods()
-    check(updated == 1, "expected 1 LOD synced, got %r" % (updated,))
+    _harness.check(updated == 1, "expected 1 LOD synced, got %r" % (updated,))
     stored = cmds.getAttr(transform + ".a3obBakedWeights")
-    check("Pelvis" in stored and "Spine" in stored,
+    _harness.check("Pelvis" in stored and "Spine" in stored,
           "both bones must be stored, got %r" % (stored[:80],))
 
     # Editing weights and syncing again must refresh, not append.
@@ -61,8 +52,8 @@ def main():
     cmds.skinPercent(skin, "%s.vtx[0]" % shape, transformValue=[("Pelvis", 1.0), ("Spine", 0.0)])
     weightsync.sync_all_lods()
     refreshed = cmds.getAttr(transform + ".a3obBakedWeights")
-    check(refreshed != stored, "a weight edit must change the stored copy")
-    check(refreshed.count("Pelvis:") == 1, "syncing must replace, not append")
+    _harness.check(refreshed != stored, "a weight edit must change the stored copy")
+    _harness.check(refreshed.count("Pelvis:") == 1, "syncing must replace, not append")
 
     # Saving the scene must sync without an explicit call.
     weightsync.install()
@@ -73,7 +64,7 @@ def main():
         cmds.file(rename=scene)
         cmds.file(save=True, type="mayaAscii", force=True)
         after_save = cmds.getAttr(transform + ".a3obBakedWeights")
-        check(after_save != before_save, "saving the scene must refresh the stored weights")
+        _harness.check(after_save != before_save, "saving the scene must refresh the stored weights")
     finally:
         weightsync.uninstall()
 
@@ -81,7 +72,7 @@ def main():
     cmds.skinPercent(skin, "%s.vtx[2]" % shape, transformValue=[("Pelvis", 1.0), ("Spine", 0.0)])
     frozen = cmds.getAttr(transform + ".a3obBakedWeights")
     cmds.file(save=True, type="mayaAscii", force=True)
-    check(cmds.getAttr(transform + ".a3obBakedWeights") == frozen,
+    _harness.check(cmds.getAttr(transform + ".a3obBakedWeights") == frozen,
           "no callback may survive uninstall()")
 
     print("OK weights sync on save and the callback is removable")
@@ -89,8 +80,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL weight_sync: %s" % error, file=sys.stderr)
-        raise
+    sys.exit(_harness.run(main))

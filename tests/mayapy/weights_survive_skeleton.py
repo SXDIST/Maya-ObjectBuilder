@@ -16,20 +16,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = Path(os.path.dirname(os.path.dirname(_HERE)))
-sys.path.insert(0, str(_REPO / "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
-
-import maya.cmds as cmds  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+import maya.cmds as cmds
 
 
 def bone_selections(path):
@@ -46,12 +37,12 @@ def bone_selections(path):
 def export(label):
     from a3ob.mayabridge.export.exporter import MayaMeshExport
     path = Path(tempfile.mkdtemp(prefix="skel-")) / (label + ".p3d")
-    check(MayaMeshExport().export_mlod(str(path)), "export failed for " + label)
+    _harness.check(MayaMeshExport().export_mlod(str(path)), "export failed for " + label)
     return bone_selections(path)
 
 
 def main():
-    cmds.loadPlugin(os.path.join(str(_REPO), "plug-ins", "MayaObjectBuilder.py"))
+    cmds.loadPlugin(os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py"))
     cmds.undoInfo(state=True, infinity=True)
     cmds.file(new=True, force=True)
 
@@ -67,26 +58,26 @@ def main():
     cmds.skinCluster(root, tip, transform, toSelectedBones=True, maximumInfluences=4)
 
     with_rig = export("with_rig")
-    check(set(with_rig) == {"Pelvis", "Spine"},
+    _harness.check(set(with_rig) == {"Pelvis", "Spine"},
           "the rigged export must carry both bones, got %r" % sorted(with_rig))
 
     # Bake, then destroy the rig exactly as a user would.
     baked = cmds.a3obBakeSkin()
     baked = baked[0] if isinstance(baked, (list, tuple)) else baked
-    check(int(baked) == 1, "expected one LOD baked, got %r" % (baked,))
-    check(cmds.getAttr(transform + ".a3obBakedWeights"),
+    _harness.check(int(baked) == 1, "expected one LOD baked, got %r" % (baked,))
+    _harness.check(cmds.getAttr(transform + ".a3obBakedWeights"),
           "baking must write a3obBakedWeights onto the transform")
 
     cmds.delete([root, tip])
-    check(not (cmds.ls(type="skinCluster") or []),
+    _harness.check(not (cmds.ls(type="skinCluster") or []),
           "deleting the joints should have removed the skinCluster (that is the whole problem)")
 
     without_rig = export("without_rig")
-    check(set(without_rig) == set(with_rig),
+    _harness.check(set(without_rig) == set(with_rig),
           "baked weights must still export every bone: %r vs %r"
           % (sorted(with_rig), sorted(without_rig)))
     for bone, count in with_rig.items():
-        check(without_rig[bone] == count,
+        _harness.check(without_rig[bone] == count,
               "bone %s lost vertices: %d with rig, %d without" % (bone, count, without_rig[bone]))
 
     # And a scene that has a skeleton but no weights at all must not export silently.
@@ -99,7 +90,7 @@ def main():
     selection.add(transform)
     dag_path = selection.getDagPath(0)
     unweighted = _warn_about_missing_weights([(_lod_sort_key(dag_path), dag_path)])
-    check(len(unweighted) == 1,
+    _harness.check(len(unweighted) == 1,
           "exporting a rigged scene with no weights must flag the LOD, got %r" % (unweighted,))
 
     cmds.delete(joint)
@@ -118,7 +109,7 @@ def test_import_stores_weights_on_mesh():
     from a3ob.mayabridge.import_.importer import MayaMeshImport
     from a3ob.mayabridge.skinweights import parse_bake_string
 
-    fixture = (_REPO / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d"
+    fixture = (Path(_harness.REPO) / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d"
                / "sample_1_character.p3d")
     if not fixture.is_file():
         print("SKIP import weight storage: fixture missing")
@@ -140,8 +131,8 @@ def test_import_stores_weights_on_mesh():
         text = cmds.getAttr(lod + ".a3obBakedWeights") or ""
         stored_bones.update(name for name, _pairs in parse_bake_string(text))
 
-    check(stored_bones, "import must store weights on the LOD transforms")
-    check(stored_bones <= expected,
+    _harness.check(stored_bones, "import must store weights on the LOD transforms")
+    _harness.check(stored_bones <= expected,
           "stored bones must all come from the file: %r" % sorted(stored_bones - expected))
     print("OK import stores %d bone selection(s) as mesh data" % len(stored_bones))
 
@@ -157,15 +148,15 @@ def test_bind_pose_detection():
     tip = cmds.joint(position=(0, 2, 0), name="Tip")
     cmds.skinCluster(root, tip, mesh, toSelectedBones=True)
 
-    check(skeleton_is_posed() == [], "a freshly bound rig must read as bind pose")
+    _harness.check(skeleton_is_posed() == [], "a freshly bound rig must read as bind pose")
 
     cmds.setAttr(tip + ".rotateX", 45)
     posed = skeleton_is_posed()
-    check(len(posed) == 1 and posed[0].endswith("Tip"),
+    _harness.check(len(posed) == 1 and posed[0].endswith("Tip"),
           "the rotated joint must be reported, got %r" % (posed,))
 
     cmds.setAttr(tip + ".rotateX", 0)
-    check(skeleton_is_posed() == [], "returning to bind pose must clear the warning")
+    _harness.check(skeleton_is_posed() == [], "returning to bind pose must clear the warning")
     print("OK bind pose detection (posed rig reported, restored rig clean)")
     test_bind_pose_detection_after_middle_influence_removal()
 
@@ -190,19 +181,16 @@ def test_bind_pose_detection_after_middle_influence_removal():
     skin = cmds.skinCluster(a, b, c, d, mesh, toSelectedBones=True, maximumInfluences=4)[0]
 
     cmds.skinCluster(skin, edit=True, removeInfluence=[b, c])
-    check(cmds.skinCluster(skin, query=True, influence=True) == ["A", "D"],
+    _harness.check(cmds.skinCluster(skin, query=True, influence=True) == ["A", "D"],
           "expected A and D to survive the removal")
 
     posed = skeleton_is_posed()
-    check(posed == [],
+    _harness.check(posed == [],
           "a rig that was never moved must read as bind pose after removing a middle "
           "influence, got %r (mis-indexed bindPreMatrix would report the survivors)" % (posed,))
     print("OK bind pose detection survives a middle-influence removal")
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL weights_survive_skeleton: %s" % error, file=sys.stderr)
-        raise
+    import sys
+    sys.exit(_harness.run(main))

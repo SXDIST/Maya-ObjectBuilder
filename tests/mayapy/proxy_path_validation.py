@@ -22,24 +22,15 @@ import os
 import sys
 import tempfile
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
-
-import maya.cmds as cmds  # noqa: E402
+import maya.cmds as cmds
 
 # This import is the canary: it fails with ImportError against the unfixed code.
-from a3ob.ui.actions.metadata import _validate_proxy_path  # noqa: E402
-from a3ob.ui.recent import recent_paths, remember_path  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+from a3ob.ui.actions.metadata import _validate_proxy_path
+from a3ob.ui.recent import recent_paths, remember_path
 
 
 def clear_proxy_recents():
@@ -50,22 +41,22 @@ def clear_proxy_recents():
 
 def test_wrong_extension_is_rejected():
     ok, msg = _validate_proxy_path("barrel.obj")
-    check(not ok, "a non-.p3d extension must be rejected")
-    check(".p3d" in msg, f"warning must mention .p3d, got {msg!r}")
+    _harness.check(not ok, "a non-.p3d extension must be rejected")
+    _harness.check(".p3d" in msg, f"warning must mention .p3d, got {msg!r}")
 
     ok, _ = _validate_proxy_path("barrel.P3D")
-    check(ok or True, "extension check is case-insensitive")  # .P3D is the tricky one
+    _harness.check(ok or True, "extension check is case-insensitive")  # .P3D is the tricky one
     # Actually test it: if the path happens to not exist the result is still False,
     # which is fine — the extension alone is accepted but the file must exist.
     ok2, msg2 = _validate_proxy_path("barrel.p3d")
-    check(not ok2, "a relative .p3d with no texture root must be rejected")
+    _harness.check(not ok2, "a relative .p3d with no texture root must be rejected")
 
 
 def test_nonexistent_absolute_path_is_rejected():
     fake = os.path.join(tempfile.gettempdir(), "totally_fake_file_that_does_not_exist.p3d")
     ok, msg = _validate_proxy_path(fake)
-    check(not ok, "a nonexistent absolute path must be rejected")
-    check("not exist" in msg.lower() or "does not" in msg.lower(),
+    _harness.check(not ok, "a nonexistent absolute path must be rejected")
+    _harness.check("not exist" in msg.lower() or "does not" in msg.lower(),
           f"warning must say the file does not exist, got {msg!r}")
 
 
@@ -75,8 +66,8 @@ def test_existing_absolute_path_is_accepted():
         real_path = fh.name
     try:
         ok, msg = _validate_proxy_path(real_path)
-        check(ok, f"an existing absolute .p3d must be accepted, got msg={msg!r}")
-        check(msg == "", f"accepted path must have an empty warning, got {msg!r}")
+        _harness.check(ok, f"an existing absolute .p3d must be accepted, got msg={msg!r}")
+        _harness.check(msg == "", f"accepted path must have an empty warning, got {msg!r}")
     finally:
         os.unlink(real_path)
 
@@ -87,8 +78,8 @@ def test_relative_path_without_texture_root_is_rejected():
         cmds.optionVar(remove="MayaObjectBuilder_texture_root")
 
     ok, msg = _validate_proxy_path("data\\barrel_proxy.p3d")
-    check(not ok, "a relative path with no texture root must be rejected")
-    check("texture root" in msg.lower(),
+    _harness.check(not ok, "a relative path with no texture root must be rejected")
+    _harness.check("texture root" in msg.lower(),
           f"warning must mention the texture root, got {msg!r}")
 
 
@@ -102,11 +93,11 @@ def test_relative_path_resolved_against_texture_root():
         cmds.optionVar(stringValue=("MayaObjectBuilder_texture_root", tmpdir))
         try:
             ok, msg = _validate_proxy_path(p3d_name)
-            check(ok, f"a relative path that resolves under the texture root must be accepted, "
+            _harness.check(ok, f"a relative path that resolves under the texture root must be accepted, "
                       f"msg={msg!r}")
 
             ok_missing, _ = _validate_proxy_path("this_does_not_exist.p3d")
-            check(not ok_missing,
+            _harness.check(not ok_missing,
                   "a relative path that does not resolve must still be rejected")
         finally:
             cmds.optionVar(remove="MayaObjectBuilder_texture_root")
@@ -125,7 +116,7 @@ def test_bad_path_does_not_land_in_recents():
     if ok:
         remember_path("proxy", bad_path)  # guard: this branch must NOT run
 
-    check(recent_paths("proxy") == [],
+    _harness.check(recent_paths("proxy") == [],
           f"a rejected path must not appear in recents, got {recent_paths('proxy')!r}")
 
 
@@ -137,10 +128,10 @@ def test_good_path_lands_in_recents():
         real_path = fh.name
     try:
         ok, msg = _validate_proxy_path(real_path)
-        check(ok, f"the existing .p3d must pass validation, msg={msg!r}")
+        _harness.check(ok, f"the existing .p3d must pass validation, msg={msg!r}")
         if ok:
             remember_path("proxy", real_path)
-        check(real_path in recent_paths("proxy"),
+        _harness.check(real_path in recent_paths("proxy"),
               f"a valid path must land in recents after success, got {recent_paths('proxy')!r}")
     finally:
         os.unlink(real_path)
@@ -159,5 +150,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    sys.exit(_harness.run(main))

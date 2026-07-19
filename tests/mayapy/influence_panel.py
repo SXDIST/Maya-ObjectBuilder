@@ -20,25 +20,13 @@ attribute set correctly for it.
 Run:  mayapy.exe tests/mayapy/influence_panel.py
 """
 
-import os
-import sys
+import _harness
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
-
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
 from a3ob.mayabridge.commands.influence import vertices_driven_by  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
 
 
 def unwrap(result):
@@ -113,17 +101,17 @@ def test_namespace_collision():
     shape, head1, head2, half, total = build_namespace_collision()
 
     exact1 = vertices_driven_by(shape, head1)
-    check(len(exact1) == half,
+    _harness.check(len(exact1) == half,
           "ns1:Head exact match must return only its own half, got %d" % len(exact1))
     exact2 = vertices_driven_by(shape, head2)
-    check(len(exact2) == total - half,
+    _harness.check(len(exact2) == total - half,
           "ns2:Head exact match must return only its own half, got %d" % len(exact2))
-    check(set(exact1).isdisjoint(exact2),
+    _harness.check(set(exact1).isdisjoint(exact2),
           "ns1:Head and ns2:Head must not resolve to overlapping vertices, got %r"
           % (set(exact1) & set(exact2),))
 
     ambiguous = vertices_driven_by(shape, "Head")
-    check(ambiguous == [],
+    _harness.check(ambiguous == [],
           "a bare 'Head' shared by two namespaced influences is ambiguous and must return "
           "[] rather than silently picking one, got %r" % (ambiguous,))
 
@@ -132,14 +120,14 @@ def test_namespace_collision():
 
 
 def main():
-    cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
+    _harness.load_plugin()
     cmds.undoInfo(state=True, infinity=True)
 
     # _syntax_is_safe skips a command whose syntax() Maya rejects, so a bad flag name shows
     # up as the command simply not existing rather than as a crash. Catch that here.
-    check(cmds.pluginInfo("MayaObjectBuilder", query=True, loaded=True),
+    _harness.check(cmds.pluginInfo("MayaObjectBuilder", query=True, loaded=True),
           "the plugin must be loaded")
-    check("a3obInfluence" in (cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or []),
+    _harness.check("a3obInfluence" in (cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or []),
           "a3obInfluence did not register — a flag long name was probably rejected")
 
     mesh, shape, skin = build()
@@ -150,14 +138,14 @@ def main():
     if isinstance(listed, str):
         listed = [listed]
     leaves = {name.split("|")[-1].split(":")[-1] for name in listed}
-    check(leaves == {"Neck", "Head", "Face_Jawbone", "Face_Chin"},
+    _harness.check(leaves == {"Neck", "Head", "Face_Jawbone", "Face_Chin"},
           "all four influences must be listed, got %r" % (sorted(leaves),))
 
     # 2. Selecting the vertices a bone drives
     count = int(unwrap(cmds.a3obInfluence(selectVertices="Face_Jawbone")) or 0)
-    check(count == 8, "Face_Jawbone drives the 8-vertex band, got %d" % count)
+    _harness.check(count == 8, "Face_Jawbone drives the 8-vertex band, got %d" % count)
     selected = cmds.ls(selection=True, flatten=True) or []
-    check(all(".vtx[" in item for item in selected),
+    _harness.check(all(".vtx[" in item for item in selected),
           "the selection must be vertex components, got %r" % (selected[:3],))
 
     # 3. Removing — the weight must land on a surviving influence in the ratio the vertex
@@ -165,21 +153,21 @@ def main():
     # lost: the vertex must stay normalized afterward.
     cmds.select(mesh, replace=True)
     removed = int(unwrap(cmds.a3obInfluence(removeInfluences="Face_Jawbone,Face_Chin")) or 0)
-    check(removed == 2, "both facial bones must be removed, got %d" % removed)
+    _harness.check(removed == 2, "both facial bones must be removed, got %d" % removed)
 
     left = cmds.skinCluster(skin, query=True, influence=True) or []
-    check({n.split("|")[-1] for n in left} == {"Neck", "Head"},
+    _harness.check({n.split("|")[-1] for n in left} == {"Neck", "Head"},
           "only Neck and Head may remain, got %r" % (left,))
     # State assertion, not a causal one: the command sets weightDistribution to Neighbors
     # for the rigger's later painting (see module docstring) — it does not cause this
     # redistribution, which is decided by the Head seed weight in build() instead.
-    check(cmds.getAttr(skin + ".weightDistribution") == 1,
+    _harness.check(cmds.getAttr(skin + ".weightDistribution") == 1,
           "the command must set weightDistribution to Neighbors (1) for later painting")
 
     values = cmds.skinPercent(skin, "%s.vtx[0]" % shape, query=True, value=True)
-    check(abs(sum(values) - 1.0) < 1e-4, "the vertex must stay normalized, got %r" % (values,))
+    _harness.check(abs(sum(values) - 1.0) < 1e-4, "the vertex must stay normalized, got %r" % (values,))
     head_index = [n.split("|")[-1] for n in left].index("Head")
-    check(values[head_index] > 0.5,
+    _harness.check(values[head_index] > 0.5,
           "the removed weight must have landed on Head, the surviving influence the vertex's "
           "own pre-removal ratio favoured, got %r" % (values,))
 
@@ -188,26 +176,22 @@ def main():
     # its own undo entry ahead of the one below, so the later single undo would only undo the
     # reselect instead of the removal.
     stripped = int(unwrap(cmds.a3obInfluence(removeInfluences=",".join(left))) or 0)
-    check(stripped == 0, "removing every influence must be refused, removed %d" % stripped)
-    check(len(cmds.skinCluster(skin, query=True, influence=True) or []) == 2,
+    _harness.check(stripped == 0, "removing every influence must be refused, removed %d" % stripped)
+    _harness.check(len(cmds.skinCluster(skin, query=True, influence=True) or []) == 2,
           "the refusal must leave the skinCluster untouched")
 
     # 5. One undo takes the whole removal back
     cmds.undo()
     restored = {n.split("|")[-1] for n in (cmds.skinCluster(skin, query=True, influence=True) or [])}
-    check("Face_Jawbone" in restored,
+    _harness.check("Face_Jawbone" in restored,
           "one undo must restore the removed influences, got %r" % (sorted(restored),))
 
     print("OK a3obInfluence lists, selects, removes to neighbours, refuses to strip, undoes")
 
     # 6. Namespace collision: two influences sharing a leaf name must not be confused
     test_namespace_collision()
-    return 0
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL influence_panel: %s" % error, file=sys.stderr)
-        raise
+    import sys
+    sys.exit(_harness.run(main))

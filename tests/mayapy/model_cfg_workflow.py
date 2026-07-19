@@ -1,7 +1,12 @@
+import sys
 from pathlib import Path
 
-import maya.cmds as cmds
-import maya.standalone
+import _harness
+
+_harness.bootstrap()
+
+import maya.cmds as cmds  # noqa: E402
+import maya.standalone  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -11,7 +16,6 @@ OUTPUT = ROOT / "build" / "model-cfg-workflow.cfg"
 
 
 def main():
-    maya.standalone.initialize(name="python")
     cmds.loadPlugin(str(PLUGIN), quiet=True)
     commands = set(cmds.pluginInfo("MayaObjectBuilder", query=True, command=True) or [])
     expected = {"a3obImportModelCfg", "a3obExportModelCfg"}
@@ -37,4 +41,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(_harness.run(main))

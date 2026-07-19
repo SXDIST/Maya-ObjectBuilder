@@ -14,22 +14,13 @@ import os
 import sys
 import tempfile
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
+import maya.cmds as cmds
 
-import maya.cmds as cmds  # noqa: E402
-
-from a3ob.ui.scene.selections import _selection_sets, selection_sets_for_owner  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+from a3ob.ui.scene.selections import _selection_sets, selection_sets_for_owner
 
 
 def _snapshot_a3ob_attrs(set_node):
@@ -75,7 +66,7 @@ def test_panel_refresh_does_not_dirty_the_scene():
     path = os.path.join(tempfile.gettempdir(), "panels_no_dirty.ma")
     cmds.file(rename=path)
     cmds.file(save=True, type="mayaAscii")
-    check(not cmds.file(query=True, modified=True),
+    _harness.check(not cmds.file(query=True, modified=True),
           "scene must be clean right after saving")
 
     # Simulate two SelectionChanged-driven dock refreshes.
@@ -85,12 +76,12 @@ def test_panel_refresh_does_not_dirty_the_scene():
     selection_sets_for_owner(lod_owner)
     selection_sets_for_owner(lod_owner)
 
-    check(not cmds.file(query=True, modified=True),
+    _harness.check(not cmds.file(query=True, modified=True),
           "panel refresh must not mark the scene modified "
           "(normalization must not run on every query)")
 
     after = _snapshot_a3ob_attrs(set_node)
-    check(before == after,
+    _harness.check(before == after,
           f"a3ob* attrs must not change during a panel refresh, "
           f"before={before!r} after={after!r}")
 
@@ -118,12 +109,12 @@ def test_sets_created_through_write_path_are_hidden():
     set_obj = sel.getDependNode(0)
     attr.mark_technical_set(set_obj)
 
-    check(cmds.attributeQuery("a3obTechnicalSet", node=set_name, exists=True),
+    _harness.check(cmds.attributeQuery("a3obTechnicalSet", node=set_name, exists=True),
           "mark_technical_set must add a3obTechnicalSet")
-    check(bool(cmds.getAttr(set_name + ".a3obTechnicalSet")),
+    _harness.check(bool(cmds.getAttr(set_name + ".a3obTechnicalSet")),
           "a3obTechnicalSet must be True after mark_technical_set")
     if cmds.attributeQuery("hiddenInOutliner", node=set_name, exists=True):
-        check(bool(cmds.getAttr(set_name + ".hiddenInOutliner")),
+        _harness.check(bool(cmds.getAttr(set_name + ".hiddenInOutliner")),
               "hiddenInOutliner must be True after mark_technical_set")
 
 
@@ -136,7 +127,7 @@ def test_find_components_marks_its_sets_technical():
     site that did NOT — it built component sets and left them unmarked, which is
     only visible once the panel refresh stops covering for it. Drive the command.
     """
-    plugin = os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py")
+    plugin = os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py")
     if not cmds.pluginInfo(plugin, query=True, loaded=True):
         cmds.loadPlugin(plugin)
 
@@ -150,9 +141,9 @@ def test_find_components_marks_its_sets_technical():
 
     created = [node for node in cmds.ls(type="objectSet") or []
                if node.startswith("a3ob_Component")]
-    check(created, "a3obFindComponents must create Component sets on a closed cube")
+    _harness.check(created, "a3obFindComponents must create Component sets on a closed cube")
     for node in created:
-        check(cmds.attributeQuery("a3obTechnicalSet", node=node, exists=True)
+        _harness.check(cmds.attributeQuery("a3obTechnicalSet", node=node, exists=True)
               and bool(cmds.getAttr(node + ".a3obTechnicalSet")),
               f"a3obFindComponents left {node} unmarked — nothing hides it now that "
               f"the panel refresh no longer normalizes on read")
@@ -166,5 +157,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    import sys
+    sys.exit(_harness.run(main))

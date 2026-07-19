@@ -11,26 +11,14 @@ the LOD name rather than `transform1`.
 Run:  mayapy.exe tests/mayapy/lod_naming.py
 """
 
-import os
-import sys
+import _harness
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
-
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
 from a3ob.ui.actions.lod import _mark_selection_as_lod  # noqa: E402
 from a3ob.ui.constants import LOD_DEFINITIONS  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
 
 
 def resolution_definition():
@@ -46,10 +34,10 @@ def test_marking_a_mesh_keeps_its_name():
     node = _mark_selection_as_lod(resolution_definition(), 1)
 
     leaf = (node or "").split("|")[-1].split(":")[-1]
-    check(leaf == "helmet", "the mesh must keep the name its author gave it, got %r" % (leaf,))
-    check(cmds.objExists("helmet"), "helmet must still be in the scene under that name")
-    check(cmds.getAttr("helmet.a3obIsLOD"), "it must still have been marked as a LOD")
-    check(cmds.getAttr("helmet.a3obResolution") == 1, "with the resolution it was given")
+    _harness.check(leaf == "helmet", "the mesh must keep the name its author gave it, got %r" % (leaf,))
+    _harness.check(cmds.objExists("helmet"), "helmet must still be in the scene under that name")
+    _harness.check(cmds.getAttr("helmet.a3obIsLOD"), "it must still have been marked as a LOD")
+    _harness.check(cmds.getAttr("helmet.a3obResolution") == 1, "with the resolution it was given")
 
 
 def test_two_meshes_of_one_type_keep_their_own_names():
@@ -60,7 +48,7 @@ def test_two_meshes_of_one_type_keep_their_own_names():
     for name in ("helmet", "visor"):
         cmds.select(cmds.polyCube(name=name, ch=False)[0], replace=True)
         _mark_selection_as_lod(definition, 1)
-    check(cmds.objExists("helmet") and cmds.objExists("visor"),
+    _harness.check(cmds.objExists("helmet") and cmds.objExists("visor"),
           "both meshes keep their own names, got %r" % (cmds.ls(type="transform"),))
 
 
@@ -73,7 +61,7 @@ def test_a_new_empty_lod_is_still_named_after_its_lod():
     node = _mark_selection_as_lod(resolution_definition(), 2)
 
     leaf = (node or "").split("|")[-1].split(":")[-1]
-    check(leaf == "Resolution_2", "a fresh empty LOD carries the LOD name, got %r" % (leaf,))
+    _harness.check(leaf == "Resolution_2", "a fresh empty LOD carries the LOD name, got %r" % (leaf,))
 
 
 def main():
@@ -84,5 +72,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    import sys
+    sys.exit(_harness.run(main))

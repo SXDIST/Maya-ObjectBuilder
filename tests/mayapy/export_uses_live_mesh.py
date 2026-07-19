@@ -18,23 +18,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = Path(os.path.dirname(os.path.dirname(_HERE)))
-sys.path.insert(0, str(_REPO / "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 import maya.api.OpenMaya as om  # noqa: E402
 
+_REPO = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 FIXTURE = _REPO / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d" / "sample_1_character.p3d"
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
 
 
 def read_mlod(path):
@@ -57,7 +49,7 @@ def main():
         print("SKIP export_uses_live_mesh: fixture missing (%s)" % FIXTURE)
         return 0
 
-    cmds.loadPlugin(os.path.join(str(_REPO), "plug-ins", "MayaObjectBuilder.py"))
+    _harness.load_plugin()
     from a3ob.mayabridge.import_.importer import MayaMeshImport
     from a3ob.mayabridge.export.exporter import MayaMeshExport, ExportOptions
 
@@ -80,22 +72,22 @@ def main():
                     hard_edges += 1
                 edge_it.next()
     if original_edges:
-        check(hard_edges > 0,
+        _harness.check(hard_edges > 0,
               "import must harden the %d sharp edges on the mesh, found none" % original_edges)
 
     # 2. Round-trip must preserve them.
     out = Path(tempfile.mkdtemp(prefix="live-mesh-")) / "roundtrip.p3d"
-    check(MayaMeshExport().export_mlod(str(out)), "export failed")
+    _harness.check(MayaMeshExport().export_mlod(str(out)), "export failed")
     exported_edges = sum(len(d.edges) for lod in read_lods(out) for d in tagg_of(lod, "SharpEdges"))
     if original_edges:
-        check(exported_edges > 0,
+        _harness.check(exported_edges > 0,
               "sharp edges lost on export: %d in, %d out" % (original_edges, exported_edges))
         # Not just "some": roughly the SAME set. `> 0` hid a 19x inflation for a long time —
         # this fixture carries 2004 sharp edges and export wrote 38871, because it trusted
         # Maya's per-edge hard FLAG while the smoothing actually lived in the locked normals
         # import had applied. Object Builder recomputes normals from this tagg, so the
         # round trip came back fully faceted.
-        check(abs(exported_edges - original_edges) <= max(4, original_edges * 0.02),
+        _harness.check(abs(exported_edges - original_edges) <= max(4, original_edges * 0.02),
               "sharp edge count must survive the round trip: %d in, %d out"
               % (original_edges, exported_edges))
 
@@ -111,15 +103,15 @@ def main():
                 break
         if target_shape:
             break
-    check(target_shape is not None, "no UV-mapped mesh in the fixture")
+    _harness.check(target_shape is not None, "no UV-mapped mesh in the fixture")
 
     def exported_u_range():
         path = Path(tempfile.mkdtemp(prefix="live-mesh-")) / "uv.p3d"
         cmds.select(target_lod, replace=True)
-        check(MayaMeshExport().export_mlod(str(path), ExportOptions(selected_only=True)),
+        _harness.check(MayaMeshExport().export_mlod(str(path), ExportOptions(selected_only=True)),
               "export of the UV LOD failed")
         values = [uv.u for lod in read_lods(path) for face in lod.faces for uv in face.uvs]
-        check(values, "exported LOD carries no UVs")
+        _harness.check(values, "exported LOD carries no UVs")
         return min(values), max(values)
 
     before_min, before_max = exported_u_range()
@@ -129,7 +121,7 @@ def main():
                     relative=True, uValue=shift, vValue=0.0)
     after_min, after_max = exported_u_range()
 
-    check(abs((after_min - before_min) - shift) < 1e-3 and abs((after_max - before_max) - shift) < 1e-3,
+    _harness.check(abs((after_min - before_min) - shift) < 1e-3 and abs((after_max - before_max) - shift) < 1e-3,
           "UV edit did not reach the export: U range %.4f..%.4f -> %.4f..%.4f, expected +%.1f"
           % (before_min, before_max, after_min, after_max, shift))
 
@@ -149,11 +141,7 @@ def test_extra_uv_sets_round_trip():
     from a3ob.mayabridge.export.exporter import MayaMeshExport, ExportOptions
 
     cmds.file(new=True, force=True)
-    transform = cmds.polyCube(name="uvLOD", ch=False)[0]
-    cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
-    cmds.setAttr(transform + ".a3obIsLOD", True)
-    cmds.addAttr(transform, longName="a3obLodType", attributeType="long")
-    cmds.addAttr(transform, longName="a3obResolution", attributeType="long")
+    transform = _harness.make_lod("uvLOD")
     shape = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
 
     # Built through the API: polyPlanarProjection needs a UI context and fails under mayapy.
@@ -175,34 +163,30 @@ def test_extra_uv_sets_round_trip():
 
     out = Path(tempfile.mkdtemp(prefix="uvsets-")) / "two.p3d"
     cmds.select(transform, replace=True)
-    check(MayaMeshExport().export_mlod(str(out), ExportOptions(selected_only=True)), "export failed")
+    _harness.check(MayaMeshExport().export_mlod(str(out), ExportOptions(selected_only=True)), "export failed")
 
     lods = read_lods(out)
     sets = [t.data for t in lods[0].taggs if t.data is not None and t.data.kind == "UVSet"]
-    check(len(sets) == 2, "expected 2 UVSet TAGGs in the file, got %d" % len(sets))
-    check(sorted(d.id for d in sets) == [0, 1], "UV set ids must be 0 and 1, got %r"
+    _harness.check(len(sets) == 2, "expected 2 UVSet TAGGs in the file, got %d" % len(sets))
+    _harness.check(sorted(d.id for d in sets) == [0, 1], "UV set ids must be 0 and 1, got %r"
           % sorted(d.id for d in sets))
     corners = len([uv for face in lods[0].faces for uv in face.uvs])
-    check(all(len(d.uvs) == corners for d in sets),
+    _harness.check(all(len(d.uvs) == corners for d in sets),
           "every UV set must cover all %d face corners, got %r" % (corners, [len(d.uvs) for d in sets]))
 
     # Re-import: the second set must come back as a real Maya UV set.
     cmds.file(new=True, force=True)
     MayaMeshImport().import_mlod(read_mlod(out), str(out))
     imported = cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []
-    check(imported, "re-import produced no LOD")
+    _harness.check(imported, "re-import produced no LOD")
     imported_shape = cmds.listRelatives(imported[0], allDescendents=True, type="mesh",
                                         fullPath=True, noIntermediate=True)[0]
     names = cmds.polyUVSet(imported_shape, query=True, allUVSets=True) or []
-    check(len(names) >= 2, "second UV set must exist on the re-imported mesh, got %r" % (names,))
-    check(not cmds.attributeQuery("a3obUVSetTaggs", node=imported[0], exists=True),
+    _harness.check(len(names) >= 2, "second UV set must exist on the re-imported mesh, got %r" % (names,))
+    _harness.check(not cmds.attributeQuery("a3obUVSetTaggs", node=imported[0], exists=True),
           "the a3obUVSetTaggs blob must no longer be written")
     print("OK extra UV set round-trips as a real Maya UV set (%r), no blob written" % (names,))
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL export_uses_live_mesh: %s" % error, file=sys.stderr)
-        raise
+    sys.exit(_harness.run(main))

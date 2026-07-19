@@ -8,18 +8,13 @@ deliberately NOT the plugin's job — Skin > Smooth Skin Weights does that.
 Run:  mayapy.exe tests/mayapy/skin_weights_workflow.py
 """
 
-import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
-
-import maya.cmds as cmds  # noqa: E402
+import maya.cmds as cmds
 
 
 def unwrap(result):
@@ -29,13 +24,8 @@ def unwrap(result):
     return result
 
 
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
 def main():
-    cmds.loadPlugin(os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py"))
+    _harness.load_plugin()
 
     transform = cmds.polyCylinder(r=1, h=6, sx=12, sy=8, ch=False)[0]
     cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
@@ -66,36 +56,32 @@ def main():
         if cmds.pointPosition("%s.vtx[%d]" % (shape, i), world=True)[1] > 2.5:
             top_vertex = i
             break
-    check(top_vertex is not None, "no vertex found near the top of the cylinder")
+    _harness.check(top_vertex is not None, "no vertex found near the top of the cylinder")
 
     cmds.skinPercent(skin, "%s.vtx[%d]" % (shape, top_vertex),
                      transformValue=[(root, 1.0), (tip, 0.0)])
 
     cmds.select(clear=True)
     found = unwrap(cmds.a3obSkinWeights())
-    check(found == 1, "expected 1 outlier, got %r" % (found,))
+    _harness.check(found == 1, "expected 1 outlier, got %r" % (found,))
 
     # Maya reports the component under the transform's short name, so compare the index.
     selected = cmds.ls(selection=True, flatten=True)
-    check(len(selected) == 1 and selected[0].endswith(".vtx[%d]" % top_vertex),
+    _harness.check(len(selected) == 1 and selected[0].endswith(".vtx[%d]" % top_vertex),
           "expected only the artefact vertex selected, got %r" % (selected,))
 
     rows = cmds.a3obValidate() or []
-    check(any("skin weight outlier" in row for row in rows),
+    _harness.check(any("skin weight outlier" in row for row in rows),
           "a3obValidate must report the outlier, got %r" % (rows,))
 
     # The plugin must NOT have touched the rig — reporting only.
     still = cmds.skinPercent(skin, "%s.vtx[%d]" % (shape, top_vertex), query=True, value=True)
-    check(still[0] == 1.0 and still[1] == 0.0,
+    _harness.check(still[0] == 1.0 and still[1] == 0.0,
           "weights must be left untouched by a report-only command, got %r" % (still,))
 
     print("OK a3obSkinWeights detects and selects the artefact (vtx[%d])" % top_vertex)
-    return 0
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL skin_weights_workflow: %s" % error, file=sys.stderr)
-        raise
+    import sys
+    sys.exit(_harness.run(main))

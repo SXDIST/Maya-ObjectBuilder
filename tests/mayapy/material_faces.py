@@ -13,25 +13,13 @@ helmet's material must not select faces on the body standing next to it.
 Run:  mayapy.exe tests/mayapy/material_faces.py
 """
 
-import os
-import sys
+import _harness
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
-
-import maya.standalone  # noqa: E402
-
-maya.standalone.initialize()
+_harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
 from a3ob.ui.scene.materials import faces_with_material  # noqa: E402
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
 
 
 def shading_group(name):
@@ -54,12 +42,12 @@ def test_whole_object_assignment_expands_to_faces():
     cmds.sets(mesh, edit=True, forceElement=group)
 
     members = cmds.sets(group, query=True) or []
-    check(not any("." in m for m in members),
+    _harness.check(not any("." in m for m in members),
           "fixture is pointless unless the assignment is whole-object, got %r" % (members,))
 
     faces = faces_with_material([group], [shape])
-    check(face_count(faces) == 6, "all six faces of the cube, got %r" % (faces,))
-    check(all(".f[" in f for f in faces), "must be face components, got %r" % (faces,))
+    _harness.check(face_count(faces) == 6, "all six faces of the cube, got %r" % (faces,))
+    _harness.check(all(".f[" in f for f in faces), "must be face components, got %r" % (faces,))
 
 
 def test_per_face_assignment_returns_only_those_faces():
@@ -70,7 +58,7 @@ def test_per_face_assignment_returns_only_those_faces():
     cmds.sets("%s.f[0:1]" % shape, edit=True, forceElement=plate)
 
     faces = faces_with_material([plate], [shape])
-    check(face_count(faces) == 2, "only the two assigned faces, got %r" % (faces,))
+    _harness.check(face_count(faces) == 2, "only the two assigned faces, got %r" % (faces,))
 
 
 def test_other_meshes_are_not_dragged_in():
@@ -83,8 +71,8 @@ def test_other_meshes_are_not_dragged_in():
     cmds.sets([helmet, body], edit=True, forceElement=group)
 
     faces = faces_with_material([group], [helmet_shape])
-    check(face_count(faces) == 6, "only the scoped mesh's faces, got %r" % (faces,))
-    check(all("body" not in f for f in faces),
+    _harness.check(face_count(faces) == 6, "only the scoped mesh's faces, got %r" % (faces,))
+    _harness.check(all("body" not in f for f in faces),
           "the unscoped mesh must not appear, got %r" % (faces,))
 
 
@@ -93,8 +81,8 @@ def test_nothing_assigned_is_empty_not_an_error():
     mesh = cmds.polyCube(name="helmet", ch=False)[0]
     shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
     empty = shading_group("unused")
-    check(faces_with_material([empty], [shape]) == [], "an unused material selects nothing")
-    check(faces_with_material([], [shape]) == [], "no material selects nothing")
+    _harness.check(faces_with_material([empty], [shape]) == [], "an unused material selects nothing")
+    _harness.check(faces_with_material([], [shape]) == [], "no material selects nothing")
 
 
 def test_the_skinclusters_orig_shape_is_not_selected():
@@ -117,21 +105,21 @@ def test_the_skinclusters_orig_shape_is_not_selected():
 
     shapes = cmds.listRelatives(mesh, shapes=True, fullPath=True) or []
     intermediates = [s for s in shapes if cmds.getAttr(s + ".intermediateObject")]
-    check(intermediates, "the fixture needs a skinCluster orig shape, got %r" % (shapes,))
+    _harness.check(intermediates, "the fixture needs a skinCluster orig shape, got %r" % (shapes,))
 
     group = shading_group("armour")
     cmds.sets("%s.f[0:5]" % mesh, edit=True, forceElement=group)
-    check(any("Orig" not in m and "|" not in m for m in cmds.sets(group, query=True) or []),
+    _harness.check(any("Orig" not in m and "|" not in m for m in cmds.sets(group, query=True) or []),
           "the fixture must store the member through the transform, got %r"
           % (cmds.sets(group, query=True),))
 
     cmds.select(mesh, replace=True)
     from a3ob.ui.scene.materials import _mesh_shapes_from_selection
     faces = faces_with_material([group], _mesh_shapes_from_selection())
-    check(face_count(faces) == 6,
+    _harness.check(face_count(faces) == 6,
           "six faces, not twelve — the orig shape must not be counted, got %d %r"
           % (face_count(faces), faces))
-    check(not any("Orig" in f for f in faces),
+    _harness.check(not any("Orig" in f for f in faces),
           "the intermediate shape must not be selected, got %r" % (faces,))
 
 
@@ -165,13 +153,13 @@ def test_the_action_scopes_to_what_was_selected_when_it_ran():
 
     cmds.select(helmet, replace=True)
     first = action.select_faces_with_material()
-    check(first == 2, "the helmet's two assigned faces, got %r" % (first,))
-    check(all("body" not in item for item in cmds.ls(selection=True, long=True) or []),
+    _harness.check(first == 2, "the helmet's two assigned faces, got %r" % (first,))
+    _harness.check(all("body" not in item for item in cmds.ls(selection=True, long=True) or []),
           "the body shares the material but was never in scope")
 
     # Repeat on the action's own output: still the same two faces, not a shrinking subset.
     second = action.select_faces_with_material()
-    check(second == 2, "clicking again must be stable, got %r" % (second,))
+    _harness.check(second == 2, "clicking again must be stable, got %r" % (second,))
 
 
 def main():
@@ -185,5 +173,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    import sys
+    sys.exit(_harness.run(main))

@@ -12,22 +12,13 @@ Run:  mayapy.exe tests/mayapy/plugin_teardown.py
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import _harness
 
-import maya.standalone  # noqa: E402
+_harness.bootstrap()
 
-maya.standalone.initialize()
+import maya.cmds as cmds
 
-import maya.cmds as cmds  # noqa: E402
-
-_PLUGIN = os.path.join(_REPO, "plug-ins", "MayaObjectBuilder.py")
-
-
-def check(condition, message):
-    if not condition:
-        raise AssertionError(message)
+_PLUGIN = os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py")
 
 
 def our_script_jobs():
@@ -43,24 +34,24 @@ def main():
 
     for cycle in range(3):
         cmds.loadPlugin(_PLUGIN)
-        check(cmds.pluginInfo("MayaObjectBuilder", query=True, loaded=True),
+        _harness.check(cmds.pluginInfo("MayaObjectBuilder", query=True, loaded=True),
               "cycle %d: the plugin must load" % cycle)
 
         # The save callback must be installed exactly once, however many times install()
         # is called — a second id would fire the sync twice and leak on unload.
         weightsync.install()
         weightsync.install()
-        check(len(weightsync._callback_ids) == 1,
+        _harness.check(len(weightsync._callback_ids) == 1,
               "cycle %d: install() must be idempotent, got %d callback(s)"
               % (cycle, len(weightsync._callback_ids)))
 
         cmds.file(new=True, force=True)
         cmds.unloadPlugin("MayaObjectBuilder")
 
-        check(not weightsync._callback_ids,
+        _harness.check(not weightsync._callback_ids,
               "cycle %d: unloading must remove the save callback, %d left"
               % (cycle, len(weightsync._callback_ids)))
-        check(len(our_script_jobs()) == baseline_jobs,
+        _harness.check(len(our_script_jobs()) == baseline_jobs,
               "cycle %d: unloading must remove our scriptJobs, %d left over"
               % (cycle, len(our_script_jobs()) - baseline_jobs))
 
@@ -83,8 +74,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as error:  # noqa: BLE001
-        print("FAIL plugin_teardown: %s" % error, file=sys.stderr)
-        raise
+    sys.exit(_harness.run(main))
