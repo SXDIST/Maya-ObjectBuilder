@@ -41,6 +41,13 @@ python -m py_compile $(find scripts plug-ins tests -name '*.py')
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/plugin_teardown.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/influence_panel.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/dock_refresh_cost.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/dock_panel_sync.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/lod_naming.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/material_faces.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/weights_restore.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/export_selection_scope.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/autolod_properties.py
+"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/sharp_edges_follow_normals.py
 
 # Package release archive (plain file copy + zip, no build)
 powershell -ExecutionPolicy Bypass -File scripts/package_release.ps1 -Version 0.1.0
@@ -223,6 +230,90 @@ Two layers, split by whether they need Maya:
   debounces it and `_refresh_context_ui(force=False)` drops the work when the selected LOD is
   unchanged — component picking on a dense mesh must cost zero rebuilds
   (`tests/mayapy/dock_refresh_cost.py` guards this).
+- **Smoothing lives in two places and NEITHER may be trusted alone** (`export/taggs/data.py`
+  `_edge_splits_the_shading()`). Maya has the per-edge soft/hard flag AND locked custom
+  per-face-vertex normals; each can be the only one holding the truth:
+  * With **locked** normals the normals win. A DayZ jacket that came in through FBX had
+    38131 edges, every one flagged hard and none soft, next to 40812 locked normals that
+    were smooth. Trusting the flag wrote "smooth normals AND every edge sharp" into one LOD,
+    and Object Builder — which recomputes normals from `#SharpEdges#` — showed it faceted.
+  * With **unlocked** normals the flag is all there is. Hardening an edge by hand does NOT
+    touch the stored normals: on a softened sphere with ten hand-hardened edges,
+    `getNormals`/`getNormalIds` (what export writes) and `getFaceVertexNormal` both reported
+    ZERO differing corners — measured under mayapy AND under interactive Maya. Deciding by
+    normals alone silently dropped every hand-set crease.
+  So: `MFnMesh.isNormalLocked(normalId)` picks which mechanism to believe, per edge. Border
+  edges (<2 faces) split no shading and are never written; nonmanifold edges (>2) keep the
+  flag. Note `getFaceVertexNormal()` returns the SHARED/averaged normal — it is not the
+  per-corner value; use `getNormalIds()` into `getNormals()`, as the exporter itself does.
+- The round-trip guard for this is a COUNT, not `> 0`. `export_uses_live_mesh.py` asserted
+  only that some sharp edges survived, which hid a 19x inflation for a long time: the
+  `sample_1_character.p3d` fixture carries 2004 sharp edges and export wrote 38871.
+- A LOD **resolution signature is not a named property**. `1.000e+13` is the float in a
+  Geometry LOD's resolution field that encodes its type; the Blender add-on mentions the
+  string once, as a key in its signature → LOD type table (`io/data_p3d.py`). Auto LOD had
+  ported that table entry into `_set_named_properties(node, (("lod", "1.000e+13"),))`, so
+  every generated Geometry LOD showed a junk `lod` row in Object Builder's Named Properties
+  — the same port artifact as the `autocenter=0` one removed before it. When something in
+  `autolod/` looks like a magic Arma constant, check whether the reference treats it as data
+  or as a *lookup key*.
+- Export resolves a selected node to LODs **upward first, then downward**
+  (`export/parse.py` `resolve_lod_paths()`). Upward only — the original — meant selecting the
+  folder that holds a model's LODs resolved to nothing and failed with "selection does not
+  contain an Object Builder LOD", so a folder per model, the obvious way to keep several
+  models bound for separate `.p3d` files apart, was the one layout that could not be
+  exported. A mesh still resolves to its own LOD, never its siblings.
+- An **empty LOD exports fine** — `Add LOD` makes a marked transform with no mesh and that
+  writes a valid (empty) LOD. What fails is a plain Maya group: no `a3obIsLOD`, so it is not
+  a LOD at all. Note `_find_first_mesh_path()` only looks a child and a grandchild deep — a
+  mesh nested deeper under a LOD is silently not exported.
+- `a3obBakedWeights` is an **export fallback, and now also restorable**:
+  `a3obBakeSkin -restore` writes it back onto the live skinCluster, matching bones by leaf
+  name and renormalizing (a baked bone the rig lacks would otherwise leave rows summing to
+  <1 for Maya to redistribute silently). It writes the whole array through
+  `MFnSkinCluster.setWeights` — ~50k non-zero entries on a real garment, where per-vertex
+  `skinPercent` takes minutes — so it does NOT enter the undo queue. Instead it stashes the
+  weights it replaces in `a3obBakedWeightsPrevious`, which makes `-restore -previous` a swap.
+- **Nothing may overwrite `a3obBakedWeights` without keeping the old copy**
+  (`weightsync.store_bake()`). Sync-on-save refreshes from whatever skinCluster is live, and
+  after a re-bind that is a fresh bind's defaults — which silently destroyed a good bake. A
+  fresh bind is indistinguishable from any other rig, so there is no honest heuristic; the
+  previous value is simply always kept. Note `store_bake` skips a write whose text it already
+  holds, which is why the restore path writes the previous slot DIRECTLY — going through
+  `store_bake` left the overwritten weights unreachable.
+- The Selections panel keys on an **owner**, not strictly a LOD (`_owner_node_for_set()` /
+  `_selected_selection_owner()`): a set made on a mesh nobody has marked yet belongs to that
+  mesh. Requiring a LOD meant such a set existed in the scene and exported fine while
+  appearing in no panel, which reads as "my selection was not created".
+- Marking a mesh as a LOD must NOT rename it. `_mark_selection_as_lod()` passes `name` to
+  `a3obCreateLOD`, which honours it only for a brand-new node, so an empty LOD is still
+  "Resolution_1" while an existing mesh keeps the name its author gave it. Renaming the
+  marked mesh to the LOD name was shipped and reverted: "helmet" became "Resolution_1", and
+  marking a second mesh of the same type collided into a suffix
+  (`tests/mayapy/lod_naming.py`). Note `autolod/helpers/meshops.py` has its own unrelated
+  `_mark_lod(transform, lod_type, resolution)` — different signature, do not conflate them.
+- A LOD's identity is its **node**, never `_lod_name_from_transform()`. That label is a type
+  name and collides constantly: a measured scene had `|helmet`, `|group1|body|Resolution_2`
+  and `|group1|body|Resolution_1` all reading "Resolution 1", so the Selections panel — which
+  filtered by label — showed every one of them the other two's sets, and `lod_overview()`
+  counted the same sets three times. Use `_lod_node_for_set()` / `selection_sets_for_lod()`.
+- Panels are refreshed on every `SelectionChanged`, so anything they call must be a SILENT
+  query. `a3obInfluence` warned "select a skinned mesh first" from the dock's own refresh,
+  which turned clicking any unrelated prop into Script Editor spam. The gate is "no acting
+  flag set" (`-sv`/`-ri`), NOT `isFlagSet("-li")`: measured, `-li` answered True under mayapy
+  and False under interactive Maya for the identical `a3obInfluence(listInfluences=True)`
+  call, so gating on it silences the tests and leaves the real session as noisy as before.
+- **A registered `MPxCommand` does not pick up code changes on plugin reload.**
+  `unloadPlugin` + purging every `a3ob*` module from `sys.modules` + `loadPlugin` genuinely
+  refreshes the plain modules — dock panel behaviour changed live and the plugin re-imported
+  all 86 modules — but the command classes kept executing the session's FIRST version:
+  monkey-patching `InfluenceCommand.doIt` (which works under mayapy) never fired, and the old
+  warning kept coming out of code that no longer exists on disk. Verify command changes under
+  `mayapy`; a running Maya needs a restart before it will run them.
+- Asserting that something stays SILENT needs a positive control in the same test, or it
+  passes vacuously the moment the listener stops working. `MCommandMessage.addCommandOutputCallback`
+  (API 1.0) does hear `MGlobal.displayWarning` under mayapy — `tests/mayapy/dock_panel_sync.py`
+  proves that with an acting-flag call before it asserts the query says nothing.
 - Weight cleanup belongs to Maya (`Skin > Smooth Skin Weights` / `Prune Small Weights`), not
   to this plugin: `a3obSkinWeights` finds and selects suspect vertices and writes nothing.
 - Under `mayapy` standalone, `MPxCommand.setResult` values come back from `cmds` as a 1-element
