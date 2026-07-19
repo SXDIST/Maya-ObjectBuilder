@@ -94,8 +94,25 @@ class ValidateCommand(_Base):
             if not mesh.isNull():
                 self._validate_mesh(lod, mesh, name, source_face_count, proxy_selections, log)
 
+        self._validate_bind_pose(log)
+
         om.MGlobal.displayInfo("a3obValidate: checked LODs=%d, warnings=%d, errors=%d" % (len(lods), log.warnings, log.errors))
         self.setResult(log.as_result())
+
+    def _validate_bind_pose(self, log):
+        """Warn when the rig is posed: export writes the deformed mesh, so the pose would be
+        baked into the .p3d as though it were the model's shape."""
+        from a3ob.mayabridge.posetest import skeleton_is_posed
+        try:
+            posed = skeleton_is_posed()
+        except Exception as error:  # noqa: BLE001 - never let this break validation
+            log.warn("", "could not check bind pose: %s" % error)
+            return
+        if posed:
+            log.warn(posed[0].split("|")[-1],
+                     "skeleton is not in bind pose (%d joint(s), e.g. %s) — exporting now "
+                     "would bake the pose into the model"
+                     % (len(posed), ", ".join(j.split("|")[-1] for j in posed[:3])))
 
     def _proxy_placeholder_selections(self, lod, lod_name, log):
         proxy_selections = set()
@@ -145,7 +162,21 @@ class ValidateCommand(_Base):
             if not is_ascii(texture) or not is_ascii(material):
                 log.warn(name, "non-ASCII texture/material path")
 
+        self._validate_skin_weights(mesh_path, name, log)
         self._validate_object_sets(mesh, name, proxy_selections, log)
+
+    def _validate_skin_weights(self, mesh_path, name, log):
+        """Flag vertices whose skin weights disagree with their neighbours — weight-transfer
+        artefacts that stay invisible in bind pose but export as stray bone selections."""
+        from a3ob.mayabridge.commands.skin import outliers_for_mesh
+        try:
+            outliers = outliers_for_mesh(mesh_path)
+        except Exception as error:  # noqa: BLE001 - never let a skin read break validation
+            log.warn(name, "could not read skin weights: %s" % error)
+            return
+        if outliers:
+            log.warn(name, "%d skin weight outlier vertex(es) — a3obSkinWeights selects them; "
+                           "fix with Skin > Smooth Skin Weights" % len(outliers))
 
     def _validate_object_sets(self, mesh, lod_name, proxy_placeholders, log):
         it = om.MItDependencyNodes(om.MFn.kSet)

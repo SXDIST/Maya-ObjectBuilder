@@ -23,6 +23,13 @@ class ValidationPanelMixin:
         buttons.addWidget(_qt_button("Selection", lambda: self.run_validation(True), "Validate only the selected LODs.", ":/confirm.png"))
         layout.addLayout(buttons)
 
+        layout.addWidget(_hint("Skin weights: finds vertices whose weights disagree with their "
+                               "neighbours — weight-transfer artefacts, invisible in bind pose. "
+                               "Fix the selection with Skin > Smooth Skin Weights."))
+        layout.addWidget(_qt_button("Select Skin Outliers", lambda: self.run_skin_weights(),
+                                    "Select skin-weight outlier vertices, then fix them with "
+                                    "Maya's Skin > Smooth Skin Weights.", ":/aselect.png"))
+
         self.validation_summary = _hint("Not validated yet.")
         layout.addWidget(self.validation_summary)
 
@@ -35,6 +42,17 @@ class ValidationPanelMixin:
     def run_validation(self, selection_only):
         rows = _run_validation(selection_only)
         self._populate_validation(rows)
+
+
+    def run_skin_weights(self):
+        count = _run_skin_weights()
+        if getattr(self, "validation_summary", None) is None:
+            return
+        if count == 0:
+            self.validation_summary.setText("No skin weight outliers found ✓")
+        else:
+            self.validation_summary.setText(
+                "Selected {0} outlier vertex(es) — fix with Skin > Smooth Skin Weights.".format(count))
 
 
     def _populate_validation(self, rows):

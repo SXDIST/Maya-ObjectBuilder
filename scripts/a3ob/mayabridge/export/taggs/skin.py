@@ -12,9 +12,16 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from a3ob.formats import p3d
+from a3ob.mayabridge import attributes as attr
+from a3ob.mayabridge.attributes import A
+from a3ob.mayabridge import skinweights as sw
 
-_MAX_INFLUENCES = 4       # DayZ blends at most 4 bones per vertex
-_WEIGHT_EPSILON = 1e-4    # ignore negligible weights (noise below Maya's prune threshold)
+_MAX_INFLUENCES = sw.MAX_INFLUENCES  # DayZ blends at most 4 bones per vertex
+
+# Selection weights are one byte with a 1/254 step, so anything below this encodes to 0.0.
+# Writing such a vertex would still list it in the bone's selection at zero weight, which
+# Object Builder paints as a stray member far from the bone — drop it instead.
+_WEIGHT_EPSILON = sw.MIN_ENCODABLE_WEIGHT
 
 
 def _find_skincluster(mesh_path):
@@ -23,16 +30,33 @@ def _find_skincluster(mesh_path):
     skins = cmds.ls(history, type="skinCluster") or []
     if not skins:
         return None
+    if len(skins) > 1:
+        # Picking the first silently exports one rig's weights and drops the rest.
+        om.MGlobal.displayWarning(
+            "a3ob export: %s has %d skinClusters (%s); exporting weights from '%s' only"
+            % (mesh_path.partialPathName(), len(skins), ", ".join(skins), skins[0]))
     selection = om.MSelectionList()
     selection.add(skins[0])
     return selection.getDependNode(0)
 
 
 def _influence_names(skin_fn):
-    """Short (bone) name for each influence, in the column order of getWeights()."""
+    """Short (bone) name for each influence, in the column order of getWeights().
+
+    DayZ selections are named after the bare bone name, so the namespace is stripped. Two
+    joints from different namespaces then collapse to one name and the second one's weights
+    are silently dropped by the dedupe below — warn instead of losing a limb's rig."""
     names = []
+    seen = {}
     for path in skin_fn.influenceObjects():
-        leaf = path.partialPathName().split("|")[-1].split(":")[-1]
+        full = path.partialPathName()
+        leaf = full.split("|")[-1].split(":")[-1]
+        if leaf in seen:
+            om.MGlobal.displayWarning(
+                "a3ob export: bone name '%s' is ambiguous ('%s' and '%s' collapse to it); "
+                "weights of the later one will be dropped" % (leaf, seen[leaf], full))
+        else:
+            seen[leaf] = full
         names.append(leaf)
     return names
 
@@ -42,6 +66,41 @@ def _complete_vertex_component(mesh_path):
     component = comp_fn.create(om.MFn.kMeshVertComponent)
     comp_fn.setCompleteData(om.MFnMesh(mesh_path).numVertices)
     return component
+
+
+def _add_baked_weight_taggs(transform, vertex_source_indices, lod):
+    """Emit bone selections from weights baked onto the transform.
+
+    Deleting the skeleton deletes the skinCluster with it, taking every weight along — and the
+    export then silently produced a file with no bone selections at all. Baked weights survive
+    that, so a rigged model can still be exported from a scene whose rig is gone."""
+    baked = attr.get_string(transform, A.BAKED_WEIGHTS)
+    if not baked:
+        return 0
+
+    existing = {t.name for t in lod.taggs if isinstance(t.name, str)}
+    added = 0
+    for name, pairs in sw.parse_bake_string(baked):
+        if name in existing:
+            continue
+        rows = []
+        for vertex, weight in pairs:
+            source_index = vertex_source_indices[vertex] if vertex < len(vertex_source_indices) else vertex
+            if 0 <= source_index < len(lod.vertices):
+                rows.append((source_index, weight))
+        if not rows:
+            continue
+        tagg = p3d.Tagg()
+        tagg.name = name
+        data = p3d.SelectionTaggData()
+        data.count_verts = len(lod.vertices)
+        data.count_faces = len(lod.faces)
+        data.vertex_weights = sorted(rows)
+        tagg.data = data
+        lod.taggs.append(tagg)
+        existing.add(name)
+        added += 1
+    return added
 
 
 def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
@@ -59,8 +118,15 @@ def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
         return 0
 
     weights, returned_count = skin_fn.getWeights(mesh_path, _complete_vertex_component(mesh_path))
-    if returned_count != influence_count:  # defensive: getWeights column count must match
-        influence_count = returned_count
+    if returned_count != influence_count:
+        # Maya's contract says this column count equals len(influenceObjects()). Carrying on
+        # with a mismatch used to index `names` out of range or silently starve bones of
+        # their vertices — refusing is the only safe answer.
+        om.MGlobal.displayError(
+            "a3ob export: skinCluster on %s reports %d influences but returned %d weight "
+            "columns; skipping its weights rather than assigning them to wrong bones"
+            % (mesh_path.partialPathName(), influence_count, returned_count))
+        return 0
     vertex_count = len(weights) // influence_count if influence_count else 0
 
     existing = {t.name for t in lod.taggs if isinstance(t.name, str)}
@@ -104,4 +170,5 @@ def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
 
 __all__ = [
     "_add_skin_weight_taggs",
+    "_add_baked_weight_taggs",
 ]
