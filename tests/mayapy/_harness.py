@@ -17,7 +17,8 @@ has to run before any ``maya.cmds`` import.
 import os
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# tests/mayapy/_harness.py -> tests/mayapy -> tests -> repo root
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPTS = os.path.join(REPO, "scripts")
 PLUGIN = os.path.join(REPO, "plug-ins", "MayaObjectBuilder.py")
 
@@ -27,6 +28,15 @@ _initialized = False
 def bootstrap():
     """Put ``scripts/`` on the path and start Maya standalone. Idempotent."""
     global _initialized
+    # Fail loudly on a bad repo root. This repo is usually also registered as a Maya
+    # module (dev_install), so `import a3ob` resolves through MAYA_MODULE_PATH even
+    # when SCRIPTS is wrong — which silently tests whatever Maya found instead of the
+    # working copy. An off-by-one dirname here did exactly that and went unnoticed.
+    for required in (SCRIPTS, PLUGIN):
+        if not os.path.exists(required):
+            raise RuntimeError(
+                "harness resolved the repo root to %r, but %r does not exist"
+                % (REPO, required))
     if SCRIPTS not in sys.path:
         sys.path.insert(0, SCRIPTS)
     if not _initialized:
