@@ -178,6 +178,47 @@ def parse_bake_string(value):
     return result
 
 
+def weights_from_bake(parsed, influence_names, vertex_count):
+    """Rebuild a flat ``getWeights()``-shaped array from parsed bake data.
+
+    Returns ``(weights, missing)`` — the array laid out vertex-major over
+    ``influence_names``, and the baked bone names that rig no longer has.
+
+    Rows are renormalized, because a bone in the bake that the rig lacks would otherwise
+    leave its vertices summing to less than 1.0 — Maya would silently redistribute that
+    remainder itself, which is how a "restore" quietly becomes a different rig. A row that
+    ends up with nothing at all is left at zero rather than smeared across every bone; the
+    caller reports it instead of inventing weights.
+    """
+    influence_count = len(influence_names)
+    weights = [0.0] * (vertex_count * influence_count)
+    if not influence_count or vertex_count <= 0:
+        return weights, [name for name, _pairs in parsed]
+
+    index_of = {}
+    for index, name in enumerate(influence_names):
+        index_of.setdefault(name, index)
+
+    missing = []
+    for name, pairs in parsed:
+        index = index_of.get(name)
+        if index is None:
+            missing.append(name)
+            continue
+        for vertex, weight in pairs:
+            if 0 <= vertex < vertex_count:
+                weights[vertex * influence_count + index] += weight
+
+    for vertex in range(vertex_count):
+        start = vertex * influence_count
+        row = weights[start:start + influence_count]
+        total = sum(row)
+        if total > 0 and abs(total - 1.0) > 1e-9:
+            for offset in range(influence_count):
+                weights[start + offset] = row[offset] / total
+    return weights, missing
+
+
 __all__ = [
     "MAX_INFLUENCES",
     "MIN_ENCODABLE_WEIGHT",
@@ -192,4 +233,5 @@ __all__ = [
     "find_outliers",
     "bake_string",
     "parse_bake_string",
+    "weights_from_bake",
 ]

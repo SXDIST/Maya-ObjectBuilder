@@ -63,11 +63,24 @@ class SkinningPanelMixin:
 
         layout.addWidget(_hint("Deleting the skeleton deletes the weights with it. Bake them "
                                "onto the LODs first and they survive — export falls back to "
-                               "them when no skinCluster is left."))
-        layout.addWidget(_qt_button(
+                               "them when no skinCluster is left. Re-bound the mesh since? "
+                               "Restore puts the stored weights back on the new rig."))
+        bake_row = qt_widgets.QHBoxLayout()
+        bake_row.addWidget(_qt_button(
             "Bake Weights onto LODs", self.run_bake_skin,
             "Copy the live skinCluster weights onto the LOD transforms before deleting a rig.",
             ":/save.png"))
+        bake_row.addWidget(_qt_button(
+            "Restore onto Rig", self.run_restore_skin,
+            "Write the baked weights back onto the current skinCluster, matching bones by "
+            "name. Not undoable — the weights it replaces go to the previous copy.",
+            ":/undo_s.png"))
+        bake_row.addWidget(_qt_button(
+            "Restore Previous", lambda: self.run_restore_skin(previous=True),
+            "Restore the copy the last overwrite replaced — the way back when a save "
+            "refreshed the bake from a rig you had just re-bound. Runs as a swap.",
+            ":/undo.png"))
+        layout.addLayout(bake_row)
 
         layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
                                "the buttons act on what you highlight in it. Removing a "
@@ -132,6 +145,13 @@ class SkinningPanelMixin:
         self._set_skinning_summary(
             "Baked weights onto {0} LOD(s) — they now survive deleting the rig.".format(baked)
             if baked else "Nothing baked: no skinned LOD found.")
+
+    def run_restore_skin(self, previous=False):
+        restored = _restore_skin_weights(previous)
+        which = "previous" if previous else "baked"
+        self._set_skinning_summary(
+            "Restored the {0} weights onto {1} LOD(s).".format(which, restored) if restored
+            else "Nothing restored — see the script editor for why.")
 
     def refresh_influences(self):
         """Repopulate the influence list from the selected mesh, keeping the highlight."""

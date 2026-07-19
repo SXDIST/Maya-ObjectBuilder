@@ -47,9 +47,28 @@ def sync_all_lods():
             continue
         node = om.MSelectionList()
         node.add(lod)
-        attr.set_string(node.getDependNode(0), A.BAKED_WEIGHTS, text)
+        store_bake(node.getDependNode(0), text)
         updated += 1
     return updated
+
+
+def store_bake(transform, text):
+    """Write ``text`` as the LOD's baked weights, keeping the copy it replaces.
+
+    Sync runs on every save from whatever skinCluster is live, which is right until the live
+    one is a rig that was just re-bound: the fresh bind's defaults then overwrite a good bake
+    and the only copy is gone. There is no reliable way to tell a deliberate re-bake from
+    that accident — a fresh bind looks like any other rig — so instead of guessing, the
+    previous value is always kept and ``a3obBakeSkin -restore -previous`` can reach it."""
+    if not text:
+        return False
+    existing = attr.get_string(transform, A.BAKED_WEIGHTS) or ""
+    if existing == text:
+        return False
+    if existing:
+        attr.set_string(transform, A.BAKED_WEIGHTS_PREVIOUS, existing)
+    attr.set_string(transform, A.BAKED_WEIGHTS, text)
+    return True
 
 
 def _on_before_save(*_args):

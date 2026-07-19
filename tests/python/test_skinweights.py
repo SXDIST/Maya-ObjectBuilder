@@ -21,6 +21,9 @@ from a3ob.mayabridge.skinweights import (  # noqa: E402
     find_candidates,
     find_outliers,
     prune_normalize,
+    bake_string,
+    parse_bake_string,
+    weights_from_bake,
 )
 
 INFLUENCES = 3  # Hip, Knee, Foot
@@ -107,6 +110,41 @@ def main():
     found = find_outliers(flat(grid), INFLUENCES, grid_neighbours)
     check(sorted(v for v, _clean in found) == sorted([first, second]),
           "both adjacent artefacts must still be detected, got %r" % ([v for v, _c in found],))
+
+    # -- restoring a bake onto a rig ------------------------------------------------
+    #
+    # Baking exists so weights outlive the skeleton; restoring is what puts them back on a
+    # skinCluster afterwards. It has to survive the rig not being identical to the one that
+    # was baked, because that is the whole reason someone re-binds.
+    bones = ["Hip", "Knee", "Foot"]
+    original = [[1.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.0, 0.25, 0.75]]
+    baked = bake_string(bones, flat(original), INFLUENCES)
+
+    restored, missing = weights_from_bake(parse_bake_string(baked), bones, len(original))
+    check(not missing, "every bone is on the rig, got missing=%r" % (missing,))
+    check(all(abs(a - b) < 1e-9 for a, b in zip(restored, flat(original))),
+          "a full round trip must reproduce the weights exactly, got %r" % (restored,))
+
+    # A bone the rig no longer has: its share is renormalized across the bones that remain,
+    # never left as a row summing to 0.75 for Maya to silently redistribute.
+    fewer = ["Hip", "Knee"]
+    restored, missing = weights_from_bake(parse_bake_string(baked), fewer, len(original))
+    check(missing == ["Foot"], "the absent bone must be reported, got %r" % (missing,))
+    rows = [restored[i * len(fewer):(i + 1) * len(fewer)] for i in range(len(original))]
+    check(abs(sum(rows[1]) - 1.0) < 1e-9, "an untouched row still sums to 1, got %r" % (rows[1],))
+    check(abs(rows[2][1] - 1.0) < 1e-9,
+          "the row that lost Foot goes fully to Knee, got %r" % (rows[2],))
+    check(abs(sum(rows[0]) - 1.0) < 1e-9, "and Hip's row is unchanged, got %r" % (rows[0],))
+
+    # A vertex whose every bone is gone stays at zero — inventing weights would be worse
+    # than reporting that the rig cannot hold this bake.
+    restored, missing = weights_from_bake(parse_bake_string(baked), ["Elbow"], len(original))
+    check(missing == bones, "all three bones are missing, got %r" % (missing,))
+    check(all(value == 0.0 for value in restored), "nothing is invented, got %r" % (restored,))
+
+    # A bake made on a denser mesh must not write past the end of this one.
+    restored, _missing = weights_from_bake(parse_bake_string(baked), bones, 2)
+    check(len(restored) == 2 * INFLUENCES, "the array follows the mesh, got %d" % len(restored))
 
     print("skin weight tests OK")
     return 0

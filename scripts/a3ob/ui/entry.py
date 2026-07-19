@@ -162,6 +162,18 @@ def _bake_skin_weights():
     return int(result or 0)
 
 
+def _restore_skin_weights(previous=False):
+    """Put the stored weights back onto the LODs' live skinClusters."""
+    load_plugin()
+    kwargs = {"restore": True}
+    if previous:
+        kwargs["previous"] = True
+    result = cmds.a3obBakeSkin(**kwargs)
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else 0
+    return int(result or 0)
+
+
 def _list_influences():
     """Influence names of the selected mesh's skinCluster."""
     load_plugin()
@@ -506,6 +518,7 @@ __all__ = [
     "_transfer_skin",
     "_test_pose",
     "_bake_skin_weights",
+    "_restore_skin_weights",
     "_list_influences",
     "_remove_influences",
     "_select_influence_vertices",
