@@ -153,7 +153,8 @@ def lod_geometry_key():
 
 def _lod_triangle_count(node):
     total = 0
-    for shape in cmds.listRelatives(node, allDescendents=True, type="mesh", fullPath=True) or []:
+    for shape in cmds.listRelatives(node, allDescendents=True, type="mesh",
+                                    fullPath=True, noIntermediate=True) or []:
         try:
             total += cmds.polyEvaluate(shape, triangle=True)
         except Exception:

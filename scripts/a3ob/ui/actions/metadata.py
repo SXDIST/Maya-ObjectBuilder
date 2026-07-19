@@ -40,6 +40,38 @@ def apply_flag_from_ui():
         cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
 
 
+def _validate_proxy_path(path):
+    """Return (ok, warning_message) for a proxy path string.
+
+    Absolute .p3d paths must exist on disk.  Relative paths are resolved against
+    the texture root optionVar (MayaObjectBuilder_texture_root); a missing root
+    counts as a failure.  The rule is stated explicitly in the warning so the user
+    knows what to fix.
+    """
+    import os
+    if not path.lower().endswith(".p3d"):
+        return False, f"Proxy path must end in .p3d, got: {path!r}"
+    if os.path.isabs(path):
+        if os.path.isfile(path):
+            return True, ""
+        return False, f"Proxy path does not exist: {path!r}"
+    # Relative path: resolve against the texture root optionVar.
+    _var = "MayaObjectBuilder_texture_root"
+    root = cmds.optionVar(query=_var) if cmds.optionVar(exists=_var) else ""
+    if not root:
+        return False, (
+            f"Proxy path {path!r} is relative, but no texture root is configured — "
+            "set one in the plugin options or provide an absolute path"
+        )
+    resolved = os.path.join(root, path.lstrip("\\/"))
+    if os.path.isfile(resolved):
+        return True, ""
+    return False, (
+        f"Proxy path {path!r} not found "
+        f"(relative paths are resolved against the texture root {root!r})"
+    )
+
+
 def create_proxy_from_ui():
     load_plugin()
     dock = _active_qt_dock()
@@ -50,6 +82,10 @@ def create_proxy_from_ui():
     from_selection = dock.proxy_from_selection()
     if not path:
         cmds.warning("Enter a proxy path")
+        return
+    ok, msg = _validate_proxy_path(path)
+    if not ok:
+        cmds.warning(msg)
         return
     with _undo_chunk("Create Proxy"):
         cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
@@ -77,7 +113,8 @@ def _lod_mass_summary():
 
 def _lod_vertex_count(node):
     total = 0
-    for shape in cmds.listRelatives(node, allDescendents=True, type="mesh", fullPath=True) or []:
+    for shape in cmds.listRelatives(node, allDescendents=True, type="mesh",
+                                    fullPath=True, noIntermediate=True) or []:
         try:
             total += cmds.polyEvaluate(shape, vertex=True)
         except Exception:
@@ -126,6 +163,7 @@ __all__ = [
     "apply_mass_from_ui",
     "clear_mass_from_ui",
     "apply_flag_from_ui",
+    "_validate_proxy_path",
     "create_proxy_from_ui",
     "distribute_mass_evenly",
     "mass_from_volume_from_ui",
