@@ -92,12 +92,32 @@ def _unload_translator_plugin():
         om.MGlobal.displayWarning("MayaObjectBuilder translator unload skipped: %s" % error)
 
 
+def _syntax_is_safe(command):
+    """Build a command's MSyntax once here, where a failure is survivable.
+
+    Maya calls the syntax creator lazily, on the command's FIRST dispatch, from a C++
+    callback that cannot absorb a Python exception — so a bad flag (a reserved long name
+    like "set" or "fix" makes MSyntax.addFlag raise) takes the whole session down and the
+    user loses unsaved work. Calling it here turns that into a skipped command plus an
+    error in the script editor."""
+    try:
+        command.syntax()
+        return True
+    except Exception as error:  # noqa: BLE001
+        om.MGlobal.displayError(
+            "MayaObjectBuilder: command %s not registered — its syntax() failed: %s"
+            % (getattr(command, "kName", command), error))
+        return False
+
+
 def initializePlugin(plugin):
     fn = om.MFnPlugin(plugin, VENDOR, VERSION, REQUIRED_API_VERSION)
 
     _source_option_script()
 
     for command in _ALL_COMMANDS:
+        if not _syntax_is_safe(command):
+            continue
         fn.registerCommand(command.kName, command.creator, command.syntax)
 
     _load_translator_plugin()
