@@ -1,11 +1,21 @@
 """a3obInfluence: list, inspect and remove the bones driving a mesh (run with mayapy).
 
 Removing a bone cannot delete its weight — every vertex must sum to 1.0, so the weight
-moves to other influences. Which ones is decided by the skinCluster's weightDistribution:
-"Distance" picks the nearest bone and "Neighbors" picks what the surrounding vertices
-already use. Measured on a collar weighted to facial bones, removing them under Neighbors
-puts the weight on Head/Neck; under Distance it scatters. The command must set Neighbors
-BEFORE removing, because redistribution happens during the removal.
+moves to other influences. For removeInfluences itself, the skinCluster's
+weightDistribution setting makes NO measurable difference: on a collar weighted to facial
+bones, redistribution under "Distance" and "Neighbors" produced identical results (Neck
+0.9901 / Head 0.0099 with a 0:0 starting ratio on Head, and Head 1.0 under both once the
+band carries a small seed weight on Head). What decides the outcome here is the vertex's
+own surviving weight ratio among the influences left after removal, not the
+weightDistribution mode.
+
+weightDistribution earns its place on a different path: PAINTING. Flooding an influence to
+zero with skinPercent on a sleeve whose neighbours are pure "Elbow" gave Shoulder 0.76 /
+Elbow 0.24 under "Distance" but Elbow 1.0 under "Neighbors" — a real, measured difference.
+The command sets weightDistribution to Neighbors so that when the rigger paints weights
+afterward, redistribution follows the surrounding influences instead of the nearest bone.
+This test does not exercise that painting path; it only asserts the command left the
+attribute set correctly for it.
 
 Run:  mayapy.exe tests/mayapy/influence_panel.py
 """
@@ -56,12 +66,13 @@ def build():
         cmds.skinPercent(skin, "%s.vtx[%d]" % (shape, vertex),
                          transformValue=[(neck, 0.0), (head, 1.0), (jaw, 0.0), (chin, 0.0)])
     # A hair of pre-existing Head weight, as any real bind would have at a garment/body
-    # seam: Maya's "Neighbors" distribution preserves the ratio a vertex ALREADY has
-    # among its surviving influences (not the weights of its mesh neighbours, despite the
-    # name) and falls back to nearest-bone ("Distance") when that ratio is exactly 0:0 —
-    # verified against this Maya build by reproducing the raw skinCluster calls outside
-    # this command entirely. A literal 0.0 here would make Neighbors mode indistinguishable
-    # from Distance mode and defeat the point of the assertion below.
+    # seam. removeInfluences redistributes a vertex's weight in proportion to what it
+    # ALREADY carries on its surviving influences — with a literal 0.0 on both Neck and
+    # Head, there is no ratio to preserve, and measured on this Maya build that falls back
+    # to nearest-bone and lands on Neck instead, not Head. Seeding a small Head weight here
+    # pins the ratio so the redistributed weight is deterministically Head, which is what
+    # the assertion below checks for. This is unrelated to weightDistribution: the seed
+    # decides the outcome, not the Distance/Neighbors mode (see module docstring).
     for vertex in range(8):
         cmds.skinPercent(skin, "%s.vtx[%d]" % (shape, vertex),
                          transformValue=[(neck, 0.0), (head, 0.001), (jaw, 0.599), (chin, 0.4)])
@@ -105,8 +116,11 @@ def main():
     left = cmds.skinCluster(skin, query=True, influence=True) or []
     check({n.split("|")[-1] for n in left} == {"Neck", "Head"},
           "only Neck and Head may remain, got %r" % (left,))
+    # State assertion, not a causal one: the command sets weightDistribution to Neighbors
+    # for the rigger's later painting (see module docstring) — it does not cause this
+    # redistribution, which is decided by the Head seed weight in build() instead.
     check(cmds.getAttr(skin + ".weightDistribution") == 1,
-          "weightDistribution must be Neighbors (1) so weight follows the neighbours")
+          "the command must set weightDistribution to Neighbors (1) for later painting")
 
     values = cmds.skinPercent(skin, "%s.vtx[0]" % shape, query=True, value=True)
     check(abs(sum(values) - 1.0) < 1e-4, "the vertex must stay normalized, got %r" % (values,))
