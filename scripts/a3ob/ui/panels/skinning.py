@@ -134,9 +134,12 @@ class SkinningPanelMixin:
         """Repopulate the influence list from the selected mesh, keeping the highlight."""
         if getattr(self, "influence_list", None) is None:
             return
-        from a3ob.mayabridge.influences import match_names
+        from a3ob.mayabridge.influences import leaf_name, match_names
 
-        previously = {item.text() for item in self.influence_list.selectedItems()}
+        # Restore by the FULL name (UserRole), never by displayed text: leaf names collide
+        # across namespaces (ns1:Head / ns2:Head both show "Head"), which is exactly the case
+        # where restoring by leaf would re-select an influence the user never highlighted.
+        previously = {item.data(qt_core.Qt.ItemDataRole.UserRole) for item in self.influence_list.selectedItems()}
         names = _list_influences()
         pattern = self.influence_filter.text().strip() if self.influence_filter else ""
         shown = match_names(names, pattern) if pattern else names
@@ -147,17 +150,15 @@ class SkinningPanelMixin:
             # EXACTLY while -selectVertices only falls back to leaf matching (and refuses an
             # ambiguous bare leaf across namespaces/DAG paths). So the full name the command
             # needs travels as the item's data role; only the label is the trimmed leaf.
-            leaf = name.split("|")[-1].split(":")[-1]
-            item = qt_widgets.QListWidgetItem(leaf)
+            item = qt_widgets.QListWidgetItem(leaf_name(name))
             item.setData(qt_core.Qt.ItemDataRole.UserRole, name)
             self.influence_list.addItem(item)
         for index in range(self.influence_list.count()):
             item = self.influence_list.item(index)
-            if item.text() in previously:
+            if item.data(qt_core.Qt.ItemDataRole.UserRole) in previously:
                 item.setSelected(True)
 
-        if pattern:
-            cmds.optionVar(stringValue=("MayaObjectBuilder_influence_filter", pattern))
+        cmds.optionVar(stringValue=("MayaObjectBuilder_influence_filter", pattern))
 
     def _highlighted_influences(self):
         return [item.data(qt_core.Qt.ItemDataRole.UserRole) for item in self.influence_list.selectedItems()]
