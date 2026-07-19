@@ -146,12 +146,82 @@ def _add_generated_components(lod_type, mesh_path, vertex_source_indices, lod):
         lod.taggs.append(tagg)
 
 
+# Two face-vertex normals closer than this are the same normal. Chosen well above float
+# noise from Maya's own averaging and well below any edge a modeller would call sharp.
+_NORMAL_EPSILON = 1e-4
+
+
+def _corner_normal_ids(mesh_fn, mesh_path):
+    """``(face, vertex) -> normal id``, walked in the corner order ``getNormalIds`` uses."""
+    ids = list(mesh_fn.getNormalIds()[1])
+    table = {}
+    offset = 0
+    poly_it = om.MItMeshPolygon(mesh_path)
+    while not poly_it.isDone():
+        face = poly_it.index()
+        vertices = poly_it.getVertices()
+        for local, vertex in enumerate(vertices):
+            if offset + local < len(ids):
+                table[(face, vertex)] = ids[offset + local]
+        offset += len(vertices)
+        poly_it.next()
+    return table
+
+
+def _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
+    """Is this edge a real crease — judged by whichever mechanism actually carries one?
+
+    Maya keeps smoothing in TWO independent places and each can be the only one holding the
+    truth, so neither may be trusted alone. Both halves are measured facts:
+
+    * LOCKED custom normals win over the flag. A DayZ jacket that arrived through FBX had
+      38131 edges, every one flagged hard and none soft, alongside 40812 locked normals that
+      were perfectly smooth. Trusting the flag wrote "smooth normals AND every edge sharp"
+      into one LOD, and Object Builder — which recomputes normals from this tagg — showed
+      the whole garment faceted. Only 2286 of those edges had normals that differed.
+    * With UNLOCKED normals the flag is all there is. Hardening an edge by hand does not
+      touch the stored normals at all: on a softened sphere with ten hand-hardened edges,
+      `getNormals`/`getNormalIds` (what this exporter writes) and `getFaceVertexNormal` both
+      reported ZERO differing corners — measured under mayapy and again under interactive
+      Maya. Deciding by normals there would have silently dropped every hand-set crease.
+    """
+    faces = edge_it.getConnectedFaces()
+    if len(faces) < 2:
+        # A border edge has no second face to disagree with, so it splits no shading.
+        # 35534 of the jacket's edges were of this kind.
+        return False
+    if len(faces) > 2:
+        # Nonmanifold: "the two normals" is not a well-formed question, so keep the flag.
+        return not edge_it.isSmooth
+
+    first_face, second_face = faces[0], faces[1]
+    pairs = []
+    for vertex in (edge_it.vertexId(0), edge_it.vertexId(1)):
+        here = corner_ids.get((first_face, vertex))
+        there = corner_ids.get((second_face, vertex))
+        if here is None or there is None:
+            return not edge_it.isSmooth  # vertex not on both faces; trust the flag
+        pairs.append((here, there))
+
+    locked = any(mesh_fn.isNormalLocked(index) for pair in pairs for index in pair)
+    if not locked:
+        return not edge_it.isSmooth
+
+    for here, there in pairs:
+        if (normals[here] - normals[there]).length() > _NORMAL_EPSILON:
+            return True
+    return False
+
+
 def _add_sharp_edges_tagg(transform, mesh_path, vertex_source_indices, lod):
     """Write #SharpEdges# from the LIVE mesh; the stored blob is only a fallback.
 
-    Import now hardens these edges on the Maya mesh (``apply_sharp_edges``), so the mesh is
+    Import hardens these edges on the Maya mesh (``apply_sharp_edges``), so the mesh is
     authoritative. Replaying the stored blob instead meant hardening or softening an edge in
-    Maya never reached the P3D."""
+    Maya never reached the P3D.
+
+    Which edges count is decided by the normals, not the soft/hard flag — see
+    ``_edge_splits_the_shading``."""
     def to_source(vertex):
         # Edge ids come from the Maya mesh; the TAGG indexes P3D source vertices.
         if 0 <= vertex < len(vertex_source_indices):
@@ -159,9 +229,12 @@ def _add_sharp_edges_tagg(transform, mesh_path, vertex_source_indices, lod):
         return vertex
 
     data = p3d.SharpEdgesTaggData()
+    mesh_fn = om.MFnMesh(mesh_path)
+    normals = mesh_fn.getNormals(om.MSpace.kObject)
+    corner_ids = _corner_normal_ids(mesh_fn, mesh_path)
     edge_it = om.MItMeshEdge(mesh_path)
     while not edge_it.isDone():
-        if not edge_it.isSmooth:
+        if _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
             first = to_source(edge_it.vertexId(0))
             second = to_source(edge_it.vertexId(1))
             if 0 <= first < len(lod.vertices) and 0 <= second < len(lod.vertices):

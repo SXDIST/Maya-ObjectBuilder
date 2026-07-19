@@ -90,6 +90,14 @@ def main():
     if original_edges:
         check(exported_edges > 0,
               "sharp edges lost on export: %d in, %d out" % (original_edges, exported_edges))
+        # Not just "some": roughly the SAME set. `> 0` hid a 19x inflation for a long time —
+        # this fixture carries 2004 sharp edges and export wrote 38871, because it trusted
+        # Maya's per-edge hard FLAG while the smoothing actually lived in the locked normals
+        # import had applied. Object Builder recomputes normals from this tagg, so the
+        # round trip came back fully faceted.
+        check(abs(exported_edges - original_edges) <= max(4, original_edges * 0.02),
+              "sharp edge count must survive the round trip: %d in, %d out"
+              % (original_edges, exported_edges))
 
     # 3. A UV edit made in Maya must reach the exported file. Shift EVERY UV of one LOD by
     # a known offset and check the exported U range moves with it — far more robust than
