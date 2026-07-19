@@ -48,6 +48,22 @@ def _read_ulong(file):
     return struct.unpack("<I", file.read(4))[0]
 
 
+def _read_exact(file, count, what):
+    """Read exactly ``count`` bytes or raise ``PAA_Error`` naming ``what`` was truncated.
+
+    ``file.read(n)`` on a truncated / EOF stream returns FEWER than ``n`` bytes silently.
+    Every fixed-size structure below (TAGG name, TAGG payload, mipmap length field, mipmap
+    payload, and the top-level TAGG/mipmap marker in :meth:`PAA_File.read`) needs the exact
+    count or the parse desyncs and returns garbage. This helper turns that into a clean
+    ``PAA_Error`` at the point of failure."""
+    data = file.read(count)
+    if len(data) < count:
+        raise PAA_Error(
+            "Truncated %s: expected %d bytes, got %d" % (what, count, len(data))
+        )
+    return data
+
+
 class PAA_Type(IntEnum):
     UNKNOWN = -1
     DXT1 = 0xff01
@@ -390,9 +406,9 @@ class PAA_TAGG:
     @classmethod
     def read(cls, file):
         output = cls()
-        output.name = file.read(4).decode("utf8")[::-1]
+        output.name = _read_exact(file, 4, "TAGG name").decode("utf8")[::-1]
         length = _read_ulong(file)
-        output.data = file.read(length)
+        output.data = _read_exact(file, length, "TAGG %r data" % output.name)
         return output
 
 
@@ -413,8 +429,8 @@ class PAA_MIPMAP:
         if output.width & 0x8000:
             output.lzo_compressed = True
             output.width ^= 0x8000
-        length = struct.unpack('<I', file.read(3) + b"\x00")[0]
-        output.data_raw = bytearray(file.read(length))
+        length = struct.unpack('<I', _read_exact(file, 3, "mipmap length field") + b"\x00")[0]
+        output.data_raw = bytearray(_read_exact(file, length, "mipmap data"))
         return output
 
     def decompress(self, paa_type):
@@ -454,7 +470,16 @@ class PAA_File:
             raise PAA_Error("Unknown format type: %d" % data_type)
 
         while True:
-            if file.read(4) != b"GGAT":
+            marker = file.read(4)
+            # A short read here is a truncated file — the old code seeked back a hardcoded
+            # 4 bytes regardless of len(marker), which either went negative (ValueError) or
+            # misaligned the parse so the downstream palette / mipmap reads saw garbage.
+            if len(marker) < 4:
+                raise PAA_Error(
+                    "Truncated file: expected TAGG marker or mipmap header, got %d/4 bytes"
+                    % len(marker)
+                )
+            if marker != b"GGAT":
                 file.seek(-4, 1)
                 break
             output.taggs.append(PAA_TAGG.read(file))
