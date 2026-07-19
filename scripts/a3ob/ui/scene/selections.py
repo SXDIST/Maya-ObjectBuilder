@@ -63,8 +63,34 @@ def _selection_sets():
         is_proxy = bool(_safe_get_attr(node, "a3obIsProxySelection", False))
         flag_component = _safe_get_attr(node, "a3obFlagComponent", "") or ""
         lod = _set_lod_label(node)
-        sets.append({"node": node, "name": name, "kind": _set_kind(is_proxy, flag_component), "lod": lod})
+        sets.append({"node": node, "name": name, "kind": _set_kind(is_proxy, flag_component),
+                     "lod": lod, "lod_node": _owner_node_for_set(node)})
     return sorted(sets, key=lambda item: (item["lod"].lower(), item["kind"], item["name"].lower(), item["node"].lower()))
+
+
+def selection_sets_for_owner(owner_node):
+    """The selection sets belonging to one LOD — or to one plain mesh that is not a LOD yet.
+
+    Matching is on the NODE. The panel used to compare LOD labels, and a label is not an
+    identity — a measured scene had `|helmet`, `|group1|body|Resolution_2` and
+    `|group1|body|Resolution_1` all reading "Resolution 1", so picking any one of them
+    listed the sets of all three.
+
+    A set whose members are all gone resolves to no node at all; it still names the LOD it
+    came from, so it falls back to the label rather than disappearing from every panel."""
+    if not owner_node:
+        return []
+    owner = cmds.ls(owner_node, long=True)
+    owner = owner[0] if owner else owner_node
+    label = _lod_name_from_transform(owner)
+    matched = []
+    for item in _selection_sets():
+        if item["lod_node"]:
+            if item["lod_node"] == owner:
+                matched.append(item)
+        elif item["lod"] == label:
+            matched.append(item)
+    return matched
 
 
 def _live_set_members(set_node):
@@ -133,6 +159,7 @@ __all__ = [
     "_hide_object_builder_set",
     "_normalize_object_builder_sets",
     "_selection_sets",
+    "selection_sets_for_owner",
     "_live_set_members",
     "_set_member_count",
     "_selection_set_details",

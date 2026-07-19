@@ -236,9 +236,24 @@ class InfluenceCommand(_Base):
     def doIt(self, args):
         argdb = om.MArgDatabase(self.syntax(), args)
 
+        # Listing is a QUERY, and the dock fires it on every SelectionChanged. A query that
+        # warns turns clicking any mesh in the scene — a prop, a light rig, anything
+        # unrelated to DayZ — into a Script Editor full of "select a skinned mesh first".
+        # Only the ACTING flags explain themselves.
+        #
+        # Phrased as "no acting flag" rather than "-li is set" on purpose: asking for -li
+        # answered False under interactive Maya for the very call the dock makes
+        # (`a3obInfluence(listInfluences=True)`), while answering True under mayapy — so
+        # gating on it silenced the tests and left the real session as noisy as before.
+        # Whether anything is being CHANGED is not open to that ambiguity.
+        acting = any(argdb.isFlagSet(flag) for flag in
+                     ("-sv", "-selectVertices", "-ri", "-removeInfluences"))
+        quiet = not acting
+
         shape = selected_mesh_shape()
         if not shape:
-            om.MGlobal.displayWarning("a3obInfluence: select a skinned mesh first")
+            if not quiet:
+                om.MGlobal.displayWarning("a3obInfluence: select a skinned mesh first")
             self.setResult([])
             return
 
@@ -271,7 +286,7 @@ class InfluenceCommand(_Base):
             return
 
         names = influence_names(shape)
-        if not names:
+        if not names and not quiet:
             om.MGlobal.displayWarning("a3obInfluence: %s has no skinCluster"
                                       % shape.split("|")[-1])
         self.setResult(names)

@@ -43,19 +43,76 @@ def _lod_label(node):
     return node
 
 
-def _lod_name_for_set(set_node):
+def _lod_node_for_set(set_node):
+    """The LOD transform a selection set's members live under, as a full DAG path.
+
+    This — not the label — is a LOD's identity. A scene routinely holds several LODs that
+    share a label: a helmet and two body resolutions all came back as "Resolution 1", so
+    anything keyed on the label folds them into one."""
     try:
         members = cmds.sets(set_node, query=True) or []
         for member in members:
             current = member.split(".", 1)[0]
             while current:
                 if _is_lod_transform(current):
-                    return _lod_name_from_transform(current)
+                    return cmds.ls(current, long=True)[0]
                 parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
                 current = parents[0] if parents else ""
     except Exception:
         pass
     return ""
+
+
+def _lod_name_for_set(set_node):
+    node = _lod_node_for_set(set_node)
+    return _lod_name_from_transform(node) if node else ""
+
+
+def _transform_of(node):
+    """``node``'s own transform — itself if it is one, its parent if it is a shape."""
+    if not node or not cmds.objExists(node):
+        return ""
+    if cmds.objectType(node, isAType="transform"):
+        return (cmds.ls(node, long=True) or [""])[0]
+    parents = cmds.listRelatives(node, parent=True, fullPath=True) or []
+    return parents[0] if parents else ""
+
+
+def _owner_node_for_set(set_node):
+    """The node a selection set belongs to: its LOD if it has one, else its own mesh.
+
+    Selections are useful before a mesh is marked as a LOD — that is the order people
+    actually work in, modelling and naming parts first. Keying strictly on the LOD meant a
+    set created on an unmarked mesh existed in the scene but appeared in no panel."""
+    lod = _lod_node_for_set(set_node)
+    if lod:
+        return lod
+    for member in cmds.sets(set_node, query=True) or []:
+        owner = _transform_of(member.split(".", 1)[0])
+        if owner:
+            return owner
+    return ""
+
+
+def _selected_selection_owner():
+    """What the Selections panel should be showing: the selected LOD, else the mesh."""
+    lod = _selected_lod_transform()
+    if lod:
+        return lod
+    for node in cmds.ls(selection=True, long=True) or []:
+        owner = _transform_of(node.split(".", 1)[0])
+        if owner:
+            return owner
+    return None
+
+
+def _lod_list_target(active, previous):
+    """Which LOD the list should highlight: the scene's, falling back to its own row.
+
+    The other way round looks harmless and breaks the panel outright — once the user has
+    clicked any row, ``previous`` is always set, so selecting a LOD in the viewport could
+    never move the highlight again."""
+    return active or previous
 
 
 def _set_lod_label(node):
@@ -108,11 +165,12 @@ def lod_overview():
     """Every LOD in the scene as dicts (node, label, type, resolution, tris, selections),
     sorted by type then resolution — data for the central LOD list panel."""
     selection_counts = {}
-    # Maya's attribute filter instead of probing every objectSet in the scene.
+    # Maya's attribute filter instead of probing every objectSet in the scene. Counted per
+    # LOD NODE: keyed by label, three same-labelled LODs each showed the other two's sets.
     for node in cmds.ls("*.a3obSelectionName", objectsOnly=True) or []:
-        label = _lod_name_for_set(node)
-        if label:
-            selection_counts[label] = selection_counts.get(label, 0) + 1
+        owner = _lod_node_for_set(node)
+        if owner:
+            selection_counts[owner] = selection_counts.get(owner, 0) + 1
     rows = []
     for node in _lod_transforms():
         label = _lod_name_from_transform(node)
@@ -122,7 +180,7 @@ def lod_overview():
             "type": _safe_get_attr(node, "a3obLodType", 0),
             "resolution": _safe_get_attr(node, "a3obResolution", 0),
             "tris": _lod_triangle_count(node),
-            "selections": selection_counts.get(label, 0),
+            "selections": selection_counts.get(node, 0),
         })
     rows.sort(key=lambda row: (row["type"], row["resolution"], row["label"]))
     return rows
@@ -145,6 +203,11 @@ __all__ = [
     "_lod_name_from_transform",
     "_lod_label",
     "_lod_name_for_set",
+    "_lod_node_for_set",
+    "_lod_list_target",
+    "_transform_of",
+    "_owner_node_for_set",
+    "_selected_selection_owner",
     "_set_lod_label",
     "_lod_triangle_count",
     "lod_geometry_key",

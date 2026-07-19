@@ -71,27 +71,30 @@ class SelectionsPanelMixin:
     def refresh_selection_manager(self, rebuild_lods=True):
         if self.selection_list is None:
             return
-        selected_lod = _selected_lod_transform()
+        # The owner is the selected LOD, or the plain mesh when it has not been marked as
+        # one yet. Requiring a LOD meant a selection made while modelling — before anyone
+        # thinks about LOD metadata — existed in the scene but showed up in no panel.
+        owner = _selected_selection_owner()
         prev_node = self.selected_selection_set_node()
         self.selection_list.blockSignals(True)
         self.selection_list.clear()
 
-        if not selected_lod:
-            # No DayZ LOD in the current selection — show nothing but a prompt.
+        if not owner:
             self.selection_list.blockSignals(False)
             if self.selection_mesh_context is not None:
-                self.selection_mesh_context.setText("Select a DayZ LOD to see its selections.")
+                self.selection_mesh_context.setText("Select a mesh or LOD to see its selections.")
             self.set_selection_details("Select a row to see details.")
             return
 
-        lod_label = _lod_name_from_transform(selected_lod)
         if self.selection_mesh_context is not None:
-            self.selection_mesh_context.setText(f"Selections on {lod_label}")
+            if _is_lod_transform(owner):
+                where = _lod_name_from_transform(owner)
+            else:
+                where = "%s (not a LOD yet)" % owner.split("|")[-1]
+            self.selection_mesh_context.setText(f"Selections on {where}")
 
         restore_row = -1
-        for item in _selection_sets():
-            if item["lod"] != lod_label:
-                continue
+        for item in selection_sets_for_owner(owner):
             list_item = qt_widgets.QListWidgetItem(item["name"])
             icon = _qt_icon(_SELECTION_KIND_ICONS.get(item["kind"], ""))
             if icon is not None and not icon.isNull():

@@ -169,7 +169,7 @@ class LodListPanelMixin:
             item.setData(qt_core.Qt.UserRole, row["node"])
             item.setToolTip(row["node"])
             self.lod_list.addItem(item)
-            target = prev or active
+            target = _lod_list_target(active, prev)
             if target is not None and row["node"] == target:
                 restore_row = self.lod_list.count() - 1
         if restore_row >= 0:
