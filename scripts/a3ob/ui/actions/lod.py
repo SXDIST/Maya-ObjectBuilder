@@ -43,22 +43,20 @@ def _lod_node_name(definition, resolution):
     return label.replace(" ", "_").replace("/", "_")
 
 
-def _mark_lod_named(definition, resolution):
-    """Mark the selection as a LOD and rename that node to the LOD name (#11).
+def _mark_selection_as_lod(definition, resolution):
+    """Mark the selection as a LOD, leaving the node's own name alone.
 
-    a3obCreateLOD only honours the ``name`` flag when it creates a brand-new node;
-    marking an existing mesh leaves its outliner name untouched. So rename the node
-    the command actually returned (never a stray selection) to the LOD name, giving
-    the outliner the native "Resolution_1"/"Geometry" identity on assignment.
+    ``a3obCreateLOD`` honours the ``name`` flag only when it creates a brand-new node, so
+    an empty LOD still comes out as "Resolution_1" instead of "transform1" while an
+    existing mesh keeps whatever its author called it.
+
+    Renaming the marked mesh to the LOD name was tried and removed: a mesh called "helmet"
+    became "Resolution_1", the names the rigger chose were gone, and marking a second mesh
+    of the same type collided into a suffix. A tidy outliner is not worth that.
     """
-    desired = _lod_node_name(definition, resolution)
-    result = cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution, name=desired)
-    node = result[0] if isinstance(result, (list, tuple)) and result else result
-    if node and cmds.objExists(node):
-        leaf = node.split("|")[-1].split(":")[-1]
-        if leaf != desired:
-            node = cmds.rename(node, desired)
-    return node
+    result = cmds.a3obCreateLOD(lodType=definition["type"], resolution=resolution,
+                                name=_lod_node_name(definition, resolution))
+    return result[0] if isinstance(result, (list, tuple)) and result else result
 
 
 def assign_lod_to_selection():
@@ -69,7 +67,7 @@ def assign_lod_to_selection():
     with _undo_chunk("Create LOD"):
         definition = _selected_lod_definition()
         resolution = _lod_resolution_value(definition)
-        _mark_lod_named(definition, resolution)
+        _mark_selection_as_lod(definition, resolution)
         _refresh_context_ui()
         _refresh_lod_assignment_ui()
 
@@ -80,7 +78,7 @@ def create_empty_lod():
     cmds.select(clear=True)
     definition = _selected_lod_definition()
     resolution = _lod_resolution_value(definition)
-    node = _mark_lod_named(definition, resolution)
+    node = _mark_selection_as_lod(definition, resolution)
     if node:
         cmds.select(node, replace=True)
     elif selection:
@@ -114,7 +112,7 @@ def create_lod_type(lod_type, resolution=0):
     res = resolution if definition["has_resolution"] else definition["default_resolution"]
     with _undo_chunk("Add LOD"):
         cmds.select(clear=True)
-        node = _mark_lod_named(definition, res)
+        node = _mark_selection_as_lod(definition, res)
         if node and cmds.objExists(node):
             cmds.select(node, replace=True)
     _refresh_context_ui()
@@ -137,7 +135,7 @@ __all__ = [
     "_lod_assignment_label",
     "_refresh_lod_assignment_ui",
     "_lod_node_name",
-    "_mark_lod_named",
+    "_mark_selection_as_lod",
     "create_lod_type",
     "assign_lod_to_selection",
     "create_empty_lod",

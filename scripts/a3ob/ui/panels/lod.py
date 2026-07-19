@@ -148,8 +148,9 @@ class LodPanelMixin:
         if not self._syncing_from_selection and is_lod:
             load_plugin()
             resolution = _lod_resolution_value(definition)
-            # Rename the active LOD to match its type/resolution (#11) as the user edits.
-            _mark_lod_named(definition, resolution)
+            # Re-stamp the active LOD's type/resolution as the user edits the combos. The
+            # node's NAME is deliberately left alone — see _mark_selection_as_lod.
+            _mark_selection_as_lod(definition, resolution)
 
 
     def _on_lod_toggle_changed(self, checked):
