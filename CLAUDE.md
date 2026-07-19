@@ -21,6 +21,7 @@ python tests/python/test_p3d_roundtrip.py
 python tests/python/test_model_cfg.py
 python tests/python/test_paa.py          # PAA decoder; skips cleanly if tests/paa/*.paa are absent
 python tests/python/test_skinweights.py  # skin-weight outlier detection (pure math)
+python tests/python/test_qem.py          # QEM decimation invariants (no orphan vertices)
 
 # Python syntax checks (compile every .py that exists on disk — robust to package renames)
 python -m py_compile $(find scripts plug-ins tests -name '*.py')
@@ -180,6 +181,21 @@ Two layers, split by whether they need Maya:
   `syntax()` up front (`_syntax_is_safe`) and skips the offending command instead.
 - Selecting from API 2.0 is `MGlobal.setActiveSelectionList(list, MGlobal.kReplaceList)`;
   `MGlobal.select` does not exist there.
+- `cmds.polyNormalPerVertex` **segfaults Maya** — no exception, the session dies and takes
+  unsaved work with it — on a decimated mesh with nonmanifold topology or lamina faces.
+  `polyCleanupArgList` does NOT reliably prevent it (it leaves nonmanifold vertices behind).
+  `a3ob.ui.autolod` therefore skips the normal pass on meshes with locked normals and lets
+  `polySoftEdge` do the work. Note also that `freezeNormal=False` is **not** an unfreeze —
+  only `unFreezeNormal=True` clears locked normals (measured: 1560 locked before and after).
+- The QEM decimator (`ui/autolod/qem.py`) must never emit a vertex that no surviving face
+  references: such a point has no normal and is what triggers the segfault above. A vertex
+  stays `alive_v` after its last face collapses into a degenerate one, so aliveness is not
+  the same as being used — `tests/python/test_qem.py` guards the invariant.
+- Debugging a Maya hard crash: reproduce it under `mayapy` (exit 139 = segfault), then
+  bisect by wrapping the suspect helpers with flushed print markers. The process dies
+  without a traceback, so the last flushed line IS the stack trace. Patch the names on the
+  module that CALLS them (`lodgen`), not where they are defined — `helpers` is star-imported,
+  which binds copies into the caller's namespace.
 - The dock rebuilds every panel from the selected LOD, and that scans every objectSet in the
   scene. `SelectionChanged` fires per marquee-drag step, so `entry._schedule_context_refresh`
   debounces it and `_refresh_context_ui(force=False)` drops the work when the selected LOD is
