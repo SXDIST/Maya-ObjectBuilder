@@ -99,30 +99,33 @@ def export_p3d():
 
 def _validate_scene_no_flush():
     load_plugin()
-    cmds.undoInfo(stateWithoutFlush=True)
+    _prior = cmds.undoInfo(query=True, state=True)
+    cmds.undoInfo(stateWithoutFlush=False)
     try:
         cmds.a3obValidate()
     finally:
-        cmds.undoInfo(stateWithoutFlush=False)
+        cmds.undoInfo(stateWithoutFlush=_prior)
 
 
 def _validate_selection_no_flush():
     load_plugin()
-    cmds.undoInfo(stateWithoutFlush=True)
+    _prior = cmds.undoInfo(query=True, state=True)
+    cmds.undoInfo(stateWithoutFlush=False)
     try:
         cmds.a3obValidate(selectionOnly=True)
     finally:
-        cmds.undoInfo(stateWithoutFlush=False)
+        cmds.undoInfo(stateWithoutFlush=_prior)
 
 
 def _run_validation(selection_only):
     """Run a3obValidate and return its issue rows ("severity|node|message") for the panel."""
     load_plugin()
-    cmds.undoInfo(stateWithoutFlush=True)
+    _prior = cmds.undoInfo(query=True, state=True)
+    cmds.undoInfo(stateWithoutFlush=False)
     try:
         return cmds.a3obValidate(selectionOnly=selection_only) or []
     finally:
-        cmds.undoInfo(stateWithoutFlush=False)
+        cmds.undoInfo(stateWithoutFlush=_prior)
 
 
 def _run_skin_weights():
@@ -243,11 +246,12 @@ def export_model_cfg(path=None):
         selected = cmds.fileDialog2(fileMode=0, caption="Export model.cfg", fileFilter="Config (*.cfg)")
         selected_path = selected[0] if selected else ""
     if selected_path:
-        cmds.undoInfo(stateWithoutFlush=True)
+        _prior = cmds.undoInfo(query=True, state=True)
+        cmds.undoInfo(stateWithoutFlush=False)
         try:
             cmds.a3obExportModelCfg(path=selected_path)
         finally:
-            cmds.undoInfo(stateWithoutFlush=False)
+            cmds.undoInfo(stateWithoutFlush=_prior)
 
 
 def set_texture_root_from_ui():
