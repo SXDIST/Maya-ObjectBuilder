@@ -65,3 +65,4 @@ class FindComponentsCommand(_Base):
         component_name = "Component%02d" % component_index if component_index < 10 else "Component%d" % component_index
         set_obj = _create_set_from_members(members, "a3ob_" + component_name)
         attr.set_string(set_obj, A.SELECTION_NAME, component_name)
+        attr.mark_technical_set(set_obj)

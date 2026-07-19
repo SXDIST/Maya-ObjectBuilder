@@ -54,7 +54,6 @@ def _normalize_object_builder_sets():
 
 
 def _selection_sets():
-    _normalize_object_builder_sets()
     sets = []
     for node in _object_builder_sets():
         if not _attr_exists(node, "a3obSelectionName"):

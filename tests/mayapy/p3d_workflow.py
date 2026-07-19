@@ -269,6 +269,8 @@ def assert_generated_metadata():
 
 
 def assert_stale_selection_ui_refresh():
+    from a3ob.mayabridge import attributes as attr
+
     cmds.file(new=True, force=True)
     lod = _name(cmds.a3obCreateLOD(lodType=1, resolution=0, name="stale_ui_lod"))
     mesh = cmds.polyPlane(name="stale_ui_mesh", subdivisionsX=1, subdivisionsY=1)[0]
@@ -277,11 +279,16 @@ def assert_stale_selection_ui_refresh():
     set_node = cmds.sets(cmds.ls(selection=True, flatten=True), name="a3ob_SEL_stale")
     cmds.addAttr(set_node, longName="a3obSelectionName", dataType="string")
     cmds.setAttr(set_node + ".a3obSelectionName", "stale", type="string")
+    # Mark it as a technical set at creation time — the write path (not the panel refresh)
+    # is now responsible for hiding sets.
+    sel = om.MSelectionList()
+    sel.add(set_node)
+    attr.mark_technical_set(sel.getDependNode(0))
 
     ui = runpy.run_path(str(UI_SCRIPT))
     if not any(item["node"] == set_node for item in ui["_selection_sets"]()):
         raise RuntimeError("Stale test selection set was not found before deletion")
-    assert_object_builder_sets_hidden("Selection Manager normalization")
+    assert_object_builder_sets_hidden("write-path hiding")
     cmds.delete(mesh)
     if ui["_live_set_members"](set_node):
         raise RuntimeError("Selection set with deleted members still returned live members")
