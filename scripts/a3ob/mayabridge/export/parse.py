@@ -170,47 +170,104 @@ def _parse_component_range(text):
     return list(range(first, last + 1))
 
 
-def _read_set_components(set_name, mesh_path):
-    """Return (vertices set, faces set) selected by an objectSet on this mesh."""
+def _read_set_components(set_obj, mesh_path):
+    """Return (vertices set, faces set) selected by an objectSet on this mesh.
+
+    Membership is listed with ``cmds.sets`` on purpose. ``MFnSet.getMembers()`` looks like the
+    native answer, but it returns an MSelectionList, and that holds only ONE component type
+    per DAG path: for a set containing both vertices and faces of the same mesh it hands back
+    the vertices and drops every face. Measured on the character fixture, 1250 faces silently
+    became 0.
+
+    What IS fixed here is the ownership test. The old code compared member names against a
+    guessed list of spellings (short name, full path, transform vs shape) and dropped anything
+    matching none of them. Each distinct node name is now resolved once through the API and
+    compared as a node, so namespaces and duplicated hierarchies cannot fool it."""
     vertices = set()
     faces = set()
+    mesh_node = mesh_path.node()
+    set_name = om.MFnDependencyNode(set_obj).name()
     members = cmds.sets(set_name, query=True) or []
+    if not members:
+        return vertices, faces
 
-    aliases = set()
-    for name in (mesh_path.fullPathName(), mesh_path.partialPathName()):
-        aliases.add(name)
-        aliases.add(name.rsplit("|", 1)[-1])
-    transform_path = om.MDagPath(mesh_path)
-    transform_path.pop()
-    for name in (transform_path.fullPathName(), transform_path.partialPathName()):
-        aliases.add(name)
-        aliases.add(name.rsplit("|", 1)[-1])
+    resolved = {}  # node name -> is it this mesh? (a set usually references a single node)
 
-    mesh_fn = om.MFnMesh(mesh_path)
+    def belongs(node_name):
+        hit = resolved.get(node_name)
+        if hit is None:
+            hit = False
+            try:
+                selection = om.MSelectionList()
+                selection.add(node_name)
+                dag_path = selection.getDagPath(0)
+                if dag_path.node() == mesh_node:
+                    hit = True
+                else:
+                    # Components may be stored against the transform ("Fire_Geometry.f[0:3]").
+                    dag_path.extendToShape()
+                    hit = dag_path.node() == mesh_node
+            except Exception:  # noqa: BLE001 - gone, or not a DAG node
+                hit = False
+            resolved[node_name] = hit
+        return hit
+
     for item in members:
-        if ".vtx[" in item:
-            obj, rng = item.split(".vtx[", 1)
-            if obj.rsplit("|", 1)[-1] in aliases or obj in aliases:
-                vertices.update(_parse_component_range(rng.rstrip("]")))
-        elif ".f[" in item:
-            obj, rng = item.split(".f[", 1)
-            if obj.rsplit("|", 1)[-1] in aliases or obj in aliases:
-                faces.update(_parse_component_range(rng.rstrip("]")))
-        elif item.rsplit("|", 1)[-1] in aliases or item in aliases:
-            vertices.update(range(mesh_fn.numVertices))
+        node_name, _, rest = item.partition(".")
+        if not belongs(node_name):
+            continue
+        if rest.startswith("vtx["):
+            vertices.update(_parse_component_range(rest[4:].rstrip("]")))
+        elif rest.startswith("f["):
+            faces.update(_parse_component_range(rest[2:].rstrip("]")))
+        elif not rest:
+            vertices.update(range(om.MFnMesh(mesh_path).numVertices))
     return vertices, faces
+
+
+_FACE_VERTEX_CACHE = {}  # mesh node hash -> [tuple(vertex ids) per face]
+
+
+def reset_face_vertex_cache():
+    """Drop the cached face table. Called at the start of every LOD export.
+
+    The cache must never outlive one export: an edit that keeps the polygon and vertex
+    counts identical (a vertex reorder, say) would otherwise be served a stale table."""
+    _FACE_VERTEX_CACHE.clear()
+
+
+def _face_vertex_table(mesh_path):
+    """Per-face vertex tuples, fetched once per mesh with a single bulk call.
+
+    This used to be an MItMeshPolygon walk *per selection set*: on a 12k-face LOD with 40
+    named selections that is half a million iterations, and it dominated export time (45% of
+    the profile). MFnMesh.getVertices() returns the whole table in one call, and the result
+    is reused for every set on the same mesh."""
+    mesh_fn = om.MFnMesh(mesh_path)
+    key = (om.MObjectHandle(mesh_path.node()).hashCode(), mesh_fn.numPolygons, mesh_fn.numVertices)
+    cached = _FACE_VERTEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    counts, flat = mesh_fn.getVertices()
+    counts = list(counts)
+    flat = list(flat)
+    table = []
+    offset = 0
+    for count in counts:
+        table.append(tuple(flat[offset:offset + count]))
+        offset += count
+    _FACE_VERTEX_CACHE.clear()  # only ever need the mesh currently being exported
+    _FACE_VERTEX_CACHE[key] = table
+    return table
 
 
 def _derive_faces_from_vertices(mesh_path, vertices, faces):
     if not vertices:
         return
-    it = om.MItMeshPolygon(mesh_path.node())
-    while not it.isDone():
-        face_vertices = it.getVertices()
-        selected = len(face_vertices) > 0 and all(v in vertices for v in face_vertices)
-        if selected:
-            faces.add(it.index())
-        it.next()
+    for index, face_vertices in enumerate(_face_vertex_table(mesh_path)):
+        if face_vertices and vertices.issuperset(face_vertices):
+            faces.add(index)
 
 
 __all__ = [
@@ -230,4 +287,5 @@ __all__ = [
     "_parse_component_range",
     "_read_set_components",
     "_derive_faces_from_vertices",
+    "reset_face_vertex_cache",
 ]
