@@ -8,7 +8,7 @@ from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
 
-class ProxyCommand(_Base):
+class ProxyCommand(_UndoableBase):
     kName = "a3obProxy"
 
     @staticmethod
@@ -45,17 +45,17 @@ class ProxyCommand(_Base):
 
         proxy = proxy_placeholder(lod, selection_name) if update else NULL
         if proxy.isNull():
-            lod_name = om.MFnDependencyNode(lod).name()
-            # skipSelect so the active component selection survives for the selection set below.
-            new_name = cmds.createNode("transform", name="a3ob_proxy#", parent=lod_name, skipSelect=True)
-            sel = om.MSelectionList()
-            sel.add(new_name)
-            proxy = sel.getDependNode(0)
+            # Through the modifier so undo removes it again; MDagModifier.createNode also
+            # leaves the active component selection alone, which the selection set below
+            # depends on (this is what the old skipSelect flag was for).
+            proxy = self.modifier.createNode("transform", lod)
+            self.modifier.renameNode(proxy, "a3ob_proxy1")
+            self.modifier.doIt()
 
-        attr.set_bool(proxy, A.IS_PROXY, True)
-        attr.set_string(proxy, A.PROXY_PATH, proxy_path)
-        attr.set_int(proxy, A.PROXY_INDEX, proxy_index)
-        attr.set_string(proxy, A.PROXY_SELECTION, selection_name)
+        attr.set_bool(proxy, A.IS_PROXY, True, self.modifier)
+        attr.set_string(proxy, A.PROXY_PATH, proxy_path, self.modifier)
+        attr.set_int(proxy, A.PROXY_INDEX, proxy_index, self.modifier)
+        attr.set_string(proxy, A.PROXY_SELECTION, selection_name, self.modifier)
 
         if from_selection and not proxy_selection_set_exists(selection_name):
             create_proxy_selection_set(selection_name)

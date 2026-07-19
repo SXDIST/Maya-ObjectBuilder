@@ -8,7 +8,7 @@ from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
 
-class CreateLODCommand(_Base):
+class CreateLODCommand(_UndoableBase):
     kName = "a3obCreateLOD"
 
     @staticmethod
@@ -33,12 +33,13 @@ class CreateLODCommand(_Base):
 
         transform = selected_transform_or_null()
         if transform.isNull():
-            new_name = cmds.createNode("transform", name=name if name else "a3ob_LOD#", skipSelect=True)
-            sel = om.MSelectionList()
-            sel.add(new_name)
-            transform = sel.getDependNode(0)
+            # Through the modifier, not cmds.createNode: otherwise undo drops the attribute
+            # writes but leaves this transform in the scene.
+            transform = self.modifier.createNode("transform")
+            self.modifier.renameNode(transform, name if name else "a3ob_LOD1")
+            self.modifier.doIt()
 
-        set_lod_attributes(transform, lod_type, resolution)
+        set_lod_attributes(transform, lod_type, resolution, self.modifier)
         result_name = om.MFnDependencyNode(transform).name()
         self.setResult(result_name)
         om.MGlobal.displayInfo("a3obCreateLOD: marked LOD signature=%s" % LodResolution.encode(lod_type, resolution))

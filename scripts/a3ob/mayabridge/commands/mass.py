@@ -8,7 +8,7 @@ from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
 
-class SetMassCommand(_Base):
+class SetMassCommand(_UndoableBase):
     kName = "a3obSetMass"
 
     @staticmethod
@@ -31,8 +31,8 @@ class SetMassCommand(_Base):
 
         argdb = om.MArgDatabase(self.syntax(), args)
         if argdb.isFlagSet("-c"):
-            attr.set_bool(transform, A.HAS_MASS, False)
-            attr.set_string(transform, A.MASS_VALUES, "")
+            attr.set_bool(transform, A.HAS_MASS, False, self.modifier)
+            attr.set_string(transform, A.MASS_VALUES, "", self.modifier)
             om.MGlobal.displayInfo("a3obSetMass: cleared mass values")
             return
 
@@ -40,7 +40,7 @@ class SetMassCommand(_Base):
         if argdb.isFlagSet("-v"):
             value = argdb.flagArgumentDouble("-v", 0)
         if argdb.isFlagSet("-sc"):
-            if not set_selected_mass_values(transform, value):
+            if not set_selected_mass_values(transform, value, self.modifier):
                 om.MGlobal.displayError("a3obSetMass: select LOD mesh vertex components")
                 return
             om.MGlobal.displayInfo("a3obSetMass: set selected vertex mass values")
@@ -50,6 +50,6 @@ class SetMassCommand(_Base):
         if count <= 0:
             om.MGlobal.displayError("a3obSetMass: selected LOD has no vertices")
             return
-        attr.set_bool(transform, A.HAS_MASS, True)
-        attr.set_string(transform, A.MASS_VALUES, repeated_mass_values(count, value))
+        attr.set_bool(transform, A.HAS_MASS, True, self.modifier)
+        attr.set_string(transform, A.MASS_VALUES, repeated_mass_values(count, value), self.modifier)
         om.MGlobal.displayInfo("a3obSetMass: set mass values count=%d" % count)

@@ -32,6 +32,7 @@ class A:
     SOURCE_FACE_COUNT = ("a3obSourceFaceCount", "a3sfc")
     HAS_MASS = ("a3obHasMass", "a3mass")
     MASS_VALUES = ("a3obMassValues", "a3mv")
+    BAKED_WEIGHTS = ("a3obBakedWeights", "a3bw")
     PROPERTIES = ("a3obProperties", "a3prop")
 
     # LOD transform, import-preserved round-trip metadata (short names verbatim
@@ -112,30 +113,58 @@ def get_bool_any(node, attr, alt_short, default=False):
 
 
 # -- writers (create-if-missing, keyable to match the C++ helpers) -------------
-def _ensure_numeric(node, attr, data_type):
+#
+# Every setter takes an optional ``modifier`` (an MDGModifier). Pass one from an undoable
+# MPxCommand and the write lands in Maya's undo queue; omit it and the value is set straight
+# on the plug as before. Plug setters bypass undo entirely, which is why Ctrl+Z used to do
+# nothing after a3ob* commands.
+#
+# The modifier's doIt() runs immediately rather than being deferred: the attribute has to
+# exist before its value can be queued, and the command's undoIt() replays the whole
+# modifier in reverse regardless.
+def _ensure_numeric(node, attr, data_type, modifier=None):
     dep = om.MFnDependencyNode(node)
     if dep.hasAttribute(attr[0]):
         return dep.findPlug(attr[0], True)
     nattr = om.MFnNumericAttribute()
     obj = nattr.create(attr[0], attr[1], data_type)
     nattr.keyable = True
-    dep.addAttribute(obj)
+    if modifier is not None:
+        modifier.addAttribute(node, obj)
+        modifier.doIt()
+    else:
+        dep.addAttribute(obj)
     return dep.findPlug(attr[0], True)
 
 
-def set_bool(node, attr, value):
-    _ensure_numeric(node, attr, om.MFnNumericData.kBoolean).setBool(bool(value))
+def set_bool(node, attr, value, modifier=None):
+    plug = _ensure_numeric(node, attr, om.MFnNumericData.kBoolean, modifier)
+    if modifier is not None:
+        modifier.newPlugValueBool(plug, bool(value))
+        modifier.doIt()
+    else:
+        plug.setBool(bool(value))
 
 
-def set_int(node, attr, value):
-    _ensure_numeric(node, attr, om.MFnNumericData.kInt).setInt(int(value))
+def set_int(node, attr, value, modifier=None):
+    plug = _ensure_numeric(node, attr, om.MFnNumericData.kInt, modifier)
+    if modifier is not None:
+        modifier.newPlugValueInt(plug, int(value))
+        modifier.doIt()
+    else:
+        plug.setInt(int(value))
 
 
-def set_double(node, attr, value):
-    _ensure_numeric(node, attr, om.MFnNumericData.kDouble).setDouble(float(value))
+def set_double(node, attr, value, modifier=None):
+    plug = _ensure_numeric(node, attr, om.MFnNumericData.kDouble, modifier)
+    if modifier is not None:
+        modifier.newPlugValueDouble(plug, float(value))
+        modifier.doIt()
+    else:
+        plug.setDouble(float(value))
 
 
-def set_string(node, attr, value):
+def set_string(node, attr, value, modifier=None):
     dep = om.MFnDependencyNode(node)
     if dep.hasAttribute(attr[0]):
         plug = dep.findPlug(attr[0], True)
@@ -145,9 +174,17 @@ def set_string(node, attr, value):
         tattr = om.MFnTypedAttribute()
         obj = tattr.create(attr[0], attr[1], om.MFnData.kString, default)
         tattr.keyable = True
-        dep.addAttribute(obj)
+        if modifier is not None:
+            modifier.addAttribute(node, obj)
+            modifier.doIt()
+        else:
+            dep.addAttribute(obj)
         plug = dep.findPlug(attr[0], True)
-    plug.setString(value or "")
+    if modifier is not None:
+        modifier.newPlugValueString(plug, value or "")
+        modifier.doIt()
+    else:
+        plug.setString(value or "")
 
 
 def mark_technical_set(node):

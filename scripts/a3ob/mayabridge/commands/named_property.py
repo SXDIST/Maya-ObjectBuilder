@@ -8,7 +8,7 @@ from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
 
-class NamedPropertyCommand(_Base):
+class NamedPropertyCommand(_UndoableBase):
     kName = "a3obNamedProperty"
 
     @staticmethod
@@ -50,14 +50,14 @@ class NamedPropertyCommand(_Base):
                 return
             properties = [item for item in properties if item[0] != key]
             properties.append((key, value))
-            attr.set_string(lod, A.PROPERTIES, properties_string(properties))
+            attr.set_string(lod, A.PROPERTIES, properties_string(properties), self.modifier)
             self.setResult(named_property_result(lod))
             return
 
         if argdb.isFlagSet("-r"):
             key = argdb.flagArgumentString("-r", 0)
             properties = [item for item in properties if item[0] != key]
-            attr.set_string(lod, A.PROPERTIES, properties_string(properties))
+            attr.set_string(lod, A.PROPERTIES, properties_string(properties), self.modifier)
             self.setResult(named_property_result(lod))
             return
 

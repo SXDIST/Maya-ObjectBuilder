@@ -109,15 +109,15 @@ def same_node(a, b):
 # =============================================================================
 
 
-def set_lod_attributes(transform, lod_type, resolution):
+def set_lod_attributes(transform, lod_type, resolution, modifier=None):
     from a3ob.formats.p3d import LodResolution
     signature = LodResolution.encode(lod_type, resolution)
-    attr.set_bool(transform, A.IS_LOD, True)
-    attr.set_int(transform, A.LOD_TYPE, lod_type)
-    attr.set_int(transform, A.RESOLUTION, resolution)
-    attr.set_double(transform, A.RESOLUTION_SIGNATURE, signature)
-    attr.set_int(transform, A.SOURCE_VERTEX_COUNT, 0)
-    attr.set_int(transform, A.SOURCE_FACE_COUNT, 0)
+    attr.set_bool(transform, A.IS_LOD, True, modifier)
+    attr.set_int(transform, A.LOD_TYPE, lod_type, modifier)
+    attr.set_int(transform, A.RESOLUTION, resolution, modifier)
+    attr.set_double(transform, A.RESOLUTION_SIGNATURE, signature, modifier)
+    attr.set_int(transform, A.SOURCE_VERTEX_COUNT, 0, modifier)
+    attr.set_int(transform, A.SOURCE_FACE_COUNT, 0, modifier)
 
 
 def vertex_count_for_lod(transform):
