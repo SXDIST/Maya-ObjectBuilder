@@ -84,14 +84,12 @@ class MayaMeshExport:
                     selected_path = selection.getDagPath(i)
                 except Exception:
                     continue
-                lod_path = _resolve_lod_path(selected_path)
-                if lod_path is None:
-                    continue
-                full_path = lod_path.fullPathName()
-                if full_path in exported_paths:
-                    continue
-                exported_paths.add(full_path)
-                lod_entries.append((_lod_sort_key(lod_path), lod_path))
+                for lod_path in resolve_lod_paths(selected_path):
+                    full_path = lod_path.fullPathName()
+                    if full_path in exported_paths:
+                        continue
+                    exported_paths.add(full_path)
+                    lod_entries.append((_lod_sort_key(lod_path), lod_path))
             if not lod_entries and selected_names:
                 om.MGlobal.displayError("P3D export failed: selection does not contain an Object Builder LOD, LOD mesh, or mesh component: " + ", ".join(selected_names))
                 return False

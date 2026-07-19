@@ -112,6 +112,37 @@ def _resolve_lod_path(path):
     return None
 
 
+def _lod_paths_below(path):
+    """Every LOD transform under ``path``, excluding ``path`` itself."""
+    root = om.MDagPath(path)
+    found = []
+    iterator = om.MItDag(om.MItDag.kDepthFirst, om.MFn.kTransform)
+    iterator.reset(root.node(), om.MItDag.kDepthFirst, om.MFn.kTransform)
+    while not iterator.isDone():
+        current = iterator.getPath()
+        if (current.fullPathName() != root.fullPathName()
+                and attr.get_bool(current.node(), A.IS_LOD)):
+            found.append(om.MDagPath(current))
+        iterator.next()
+    return found
+
+
+def resolve_lod_paths(path):
+    """The LODs a selected node stands for.
+
+    Upward first: a mesh, or a component of one, means the LOD transform above it — picking
+    one mesh must never drag in its siblings. Only when nothing upward is a LOD does this
+    look DOWNWARD, so that selecting the folder holding a model's LODs exports that model.
+
+    Without the downward half, a folder per model — the obvious way to keep several models
+    bound for separate .p3d files apart in one scene — was the one arrangement that could
+    not be exported at all."""
+    resolved = _resolve_lod_path(path)
+    if resolved is not None:
+        return [resolved]
+    return _lod_paths_below(path)
+
+
 def _find_first_mesh_path(transform_path):
     transform_fn = om.MFnDagNode(transform_path)
     for i in range(transform_fn.childCount()):
@@ -281,6 +312,7 @@ __all__ = [
     "_split_uvset_taggs",
     "_split_properties",
     "_resolve_lod_path",
+    "resolve_lod_paths",
     "_find_first_mesh_path",
     "_strip_drive",
     "_mesh_material_pairs",
