@@ -65,6 +65,29 @@ def save_reference(kind, path=""):
     return target
 
 
+def _make_visible(nodes):
+    """Force the imported top-level nodes visible.
+
+    A reference is saved from a working scene, and there the body is usually hidden —
+    tucked away while a garment is fitted on it. That hidden state travels into the .ma,
+    so the asset arrives invisible and reads as an import that silently did nothing.
+
+    ONLY the top-level nodes are touched. The DayZ rig hides a pile of helper transforms
+    further down (Face_Hub, Camera1st_lock_dummy and friends) on purpose, and unhiding
+    those would dump rig scaffolding into the viewport. A visibility that is locked or
+    driven by a connection is left alone: something else owns it."""
+    for node in nodes:
+        plug = node + ".visibility"
+        try:
+            if cmds.getAttr(plug, lock=True):
+                continue
+            if cmds.listConnections(plug, source=True, destination=False):
+                continue
+            cmds.setAttr(plug, True)
+        except Exception:  # noqa: BLE001 - no visibility plug, or Maya refuses; not fatal
+            pass
+
+
 def add_reference(kind):
     """Import the saved reference into the current scene.
 
@@ -83,7 +106,9 @@ def add_reference(kind):
     cmds.file(path, i=True, type="mayaAscii", ignoreVersion=True,
               mergeNamespacesOnClash=True, namespace=":", preserveReferences=True)
     after = set(cmds.ls(assemblies=True, long=True) or [])
-    return sorted(after - before)
+    created = sorted(after - before)
+    _make_visible(created)
+    return created
 
 
 __all__ = [

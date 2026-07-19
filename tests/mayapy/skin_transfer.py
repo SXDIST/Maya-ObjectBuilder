@@ -91,6 +91,9 @@ def test_reference_added_from_file():
     scratch = os.path.join(tempfile.mkdtemp(prefix="ref-"), "body.ma")
 
     try:
+        # Saved while hidden, exactly as a reference gets made in practice: the body is
+        # tucked away while the garment is fitted, and that state travels into the .ma.
+        cmds.setAttr(body + ".visibility", False)
         cmds.select(body, replace=True)
         references.save_reference("male_body", scratch)
         cmds.delete(body)
@@ -103,6 +106,11 @@ def test_reference_added_from_file():
         reference, imported = skintransfer.ensure_reference(targets)
         check(reference is not None, "a reference must be produced from the saved file")
         check(imported, "the saved asset must have been imported, got %r" % (imported,))
+
+        # An asset that arrives invisible reads as a failed import.
+        for node in imported:
+            check(cmds.getAttr(node + ".visibility"),
+                  "imported reference node %r must arrive visible" % (node,))
 
         count, _rigid = skintransfer.transfer_to_target(targets[0], reference)
         check(count > 0, "transfer must run against the imported reference")
