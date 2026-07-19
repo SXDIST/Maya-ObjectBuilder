@@ -10,16 +10,17 @@ from a3ob.mayabridge.commands.proxy import ProxyCommand
 from a3ob.mayabridge.commands.named_property import NamedPropertyCommand
 from a3ob.mayabridge.commands.update_proxy import UpdateProxyCommand
 from a3ob.mayabridge.commands.skin import SkinWeightsCommand, TransferSkinCommand, TestPoseCommand, ReferenceAssetCommand, BakeSkinCommand
+from a3ob.mayabridge.commands.influence import InfluenceCommand
 
 COMMANDS = [
     ValidateCommand, SetMassCommand, SetMaterialCommand, SetFlagCommand,
     FindComponentsCommand, CreateLODCommand, ProxyCommand, NamedPropertyCommand,
     UpdateProxyCommand, SkinWeightsCommand, TransferSkinCommand, TestPoseCommand,
-    ReferenceAssetCommand, BakeSkinCommand,
+    ReferenceAssetCommand, BakeSkinCommand, InfluenceCommand,
 ]
 
 __all__ = [
     "ValidateCommand", "SetMassCommand", "SetMaterialCommand", "SetFlagCommand",
     "FindComponentsCommand", "CreateLODCommand", "ProxyCommand", "NamedPropertyCommand",
-    "UpdateProxyCommand", "SkinWeightsCommand", "TransferSkinCommand", "TestPoseCommand", "ReferenceAssetCommand", "BakeSkinCommand", "COMMANDS",
+    "UpdateProxyCommand", "SkinWeightsCommand", "TransferSkinCommand", "TestPoseCommand", "ReferenceAssetCommand", "BakeSkinCommand", "InfluenceCommand", "COMMANDS",
 ]
