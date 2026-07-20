@@ -17,6 +17,11 @@ def _lod_definition_for_type(lod_type):
     return LOD_DEFINITIONS[0]
 
 
+# Sentinel for _mass_collapse_node: distinct from any real node path (including None),
+# so the very first sync after dock construction always recomputes the collapse state.
+_MASS_COLLAPSE_UNSET = object()
+
+
 class LodListPanelMixin:
     def _build_lod_list_section(self):
         widget = qt_widgets.QWidget()
@@ -543,7 +548,6 @@ class LodListPanelMixin:
         mass_layout.addRow(mass_tools)
         layout.addWidget(self.mass_body)
 
-        self._mass_collapsed = True
         self._set_mass_collapsed(True)
         self.refresh_mass_summary()
         return widget
@@ -576,10 +580,23 @@ class LodListPanelMixin:
 
         Collapsed, never hidden and never disabled: export writes a mass TAGG wherever
         a3obMassValues exists, with no restriction by a3obLodType, so the UI must not be
-        narrower than the format — this only decides prominence, never availability."""
+        narrower than the format — this only decides prominence, never availability.
+
+        Recomputed only when the SELECTED NODE changes, not on every refresh_lod_list()
+        call — mirroring the _lod_row_order-vs-node_order rebuild-only-on-change pattern
+        above. Two of the Mass section's own buttons (distribute_mass_evenly,
+        mass_from_volume_from_ui) end with _refresh_context_ui(), which runs this on the
+        same node the user just edited; recomputing unconditionally there re-collapsed a
+        section the user had just expanded by hand, before they could even see the
+        result. A manual toggle during a visit to one LOD now sticks until the selection
+        actually moves to a different node — switching away and back still re-applies
+        the type-based default, so this is not a sticky-forever override."""
         if getattr(self, "mass_body", None) is None:
             return
         node = self.selected_named_property_lod()
+        if node == getattr(self, "_mass_collapse_node", _MASS_COLLAPSE_UNSET):
+            return
+        self._mass_collapse_node = node
         lod_type = None
         if node and cmds.objExists(node) and cmds.attributeQuery("a3obLodType", node=node, exists=True):
             lod_type = cmds.getAttr(node + ".a3obLodType")
@@ -626,7 +643,7 @@ class LodListPanelMixin:
 
 
     def mass_section_is_collapsed(self):
-        return bool(getattr(self, "_mass_collapsed", False))
+        return bool(getattr(self, "_mass_collapsed", True))
 
 
     def apply_mass(self, value):

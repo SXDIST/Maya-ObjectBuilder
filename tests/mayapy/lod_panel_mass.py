@@ -64,6 +64,33 @@ def main():
         dock.apply_mass(2.5)
         _harness.check(cmds.attributeQuery("a3obMassValues", node=resolution, exists=True),
                        "setting mass on a Resolution LOD must still work")
+
+        # Manual toggle must survive a refresh on the SAME node. distribute_mass_evenly()
+        # and mass_from_volume_from_ui() both end with _refresh_context_ui(), which calls
+        # refresh_lod_list() -> _sync_mass_collapse_state() on the node the user is
+        # already looking at; recomputing unconditionally there re-collapsed a section
+        # the user had just expanded by hand, before they could see the value they set.
+        cmds.select(resolution, replace=True)
+        dock.refresh_lod_list()
+        _harness.check(dock.mass_section_is_collapsed(),
+                       "sanity: still collapsed on the Resolution LOD before the manual toggle")
+        dock.mass_toggle_button.setChecked(True)  # user expands it by hand
+        _harness.check(not dock.mass_section_is_collapsed(),
+                       "manual expand must take effect immediately")
+        dock.refresh_lod_list()  # e.g. the refresh at the end of distribute_mass_evenly()
+        _harness.check(not dock.mass_section_is_collapsed(),
+                       "a same-node refresh must NOT re-collapse a manually expanded Mass section")
+
+        # Switching to a different LOD and back must still re-apply the type-based
+        # default — this is not a sticky-forever override, only sticky for the visit.
+        cmds.select(geometry, replace=True)
+        dock.refresh_lod_list()
+        _harness.check(not dock.mass_section_is_collapsed(),
+                       "Geometry LOD should be expanded by the type-based default")
+        cmds.select(resolution, replace=True)
+        dock.refresh_lod_list()
+        _harness.check(dock.mass_section_is_collapsed(),
+                       "returning to the Resolution LOD must re-apply its collapsed default")
     finally:
         dock.teardown()
     print("OK - mass present everywhere, collapsed where unusual, still writable")

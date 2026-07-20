@@ -11,7 +11,7 @@ from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.recent import recent_paths, remember_path
 from a3ob.ui.watch import SceneWatcher, ALL_PANELS
 
-from a3ob.ui.panels.lod_list import LodListPanelMixin
+from a3ob.ui.panels.lod_list import LodListPanelMixin, _MASS_COLLAPSE_UNSET
 from a3ob.ui.panels.lod import LodPanelMixin
 from a3ob.ui.panels.metadata import MetadataPanelMixin
 from a3ob.ui.panels.materials import MaterialsPanelMixin
@@ -62,6 +62,10 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.mass_toggle_button = None
         self.mass_body = None
         self._mass_collapsed = True
+        # Distinct-node sentinel so the FIRST _sync_mass_collapse_state() call always
+        # recomputes; see lod_list.py's _sync_mass_collapse_state for why this must not
+        # recompute on every refresh_lod_list() thereafter.
+        self._mass_collapse_node = _MASS_COLLAPSE_UNSET
         self.validation_list = None
         self.validation_summary = None
         self.flag_component_combo = None
