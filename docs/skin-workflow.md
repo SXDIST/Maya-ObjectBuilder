@@ -1,7 +1,10 @@
 # DayZ skin weights — working order
 
-The short version: **weights live in the skinCluster, and the skinCluster lives on the
-skeleton.** Everything below follows from that.
+The short version: **weights live in the skinCluster, which Maya deletes together with the
+joints — but the plugin keeps a copy on the mesh so they survive that.** The copy
+(`a3obBakedWeights`) is written on import, refreshed on every scene save, and used by export
+when no skinCluster is present. A live skinCluster always wins, so the copy can never serve
+stale weights over a rig you are still editing.
 
 ## 1. Prepare the scene
 
@@ -61,12 +64,14 @@ be there alongside `camo`. If you only see `camo`, the model went out without we
 
 ## Three ways to lose weights
 
-**Deleting the skeleton.** Maya deletes the skinCluster with the joints, and the weights go
-with it. Irreversible except by undo.
-→ Run **`a3obBakeSkin`** *before* deleting a rig. It copies the weights onto the LOD
-transform, and export falls back to them when no skinCluster is present. The live skinCluster
-always wins, so baking can never serve stale weights over a rig you are still editing.
-Export now warns when the scene has a skeleton but a LOD has neither weights nor baked ones.
+**Deleting the skeleton.** Maya deletes the skinCluster with the joints, and the live weights
+go with it.
+→ Mostly handled for you: the copy on the mesh is refreshed on every **save**, so a `.p3d`
+opened without its rig still exports its weights. `a3obBakeSkin` forces a copy on demand, and
+**`a3obBakeSkin -restore`** writes the stored weights back onto a live skinCluster, matching
+bones by leaf name and renormalizing. The previous contents are kept, so `-restore -previous`
+is a swap — nothing overwrites a good bake unrecoverably. Export warns when the scene has a
+skeleton but a LOD has neither live nor stored weights.
 
 **Exporting while posed.** Export reads the *deformed* mesh, so a rotated skeleton is baked
 into the .p3d as if that were the model's shape.

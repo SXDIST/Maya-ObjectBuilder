@@ -1,5 +1,10 @@
 # Weights as Mesh Data — Implementation Plan
 
+> **EXECUTED — this plan is spent.** The unticked checkboxes below are a bookkeeping artifact,
+> not remaining work: the feature shipped and is covered by
+> `tests/mayapy/{weight_sync,weights_restore,weights_survive_skeleton}.py`. Kept for the
+> reasoning behind the design. Do not re-execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Maya mesh the source of truth for DayZ skin weights, so neither the skeleton nor the reference body has to be present in the scene for the plugin to work correctly.

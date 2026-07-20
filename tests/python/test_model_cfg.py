@@ -1,8 +1,8 @@
 """Pure-Python model.cfg test (no Maya).
 
-Mirrors ``tests/cpp/model_cfg_test.cpp``: parses the fixture skeleton (expects one
-skeleton with 18 bones), builds an 11-bone skeleton config, writes it, re-reads it,
-and asserts the exported skeleton round-trips to 11 bones.
+Parses the fixture skeleton (expects one skeleton with 18 bones), builds an 11-bone
+skeleton config, writes it, re-reads it, and asserts the exported skeleton
+round-trips to 11 bones.
 
 Run:  python tests/python/test_model_cfg.py [input-model.cfg] [output-model.cfg]
 """

@@ -1,8 +1,8 @@
 """Pure-Python P3D round-trip test (no Maya).
 
-Mirrors ``tests/cpp/p3d_roundtrip.cpp``: reads each fixture, writes it back out,
-re-reads it, and asserts structural stability (LOD / vertex / normal / face / TAGG
-counts, TAGG summary, and decoded LOD type + resolution).
+Reads each fixture, writes it back out, re-reads it, and asserts structural
+stability (LOD / vertex / normal / face / TAGG counts, TAGG summary, and decoded
+LOD type + resolution).
 
 Run:  python tests/python/test_p3d_roundtrip.py [fixtures-dir] [output-dir]
 """

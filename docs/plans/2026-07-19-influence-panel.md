@@ -13,6 +13,9 @@
 > painting. The plan text below is left as written — it is the record of what was planned —
 > but the shipped code and tests carry the corrected wording. Do not copy the rationale out
 > of this document.
+>
+> The unticked checkboxes below are a bookkeeping artifact, not remaining work — the panel
+> shipped and is covered by `tests/mayapy/influence_panel.py`. Do not re-execute this plan.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -1,7 +1,10 @@
 # Weights as mesh data — design
 
 **Date:** 2026-07-19
-**Status:** approved in discussion, not started
+**Status:** SHIPPED. Historical design note — kept for the reasoning, not as a to-do.
+Implementation: `mayabridge/weightsync.py` (sync on `kBeforeSave`), `a3obBakedWeights` /
+`a3obBakedWeightsPrevious`, `a3obBakeSkin -restore [-previous]`. Covered by
+`tests/mayapy/{weight_sync,weights_restore,weights_survive_skeleton}.py`.
 **Follows:** the skinning toolkit shipped on `skinning-and-native-cleanup`
 
 ## The problem
