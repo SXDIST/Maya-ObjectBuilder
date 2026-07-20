@@ -141,7 +141,6 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             frameLayout -label "Import: Main" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
             columnLayout -adjustableColumn true -rowSpacing 4;
             checkBox -label "First LOD Only" mayaObjectBuilderFirstLodOnly;
-            checkBox -label "Validate Meshes" mayaObjectBuilderValidateMeshes;
             setParent "..";
             setParent "..";
 
@@ -194,7 +193,6 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
 
             frameLayout -label "Mesh Data" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
             columnLayout -adjustableColumn true -rowSpacing 4;
-            checkBox -label "Validate Meshes" mayaObjectBuilderExportValidateMeshes;
             checkBox -label "Apply Modifiers" mayaObjectBuilderApplyModifiers;
             checkBox -label "Apply Transforms" mayaObjectBuilderApplyTransforms;
             checkBox -label "Custom Normals" mayaObjectBuilderExportCustomNormals;
@@ -209,7 +207,6 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             menuItem -label "Ignore";
             menuItem -label "Skip";
             menuItem -label "Fail";
-            checkBox -label "Validate LODs" mayaObjectBuilderValidateLods;
             checkBox -label "Warnings Are Errors" mayaObjectBuilderWarningsAreErrors;
             setParent "..";
             setParent "..";
@@ -376,7 +373,6 @@ global proc mayaObjectBuilderP3DSetOptions(string $settings)
         string $value = $optionBreakDown[1];
 
         if ($key == "firstLodOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderFirstLodOnly", $value);
-        else if ($key == "validateMeshes") mayaObjectBuilderP3DSetBool("mayaObjectBuilderValidateMeshes", $value);
         else if ($key == "enclose") mayaObjectBuilderP3DSetBool("mayaObjectBuilderEnclose", $value);
         else if ($key == "groupBy") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderGroupBy", $value);
         else if ($key == "absolutePaths") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAbsolutePaths", $value);
@@ -396,14 +392,12 @@ global proc mayaObjectBuilderP3DSetOptions(string $settings)
         else if ($key == "relativePaths") mayaObjectBuilderP3DSetBool("mayaObjectBuilderRelativePaths", $value);
         else if ($key == "selectedOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSelectedOnly", $value);
         else if ($key == "visibleOnly") mayaObjectBuilderP3DSetBool("mayaObjectBuilderVisibleOnly", $value);
-        else if ($key == "exportValidateMeshes") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportValidateMeshes", $value);
         else if ($key == "applyModifiers") mayaObjectBuilderP3DSetBool("mayaObjectBuilderApplyModifiers", $value);
         else if ($key == "applyTransforms") mayaObjectBuilderP3DSetBool("mayaObjectBuilderApplyTransforms", $value);
         else if ($key == "preserveNormals") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportCustomNormals", $value);
         else if ($key == "sortSections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSortSections", $value);
         else if ($key == "generateComponents") mayaObjectBuilderP3DSetBool("mayaObjectBuilderGenerateComponents", $value);
         else if ($key == "collisions") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderCollisions", $value);
-        else if ($key == "validateLods") mayaObjectBuilderP3DSetBool("mayaObjectBuilderValidateLods", $value);
         else if ($key == "warningsAreErrors") mayaObjectBuilderP3DSetBool("mayaObjectBuilderWarningsAreErrors", $value);
         else if ($key == "renumberComponents") mayaObjectBuilderP3DSetBool("mayaObjectBuilderRenumberComponents", $value);
         else if ($key == "forceLowercase") mayaObjectBuilderP3DSetBool("mayaObjectBuilderForceLowercase", $value);
@@ -430,7 +424,6 @@ global proc string mayaObjectBuilderP3DBoolOption(string $key, string $control)
 global proc string mayaObjectBuilderP3DGetOptions()
 {
     string $options = mayaObjectBuilderP3DBoolOptionDefault("firstLodOnly", "mayaObjectBuilderFirstLodOnly", "0");
-    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("validateMeshes", "mayaObjectBuilderValidateMeshes", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("enclose", "mayaObjectBuilderEnclose", "1");
     $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("groupBy", "mayaObjectBuilderGroupBy", "type");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("absolutePaths", "mayaObjectBuilderAbsolutePaths", "1");
@@ -450,14 +443,12 @@ global proc string mayaObjectBuilderP3DGetOptions()
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("relativePaths", "mayaObjectBuilderRelativePaths", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("selectedOnly", "mayaObjectBuilderSelectedOnly", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("visibleOnly", "mayaObjectBuilderVisibleOnly", "1");
-    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("exportValidateMeshes", "mayaObjectBuilderExportValidateMeshes", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("applyModifiers", "mayaObjectBuilderApplyModifiers", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("applyTransforms", "mayaObjectBuilderApplyTransforms", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("preserveNormals", "mayaObjectBuilderExportCustomNormals", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("sortSections", "mayaObjectBuilderSortSections", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("generateComponents", "mayaObjectBuilderGenerateComponents", "1");
     $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("collisions", "mayaObjectBuilderCollisions", "fail");
-    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("validateLods", "mayaObjectBuilderValidateLods", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("warningsAreErrors", "mayaObjectBuilderWarningsAreErrors", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("renumberComponents", "mayaObjectBuilderRenumberComponents", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("forceLowercase", "mayaObjectBuilderForceLowercase", "1");
