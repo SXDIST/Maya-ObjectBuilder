@@ -29,37 +29,6 @@ def _create_transform(parent_name, name):
 # =============================================================================
 
 
-def _store_weight_selections(transform, lod, vertex_map):
-    """Keep the file's bone selections on the transform as ``a3obBakedWeights``.
-
-    The .p3d stores weights as named vertex selections and knows nothing about skeletons.
-    Import also turns them into a skinCluster, but that dies with the joints — this copy
-    does not, so a model opened without its rig still exports its weights. The live
-    skinCluster continues to win on export; this is only the fallback.
-
-    Indices are stored in MAYA space. ``vertex_map`` runs Maya index -> P3D source index,
-    so it is inverted once here rather than scanned per weight: the character fixture has
-    LODs with thousands of vertices and a per-weight scan is quadratic on them."""
-    reverse = {source: maya for maya, source in enumerate(vertex_map or [])}
-
-    bone_rows = []
-    for tagg in lod.taggs:
-        if tagg.data is None or tagg.data.kind != "Selection" or tagg.is_proxy():
-            continue
-        if not isinstance(tagg.name, str) or tagg.name.startswith("#"):
-            continue
-        pairs = []
-        for source_index, weight in tagg.data.vertex_weights:
-            mapped = reverse.get(source_index) if reverse else source_index
-            if mapped is not None and weight > 0.0:
-                pairs.append("%d=%s" % (mapped, repr(float(weight))))
-        if pairs:
-            bone_rows.append("%s:%s" % (tagg.name, ",".join(pairs)))
-
-    if bone_rows:
-        attr.set_string(transform, A.BAKED_WEIGHTS, ";".join(bone_rows))
-
-
 def set_lod_metadata(transform, lod, vertex_map):
     attr.set_bool(transform, A.IS_LOD, True)
     attr.set_int(transform, A.LOD_TYPE, lod.resolution.lod)
@@ -101,7 +70,6 @@ def set_lod_metadata(transform, lod, vertex_map):
             uv_set_taggs.append(tagg.data)
 
     attr.set_string(transform, A.PROPERTIES, ";".join(properties))
-    _store_weight_selections(transform, lod, vertex_map)
     attr.set_bool(transform, A.HAS_MASS, has_mass)
     if mass_values is not None:
         attr.set_string(transform, A.MASS_VALUES, float_values_string(mass_values))
