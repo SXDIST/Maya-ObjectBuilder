@@ -44,15 +44,13 @@ def _warn_about_missing_weights(lod_entries):
         history = cmds.listHistory(mesh_path.fullPathName(), pruneDagObjects=True) or []
         if cmds.ls(history, type="skinCluster"):
             continue
-        if attr.get_string(lod_path.node(), A.BAKED_WEIGHTS):
-            continue
         unweighted.append(lod_path.partialPathName())
 
     if unweighted:
         om.MGlobal.displayWarning(
-            "P3D export: %d LOD(s) have no skin weights and none baked (%s). The scene has a "
-            "skeleton, so this is probably not intended — deleting joints removes the "
-            "skinCluster and its weights. Use a3obBakeSkin BEFORE deleting a rig."
+            "P3D export: %d LOD(s) have no skin weights (%s). The scene has a skeleton, so "
+            "this is probably not intended — deleting joints removes the skinCluster and its "
+            "weights with it."
             % (len(unweighted), ", ".join(unweighted[:4])))
     return unweighted
 
