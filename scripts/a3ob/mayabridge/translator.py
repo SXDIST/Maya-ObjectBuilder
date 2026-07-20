@@ -50,6 +50,47 @@ def option_enabled(options, key, fallback):
     return value == "1" or value == "true"
 
 
+_AUTO_LOD_MENU_KEYS = {
+    "autoLodOutput": "output",
+    "autoLodReduction": "reduction",
+    "autoLodFirst": "first_lod",
+    "autoLodGeometryType": "geometry_type",
+}
+_AUTO_LOD_BOOL_KEYS = {
+    "autoLodResolution": ("resolution", True),
+    "autoLodGeometry": ("geometry", True),
+    "autoLodMemory": ("memory", False),
+    "autoLodFire": ("fire_geometry", False),
+    "autoLodView": ("view_geometry", False),
+}
+
+
+def _auto_lod_settings(options):
+    """Map the option string onto the dict autolod.helpers.settings documents."""
+    settings = {}
+    for key, name in _AUTO_LOD_MENU_KEYS.items():
+        if key in options:
+            settings[name] = options[key]
+    for key, (name, fallback) in _AUTO_LOD_BOOL_KEYS.items():
+        settings[name] = option_enabled(options, key, fallback)
+    try:
+        settings["fire_quality"] = int(options.get("autoLodFireQuality", 2))
+    except (TypeError, ValueError):
+        settings["fire_quality"] = 2
+    return settings
+
+
+def _selection_of(names):
+    """Build an ``MSelectionList`` from generated node names for setActiveSelectionList."""
+    selection = om.MSelectionList()
+    for name in names:
+        try:
+            selection.add(name)
+        except RuntimeError:
+            pass
+    return selection
+
+
 def do_read(expanded_full_name, raw_name, options_string):
     """Import a P3D file. Raises on failure so the translator can report it."""
     options = parse_options(options_string)
@@ -87,4 +128,42 @@ def do_write(expanded_full_name, options_string, export_active):
         command = "a3obValidate -selectionOnly" if export_options.selected_only else "a3obValidate"
         om.MGlobal.executeCommand(command)
 
-    return MayaMeshExport().export_mlod(expanded_full_name, export_options)
+    if not option_enabled(options, "autoLod", False):
+        return MayaMeshExport().export_mlod(expanded_full_name, export_options)
+
+    # Generated LODs are transient: they exist only long enough to be written. Undo is
+    # suspended across the whole span so a Ctrl+Z after the export cannot resurrect nodes
+    # that were deliberately removed, and cleanup runs in `finally` so a cancel or an
+    # exception leaves the scene exactly as the user left it.
+    from a3ob.mayabridge.autolod import generate_auto_lods
+    from a3ob.mayabridge.undoctl import undo_suspended
+
+    generated = []
+    with undo_suspended():
+        # generate_auto_lods() reuses a pre-existing "visuals"/"geometries"/"point_clouds"
+        # group when one is already in the scene, and only self-cleans its OWN new group on
+        # a mid-decimation cancel — a normal, successful run leaves those container groups
+        # behind for the (usual) UI caller to keep. Export is not that caller: everything
+        # generated here must be gone afterwards, container groups included. Snapshotting the
+        # transforms before generation and diffing after lets cleanup remove exactly what
+        # this call added — whether that is the full LOD stack or a group half-filled by an
+        # exception partway through — without ever touching a group the user already had.
+        before_transforms = set(cmds.ls(type="transform", long=True) or [])
+        try:
+            generated = generate_auto_lods(_auto_lod_settings(options)) or []
+            if not generated:
+                om.MGlobal.displayError(
+                    "a3ob export: Auto LOD generated nothing — select exactly one source "
+                    "mesh. No file was written.")
+                return False
+            om.MGlobal.setActiveSelectionList(_selection_of(generated),
+                                              om.MGlobal.kReplaceList)
+            return MayaMeshExport().export_mlod(expanded_full_name, export_options)
+        finally:
+            for node in generated:
+                if cmds.objExists(node):
+                    cmds.delete(node)
+            leftover = set(cmds.ls(type="transform", long=True) or []) - before_transforms
+            for node in leftover:
+                if cmds.objExists(node):
+                    cmds.delete(node)
