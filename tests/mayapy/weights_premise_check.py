@@ -15,12 +15,21 @@ _harness.bootstrap()
 import maya.cmds as cmds
 
 
+def baked_nodes():
+    """Transforms carrying a stored (non-empty) a3obBakedWeights value.
+
+    A bare ``a3obBakedWeights`` attribute with nothing stored in it is not a bake —
+    ``orphan_bakes`` skips those, so the summary count has to use this same population
+    or it overstates how many meshes were actually evaluated.
+    """
+    return [node for node in cmds.ls("*.a3obBakedWeights", objectsOnly=True, long=True) or []
+            if cmds.getAttr(node + ".a3obBakedWeights") or ""]
+
+
 def orphan_bakes():
     """LOD transforms with stored weights and no live skinCluster."""
     orphans = []
-    for node in cmds.ls("*.a3obBakedWeights", objectsOnly=True, long=True) or []:
-        if not (cmds.getAttr(node + ".a3obBakedWeights") or ""):
-            continue
+    for node in baked_nodes():
         shapes = cmds.listRelatives(node, allDescendents=True, type="mesh",
                                     fullPath=True, noIntermediate=True) or []
         live = shapes and cmds.ls(cmds.listHistory(shapes[0], pruneDagObjects=True) or [],
@@ -32,15 +41,21 @@ def orphan_bakes():
 
 def main():
     scene = sys.argv[1] if len(sys.argv) > 1 else ""
-    if scene:
-        cmds.file(scene, open=True, force=True)
+    if not scene:
+        # No scene means an empty standalone scene, which trivially has zero baked
+        # meshes and would otherwise print "OK - 0 baked mesh(es)" — a green result
+        # that proves nothing. Say so plainly instead of claiming a real check ran.
+        print("SKIP weights premise check — no scene given, nothing was checked "
+              "(run: mayapy tests/mayapy/weights_premise_check.py <scene.mb>)")
+        return 0
+    cmds.file(scene, open=True, force=True)
     orphans = orphan_bakes()
     _harness.check(
         not orphans,
         "these carry a bake with no live skinCluster, so the bake is their ONLY copy: %r"
         % (orphans,))
     print("OK - %d baked mesh(es), all with a live skinCluster"
-          % len(cmds.ls("*.a3obBakedWeights", objectsOnly=True) or []))
+          % len(baked_nodes()))
 
 
 if __name__ == "__main__":
