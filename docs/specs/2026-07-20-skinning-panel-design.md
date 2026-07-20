@@ -51,20 +51,51 @@ writes a selection, and never belonged in a read-only validator.
 - **Add Male Body → Add Male Character.** It imports the body *with its materials and its
   skeleton*; "Body" undersells what lands in the scene.
 
+### Reference assets now ship with the plugin
+
+`references.py` states the assets are Bohemia's and therefore not stored in the repository.
+That premise was wrong: Bohemia publish the character rig and body themselves, in
+`BohemiaInteractive/DayZ-Misc` under *Rig and Animations*.
+
+The constraint is licensing, not availability. `DayZ-Misc` is under the **Arma and DayZ
+Public License Share Alike (ADPL-SA)**: attribution required, non-commercial, Arma/DayZ
+only, and share-alike — derivatives must carry the same license. GitHub does not even
+detect it as a license (`gh api` reports `license: null`). A prepared `.ma` with materials
+and `a3obTexture`/`a3obMaterial` paths set up *is* an adaptation of their mesh, so it falls
+under that share-alike clause. The plugin's own code is MIT and is not a derivative of the
+mesh, so the two must not be mixed in one undifferentiated tree.
+
+Therefore:
+
+- `assets/references/` holds the prepared `.ma` files and **its own `LICENSE`** naming
+  ADPL-SA, with attribution to Bohemia Interactive.
+- The root `README` states plainly that code is MIT and that this directory is ADPL-SA,
+  with what that implies (non-commercial, Arma/DayZ only, share-alike).
+- The installer copies whatever it finds there into `default_directory()` and points the
+  optionVars at the results, skipping silently when the directory is absent.
+  `install_maya.py` must keep importing only stdlib and `maya.cmds`; `shutil` satisfies
+  this.
+- Never overwrite a reference the user has already saved. Someone who customised their body
+  must not lose it to an upgrade.
+
+The result is that **Add Male Character works immediately after installation**, which is
+what deleting the save buttons was reaching for.
+
+*This records what the licenses say, not legal advice; the compatibility call is the
+author's.*
+
 ### Moved to the menu, not deleted
 
 **Save Selection as Body** and **Save Selection as Skeleton** were proposed for deletion.
-They cannot be: reference assets are Bohemia's and are deliberately **not shipped in the
-repository** (`references.py`), so these buttons are the only way to create the asset that
-Add Male Character adds. Deleting them leaves a dead button on any fresh machine, after a
-Maya preferences reset, or for a second user. They look unnecessary only to someone who has
-already run them once — which is the case here: both `dayz_male_body.ma` and
-`dayz_skeleton.ma` are already saved and pointed at by optionVar.
+Shipping the assets removes the argument that they are the only way to obtain a reference,
+but not the reason to keep them: they are how a reference gets *changed* — a DayZ update
+alters the rig, texture or material paths need fixing, or a different base character is
+wanted. Without them a shipped reference is frozen.
 
-They belong in the menu for a second reason. `save_reference` exports the current selection
-with `force=True` and **no confirmation**: a wrong selection plus one click silently
-replaces the reference asset. A destructive, once-in-a-while action should not sit beside
-buttons pressed daily.
+They belong in the menu rather than the panel because `save_reference` exports the current
+selection with `force=True` and **no confirmation**: a wrong selection plus one click
+silently replaces the reference asset. A destructive, once-in-a-while action should not sit
+beside buttons pressed daily.
 
 Therefore a **Reference Assets** submenu holds: Add Male Character, Add Skeleton, Save
 Selection as Body, Save Selection as Skeleton. `KINDS` also defines `female_body`, which has
@@ -114,4 +145,9 @@ track, no storage model to understand.
 - Saving over an existing reference prompts; declining leaves the file untouched.
 - Saving with nothing selected still raises the existing clear error rather than writing an
   empty asset.
+- The installer populates `default_directory()` and the optionVars from
+  `assets/references/`, and running it a second time does **not** overwrite a reference the
+  user has since saved themselves.
+- The installer completes normally when `assets/references/` is absent.
+- `install_maya.py` still imports only stdlib and `maya.cmds`.
 - The panel stays a silent read (`dock_panel_sync.py`), positive control intact.
