@@ -60,6 +60,28 @@ def build_two_lod_model():
     return lod_hi, lod_lo, root_lo
 
 
+def build_all_unrigged_model():
+    """A model whose LODs are ALL unrigged and NEVER had a skinCluster — the static-prop
+    case this gate exists to keep silent. Two LODs sharing a parent group (so the sibling
+    walk has something to look at), neither ever skinned.
+
+    This is the negative case: without ``_model_has_skinned_sibling`` gating the warning,
+    reverting to "warn on every mesh with no skinCluster" would fire on both of these and
+    fail the assertion below — which is what actually proves the gate does something,
+    unlike the rigged/unrigged-sibling pair above that passes either way."""
+    model = cmds.group(empty=True, name="static_model")
+
+    lod_a = cmds.polyCylinder(name="static_hi", r=1, h=4, sx=8, sy=4, ch=False)[0]
+    _mark_lod(lod_a, 0)
+    cmds.parent(lod_a, model)
+
+    lod_b = cmds.polyCylinder(name="static_lo", r=1, h=4, sx=4, sy=2, ch=False)[0]
+    _mark_lod(lod_b, 1)
+    cmds.parent(lod_b, model)
+
+    return lod_a, lod_b
+
+
 def rows_for(node):
     return [r for r in (cmds.a3obValidate() or []) if node in r]
 
@@ -88,7 +110,22 @@ def main():
                    "deleted while its sibling stayed skinned, got %r" % (lost_lo,))
     _harness.check(lost_lo[0].startswith("warning|"),
                    "lost rig is a warning, not an error: %r" % (lost_lo[0],))
-    print("OK - lost rig reported once, only for the LOD whose sibling is still skinned")
+
+    # A model whose LODs are ALL unrigged (a static prop, or a lone LOD with no skinned
+    # sibling) must produce ZERO "no skinCluster" warnings. This is the negative case that
+    # actually exercises _model_has_skinned_sibling: if that gate were removed and the code
+    # reverted to warning on every mesh with no skinCluster, every check above would still
+    # pass unchanged (phase 1 has no unrigged mesh, phase 2's unrigged mesh is expected to
+    # warn either way) — only this assertion can fail on that regression.
+    static_hi, static_lo = build_all_unrigged_model()
+    lost_static_hi = [r for r in rows_for(static_hi) if "no skinCluster" in r]
+    lost_static_lo = [r for r in rows_for(static_lo) if "no skinCluster" in r]
+    _harness.check(not lost_static_hi and not lost_static_lo,
+                   "a model with no skinned sibling anywhere (static prop) must never warn "
+                   "about a missing skinCluster, got hi=%r lo=%r" % (lost_static_hi, lost_static_lo))
+
+    print("OK - lost rig reported once, only for the LOD whose sibling is still skinned, "
+          "and a fully-unrigged model stays silent")
 
 
 main()
