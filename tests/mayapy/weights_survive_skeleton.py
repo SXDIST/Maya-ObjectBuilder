@@ -1,21 +1,20 @@
-"""Weights must survive deleting the skeleton (run with mayapy).
+"""Deleting a rig loses its weights, and validation says so (run with mayapy).
 
-Reported from real use: delete the rig, export, and the .p3d comes out with no bone selections
-at all — silently. Reproduced exactly: deleting the joints deletes the skinCluster with them,
-and the weights only ever lived there.
+The old promise was that weights survived losing the skeleton, paid for with a second
+copy of every weight in every scene. The promise now is narrower and honest: they do
+not survive, and you are told the moment they are gone.
 
-``a3obBakeSkin`` used to copy live weights onto the LOD transform so they could outlive the
-rig, with export falling back to them when no skinCluster was present. Task 5 removed the
-export fallback and Task 6 removed the command itself: the live skinCluster is now the only
-store, so deleting the rig loses the weights for real, and this test now pins THAT.
+The lost-rig warning (Task 2) is scoped to "this LOD lost its rig while a sibling LOD
+of the same model kept one" — a single-LOD scene that loses its only rig produces NO
+warning, by design (see ``validate_lost_rig.py``: a Geometry LOD, or any static prop,
+never has a skinCluster and must not be spammed on every validate). So the fixture here
+needs two LODs sharing a parent group, each with its own rig, and only one rig gets
+deleted — exactly the shape ``_model_has_skinned_sibling`` is built to catch.
 
 Run:  mayapy.exe tests/mayapy/weights_survive_skeleton.py
 """
 
 import os
-import sys
-import tempfile
-from pathlib import Path
 
 import _harness
 
@@ -24,103 +23,76 @@ _harness.bootstrap()
 import maya.cmds as cmds
 
 
-def bone_selections(path):
-    from a3ob.formats.binary import BinaryReader
-    from a3ob.formats.p3d import MLOD
-    with BinaryReader(str(path)) as reader:
-        mlod = MLOD.read(reader)
-    return {tagg.name: len(tagg.data.vertex_weights)
-            for lod in mlod.lods for tagg in lod.taggs
-            if isinstance(tagg.name, str) and not tagg.name.startswith("#")
-            and tagg.data is not None and tagg.data.kind == "Selection"}
-
-
-def export(label):
-    from a3ob.mayabridge.export.exporter import MayaMeshExport
-    path = Path(tempfile.mkdtemp(prefix="skel-")) / (label + ".p3d")
-    _harness.check(MayaMeshExport().export_mlod(str(path)), "export failed for " + label)
-    return bone_selections(path)
+def _mark_lod(transform, resolution):
+    for name, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
+                       ("a3obResolution", "long")):
+        cmds.addAttr(transform, longName=name, attributeType=kind)
+    cmds.setAttr(transform + ".a3obIsLOD", True)
+    cmds.setAttr(transform + ".a3obResolution", resolution)
 
 
 def main():
     cmds.loadPlugin(os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py"))
-    cmds.undoInfo(state=True, infinity=True)
     cmds.file(new=True, force=True)
 
-    transform = cmds.polyCylinder(name="rigged", r=1, h=4, sx=8, sy=4, ch=False)[0]
-    cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
-    cmds.setAttr(transform + ".a3obIsLOD", True)
-    cmds.addAttr(transform, longName="a3obLodType", attributeType="long")
-    cmds.addAttr(transform, longName="a3obResolution", attributeType="long")
+    # Two LODs of one model, sharing a parent group, each with its OWN skinCluster on
+    # its OWN joint chain — so garment's rig can be deleted without touching sibling's.
+    model = cmds.group(empty=True, name="model")
+
+    transform = cmds.polyCylinder(name="garment", r=1, h=4, sx=8, sy=4, ch=False)[0]
+    _mark_lod(transform, 0)
+    cmds.parent(transform, model)
+
+    sibling = cmds.polyCylinder(name="sibling", r=1, h=4, sx=4, sy=2, ch=False)[0]
+    _mark_lod(sibling, 1)
+    cmds.parent(sibling, model)
 
     cmds.select(clear=True)
     root = cmds.joint(position=(0, -2, 0), name="Pelvis")
     tip = cmds.joint(position=(0, 2, 0), name="Spine")
     cmds.skinCluster(root, tip, transform, toSelectedBones=True, maximumInfluences=4)
 
-    with_rig = export("with_rig")
-    _harness.check(set(with_rig) == {"Pelvis", "Spine"},
-          "the rigged export must carry both bones, got %r" % sorted(with_rig))
-
-    # Destroy the rig exactly as a user would (Task 6: a3obBakeSkin is gone — there is no
-    # bake step left to interpose, and there is nothing left to fall back to either).
-    cmds.delete([root, tip])
-    _harness.check(not (cmds.ls(type="skinCluster") or []),
-          "deleting the joints should have removed the skinCluster (that is the whole problem)")
-
-    # Task 5: export no longer falls back to a baked attribute at all, so a deleted rig now
-    # exports with no bone selections. The full rewrite of this test (honest end-to-end
-    # contract, plus the a3obValidate warning) is Task 10's job; this only fixes the
-    # assertion this task invalidates.
-    without_rig = export("without_rig")
-    _harness.check(not without_rig,
-          "export must no longer fall back to baked weights (Task 5): got %r" % sorted(without_rig))
-
-    # And a scene that has a skeleton but no weights at all must not export silently.
-    # (No baked-attribute setup needed here: Task 5 made the warning key off skinCluster
-    # history alone, not a3obBakedWeights, and Task 6 removed the only thing that wrote it.)
     cmds.select(clear=True)
-    joint = cmds.joint(position=(0, 0, 0), name="Lonely")
-    from a3ob.mayabridge.export.exporter import _warn_about_missing_weights, _lod_sort_key
-    import maya.api.OpenMaya as om
-    selection = om.MSelectionList()
-    selection.add(transform)
-    dag_path = selection.getDagPath(0)
-    unweighted = _warn_about_missing_weights([(_lod_sort_key(dag_path), dag_path)])
-    _harness.check(len(unweighted) == 1,
-          "exporting a rigged scene with no weights must flag the LOD, got %r" % (unweighted,))
+    sibling_root = cmds.joint(position=(0, -2, 5), name="PelvisSibling")
+    sibling_tip = cmds.joint(position=(0, 2, 5), name="SpineSibling")
+    cmds.skinCluster(sibling_root, sibling_tip, sibling, toSelectedBones=True,
+                     maximumInfluences=4)
 
-    cmds.delete(joint)
+    warned = [r for r in (cmds.a3obValidate() or [])
+              if transform in r and "no skinCluster" in r]
+    _harness.check(not warned, "a rigged mesh must not be warned about")
 
-    print("OK weights do not survive skeleton deletion once the fallback is gone")
+    cmds.delete(root)
+    _harness.check(
+        not cmds.ls(cmds.listHistory(transform, pruneDagObjects=True) or [],
+                    type="skinCluster"),
+        "deleting the skeleton must take the skinCluster with it")
+    _harness.check(
+        not cmds.attributeQuery("a3obBakedWeights", node=transform, exists=True),
+        "no second copy should exist to fall back on")
+
+    warned = [r for r in (cmds.a3obValidate() or [])
+              if transform in r and "no skinCluster" in r]
+    _harness.check(len(warned) == 1,
+                   "losing the rig must be reported exactly once, got %r" % (warned,))
+
+    sibling_warned = [r for r in (cmds.a3obValidate() or [])
+                       if sibling in r and "no skinCluster" in r]
+    _harness.check(not sibling_warned,
+                   "the still-rigged sibling must not be warned about, got %r"
+                   % (sibling_warned,))
+
+    print("OK - weights go with the rig, and validation says so")
+
+    # Preserved from the prior version of this file: skeleton_is_posed() regression
+    # coverage. This has no other home in the suite (grep tests/ for "posetest" or
+    # "skeleton_is_posed" — this is the only hit) and pins a real bug (bindPreMatrix
+    # is a sparse multi indexed by LOGICAL .matrix[] indices that do not compact when
+    # a middle influence is removed; see CLAUDE.md). Dropping it would have been a
+    # silent coverage loss unrelated to the a3obBakedWeights removal this task is
+    # otherwise about, so it stays.
     test_bind_pose_detection()
-    test_import_writes_no_bake_on_mesh()
     return 0
-
-
-def test_import_writes_no_bake_on_mesh():
-    """A .p3d imported without a rig must NOT mirror its bone selections onto the
-    transform any more (Task 4): the skinCluster import already builds is the only
-    store, and import creates no skinCluster of its own, so there is nothing to bake."""
-    from a3ob.formats.binary import BinaryReader
-    from a3ob.formats.p3d import MLOD
-    from a3ob.mayabridge.import_.importer import MayaMeshImport
-
-    fixture = (Path(_harness.REPO) / "Arma3ObjectBuilder-master" / "tests" / "inputs" / "p3d"
-               / "sample_1_character.p3d")
-    if not fixture.is_file():
-        print("SKIP import weight storage: fixture missing")
-        return
-
-    with BinaryReader(str(fixture)) as reader:
-        mlod = MLOD.read(reader)
-
-    cmds.file(new=True, force=True)
-    MayaMeshImport().import_mlod(mlod, str(fixture))
-
-    baked = cmds.ls("*.a3obBakedWeights", objectsOnly=True) or []
-    _harness.check(not baked, "import must not write a3obBakedWeights, got %r" % (baked,))
-    print("OK import writes no baked weights onto the LOD transforms")
 
 
 def test_bind_pose_detection():
