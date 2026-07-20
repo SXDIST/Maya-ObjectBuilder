@@ -59,6 +59,31 @@ def _mark_selection_as_lod(definition, resolution):
     return result[0] if isinstance(result, (list, tuple)) and result else result
 
 
+def _mark_node_as_lod(node, definition, resolution):
+    """Mark a SPECIFIC node as a LOD, never the current selection.
+
+    ``a3obCreateLOD`` (what ``_mark_selection_as_lod`` calls) has no node-targeting flag —
+    it always acts on whatever is selected. Per-row editors in the LOD list must write to
+    the node of their OWN row, captured when the editor was built, never to
+    ``_selected_lod_transform()``: a measured scene had ``|helmet``,
+    ``|group1|body|Resolution_2`` and ``|group1|body|Resolution_1`` all reading
+    "Resolution 1", so "the selected LOD" stopped being a safe target the moment more than
+    one row can be edited. The current selection is saved and restored around the call so
+    this is invisible to the user and to anything reacting to SelectionChanged.
+    """
+    if not node or not cmds.objExists(node):
+        return None
+    original = cmds.ls(selection=True, long=True) or []
+    try:
+        cmds.select(node, replace=True)
+        return _mark_selection_as_lod(definition, resolution)
+    finally:
+        if original:
+            cmds.select(original, replace=True)
+        else:
+            cmds.select(clear=True)
+
+
 def assign_lod_to_selection():
     load_plugin()
     if not cmds.ls(selection=True):
@@ -111,6 +136,7 @@ __all__ = [
     "_refresh_lod_assignment_ui",
     "_lod_node_name",
     "_mark_selection_as_lod",
+    "_mark_node_as_lod",
     "create_lod_type",
     "assign_lod_to_selection",
     "LOD_ATTRS",
