@@ -38,7 +38,29 @@ print(cmds.pluginInfo("MayaObjectBuilder.py", query=True, path=True))
 print(os.path.dirname(a3ob.__file__))
 ```
 
-Both must contain `.claude/worktrees/ui-simplification-improvements-b45ece`.
+Both must contain `.claude/worktrees/ui-simplification-improvements-b45ece`. Verified on a
+restarted session: plugin path, `a3ob` module path and the `.mod` all point here.
+
+**Also check that the main repo is not still on `sys.path`.** In the verified session it
+was, inherited from whatever launched Maya — not from the `.mod` (only one exists, pointing
+here), not from `Maya.env` (empty), not from `HKCU`/`HKLM` (unset):
+
+```python
+import sys
+print([p for p in sys.path if "Maya-ObjectBuilder" in p])
+```
+
+The worktree sorts first, so imports resolve here and normal work is unaffected. The hazard
+is specific to **Phase 1, which deletes code**: a module removed from the worktree keeps
+importing from the main copy, so the deletion looks successful without being it. Either
+launch Maya without that inherited environment, or drop the entry for the session:
+
+```python
+import sys
+sys.path[:] = [p for p in sys.path
+               if not (p.rstrip("\\/").endswith("Maya-ObjectBuilder\\scripts")
+                       or p.rstrip("/").endswith("Maya-ObjectBuilder/scripts"))]
+```
 
 **Phase 6 undoes this.** Removing the worktree while the `.mod` still points at it leaves
 Maya silently without the plugin.
