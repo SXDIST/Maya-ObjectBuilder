@@ -22,8 +22,8 @@ _harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
-from a3ob.ui.autolod.core import generate_auto_lods  # noqa: E402
-from a3ob.ui.autolod.helpers.meshops import AutoLodCancelled  # noqa: E402
+from a3ob.mayabridge.autolod.core import generate_auto_lods  # noqa: E402
+from a3ob.mayabridge.autolod.helpers.meshops import AutoLodCancelled  # noqa: E402
 
 
 class _AlreadyCancelled:

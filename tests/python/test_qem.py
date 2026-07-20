@@ -25,9 +25,9 @@ except ImportError:  # pragma: no cover - numpy is an optional accelerator elsew
     print("SKIP test_qem: numpy not available")
     sys.exit(0)
 
-# qem.py is Maya-free, but a3ob.ui.autolod.__init__ imports maya.cmds — so load the
-# module straight from its path rather than through the package.
-_QEM_PATH = os.path.join(_REPO, "scripts", "a3ob", "ui", "autolod", "qem.py")
+# qem.py is Maya-free, but a3ob.mayabridge.autolod.__init__ imports maya.cmds — so load
+# the module straight from its path rather than through the package.
+_QEM_PATH = os.path.join(_REPO, "scripts", "a3ob", "mayabridge", "autolod", "qem.py")
 _spec = importlib.util.spec_from_file_location("a3ob_qem_standalone", _QEM_PATH)
 _qem = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_qem)

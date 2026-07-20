@@ -1,8 +1,8 @@
 from maya import cmds
 
 
-from a3ob.ui.autolod.helpers import *  # noqa: F401,F403
-from a3ob.ui.autolod.lodgen import *  # noqa: F401,F403
+from a3ob.mayabridge.autolod.helpers import *  # noqa: F401,F403
+from a3ob.mayabridge.autolod.lodgen import *  # noqa: F401,F403
 
 def generate_auto_lods(settings=None):
     settings = _merged_settings(settings)

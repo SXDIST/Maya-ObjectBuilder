@@ -8,7 +8,7 @@ import maya.api.OpenMaya as om
 
 
 
-from a3ob.ui.autolod.helpers.settings import *  # noqa: F401,F403
+from a3ob.mayabridge.autolod.helpers.settings import *  # noqa: F401,F403
 
 
 def _selected_source_transform():
@@ -219,7 +219,7 @@ def _extract_triangles(transform):
 
 def _qem_chain_for_ratios(source, ratios):
     """Decimate ``source`` once and snapshot at every ratio via the Blender-style QEM
-    collapse (``a3ob.ui.autolod.qem``). Returns ``{ratio: (points, faces)}`` or ``None``
+    collapse (``a3ob.mayabridge.autolod.qem``). Returns ``{ratio: (points, faces)}`` or ``None``
     if QEM is unavailable (numpy missing / headless) so callers fall back to polyReduce."""
     ratios = [r for r in ratios if r < 1.0]
     if not ratios:
@@ -228,7 +228,7 @@ def _qem_chain_for_ratios(source, ratios):
     if data is None:
         return None
     try:
-        from a3ob.ui.autolod import qem
+        from a3ob.mayabridge.autolod import qem
     except Exception:
         return None
     points, faces = data

@@ -39,9 +39,9 @@ follows. `golden.py` therefore exports from the saved `.ma` on both sides.
 Three layers, split by what they need. **`a3ob/formats/`** is Maya-free and testable under a plain
 interpreter (`p3d`, `binary`, `model_cfg`, `paa`, `rvmat`, `serialize`). **`a3ob/mayabridge/`** is
 the Maya layer (API 2.0): `attributes` (schema), `import_/` and `export/` (DAG ↔ MLOD, with
-`export/pure.py` Maya-free), `commands/`, `translator`, `paatex/`, and the leaves `lodwalk`,
-`skinquery`, `progress`. **`a3ob/ui/`** is the dock: `panels/`, `actions/`, `scene/` (Qt-free),
-`autolod/`, `entry`, `_undo`.
+`export/pure.py` Maya-free), `commands/`, `translator`, `paatex/`, `autolod/`, and the leaves
+`lodwalk`, `skinquery`, `progress`. **`a3ob/ui/`** is the dock: `panels/`, `actions/`, `scene/`
+(Qt-free), `entry`, `_undo`.
 
 `plug-ins/MayaObjectBuilder.py` registers the sixteen commands (API 2.0);
 `MayaObjectBuilderTranslator.py` registers `Arma P3D` (API 1.0). `MPxFileTranslator` is 1.0-only

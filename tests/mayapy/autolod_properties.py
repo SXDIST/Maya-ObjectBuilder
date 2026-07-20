@@ -37,7 +37,7 @@ def new_scene():
 
 def test_box_geometry_lod_has_no_invented_properties():
     source = new_scene()
-    from a3ob.ui.autolod.lodgen import _generate_geometry_lod
+    from a3ob.mayabridge.autolod.lodgen import _generate_geometry_lod
 
     parent = cmds.createNode("transform", name="geometries")
     node = _generate_geometry_lod(
@@ -50,7 +50,7 @@ def test_box_geometry_lod_has_no_invented_properties():
 
 def test_empty_geometry_lod_has_no_invented_properties():
     source = new_scene()
-    from a3ob.ui.autolod.lodgen import _generate_geometry_lod
+    from a3ob.mayabridge.autolod.lodgen import _generate_geometry_lod
 
     parent = cmds.createNode("transform", name="geometries")
     node = _generate_geometry_lod(

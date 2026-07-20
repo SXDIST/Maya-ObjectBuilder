@@ -1,7 +1,7 @@
 from maya import cmds
 
 
-from a3ob.ui.autolod.helpers import *  # noqa: F401,F403
+from a3ob.mayabridge.autolod.helpers import *  # noqa: F401,F403
 
 def _generate_resolution_lods(source, settings, visuals):
     start_lod = 0 if settings["first_lod"] == "LOD0" else 1
@@ -9,7 +9,7 @@ def _generate_resolution_lods(source, settings, visuals):
     generated = []
     source_snapshot = cmds.duplicate(source, returnRootsOnly=True)[0]
 
-    # Decimate with a faithful Garland-Heckbert QEM edge-collapse (a3ob.ui.autolod.qem) —
+    # Decimate with a faithful Garland-Heckbert QEM edge-collapse (a3ob.mayabridge.autolod.qem) —
     # the same algorithm as Blender's Decimate -> Collapse, giving the even, shape-
     # preserving triangles Maya's sliver-prone polyReduce cannot. One progressive pass
     # snapshots every LOD level at once; None means QEM is unavailable -> polyReduce.
