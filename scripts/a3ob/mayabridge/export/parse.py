@@ -88,23 +88,24 @@ def _split_properties(value):
 # =============================================================================
 
 
-def _resolve_lod_path(path):
-    node = path.node()
-    if node.hasFn(om.MFn.kTransform) and attr.get_bool(node, A.IS_LOD):
-        return om.MDagPath(path)
-    path = om.MDagPath(path)
-    if path.hasFn(om.MFn.kMesh):
-        path.pop()
-    while path.length() > 0:
-        if path.node().hasFn(om.MFn.kTransform) and attr.get_bool(path.node(), A.IS_LOD):
-            return om.MDagPath(path)
-        path.pop()
+def _resolve_lod_path(dag_path):
+    """The LOD ancestor of ``dag_path``, if any — the ``lod_path`` walk it stands for."""
+    dag_node = dag_path.node()
+    if dag_node.hasFn(om.MFn.kTransform) and attr.get_bool(dag_node, A.IS_LOD):
+        return om.MDagPath(dag_path)
+    walker = om.MDagPath(dag_path)
+    if walker.hasFn(om.MFn.kMesh):
+        walker.pop()
+    while walker.length() > 0:
+        if walker.node().hasFn(om.MFn.kTransform) and attr.get_bool(walker.node(), A.IS_LOD):
+            return om.MDagPath(walker)
+        walker.pop()
     return None
 
 
-def _lod_paths_below(path):
-    """Every LOD transform under ``path``, excluding ``path`` itself."""
-    root = om.MDagPath(path)
+def _lod_paths_below(dag_path):
+    """Every LOD transform under ``dag_path``, excluding ``dag_path`` itself."""
+    root = om.MDagPath(dag_path)
     found = []
     iterator = om.MItDag(om.MItDag.kDepthFirst, om.MFn.kTransform)
     iterator.reset(root.node(), om.MItDag.kDepthFirst, om.MFn.kTransform)
@@ -117,7 +118,7 @@ def _lod_paths_below(path):
     return found
 
 
-def resolve_lod_paths(path):
+def resolve_lod_paths(dag_path):
     """The LODs a selected node stands for.
 
     Upward first: a mesh, or a component of one, means the LOD transform above it — picking
@@ -127,23 +128,23 @@ def resolve_lod_paths(path):
     Without the downward half, a folder per model — the obvious way to keep several models
     bound for separate .p3d files apart in one scene — was the one arrangement that could
     not be exported at all."""
-    resolved = _resolve_lod_path(path)
+    resolved = _resolve_lod_path(dag_path)
     if resolved is not None:
         return [resolved]
-    return _lod_paths_below(path)
+    return _lod_paths_below(dag_path)
 
 
-def _find_first_mesh_path(transform_path):
-    transform_fn = om.MFnDagNode(transform_path)
-    for i in range(transform_fn.childCount()):
-        child = transform_fn.child(i)
+def _find_first_mesh_path(lod_path):
+    lod_dag_fn = om.MFnDagNode(lod_path)
+    for child_index in range(lod_dag_fn.childCount()):
+        child = lod_dag_fn.child(child_index)
         if child.hasFn(om.MFn.kMesh):
             return om.MFnDagNode(child).getPath()
         if not child.hasFn(om.MFn.kTransform):
             continue
         child_fn = om.MFnDagNode(child)
-        for j in range(child_fn.childCount()):
-            grandchild = child_fn.child(j)
+        for grandchild_index in range(child_fn.childCount()):
+            grandchild = child_fn.child(grandchild_index)
             if grandchild.hasFn(om.MFn.kMesh):
                 return om.MFnDagNode(grandchild).getPath()
     return None
@@ -247,14 +248,21 @@ def _read_set_components(set_obj, mesh_path):
 
 
 _FACE_VERTEX_CACHE = {}  # mesh node hash -> [tuple(vertex ids) per face]
+_VERTEX_INCIDENT_CACHE = {}  # same key -> [list[face_index] per vertex]
 
 
 def reset_face_vertex_cache():
-    """Drop the cached face table. Called at the start of every LOD export.
+    """Drop the cached tables. Called at the start of every LOD export.
 
-    The cache must never outlive one export: an edit that keeps the polygon and vertex
+    The caches must never outlive one export: an edit that keeps the polygon and vertex
     counts identical (a vertex reorder, say) would otherwise be served a stale table."""
     _FACE_VERTEX_CACHE.clear()
+    _VERTEX_INCIDENT_CACHE.clear()
+
+
+def _cache_key(mesh_path):
+    mesh_fn = om.MFnMesh(mesh_path)
+    return (om.MObjectHandle(mesh_path.node()).hashCode(), mesh_fn.numPolygons, mesh_fn.numVertices)
 
 
 def _face_vertex_table(mesh_path):
@@ -264,12 +272,12 @@ def _face_vertex_table(mesh_path):
     named selections that is half a million iterations, and it dominated export time (45% of
     the profile). MFnMesh.getVertices() returns the whole table in one call, and the result
     is reused for every set on the same mesh."""
-    mesh_fn = om.MFnMesh(mesh_path)
-    key = (om.MObjectHandle(mesh_path.node()).hashCode(), mesh_fn.numPolygons, mesh_fn.numVertices)
+    key = _cache_key(mesh_path)
     cached = _FACE_VERTEX_CACHE.get(key)
     if cached is not None:
         return cached
 
+    mesh_fn = om.MFnMesh(mesh_path)
     counts, flat = mesh_fn.getVertices()
     counts = list(counts)
     flat = list(flat)
@@ -279,16 +287,44 @@ def _face_vertex_table(mesh_path):
         table.append(tuple(flat[offset:offset + count]))
         offset += count
     _FACE_VERTEX_CACHE.clear()  # only ever need the mesh currently being exported
+    _VERTEX_INCIDENT_CACHE.clear()
     _FACE_VERTEX_CACHE[key] = table
     return table
+
+
+def _vertex_incident_table(mesh_path):
+    """Per-vertex list of incident face ids, derived once per mesh from the face-vertex table.
+
+    ``_derive_faces_from_vertices`` used to be O(faces * selections * corners): 12k faces x
+    40 selections x 4 corners = ~2M superset ops per LOD. Inverting the walk — from face
+    incidences of one member vertex — turns it into O(vertex_face_incidences_per_selection)
+    with the same set semantics."""
+    key = _cache_key(mesh_path)
+    cached = _VERTEX_INCIDENT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    face_table = _face_vertex_table(mesh_path)
+    table = [[] for _ in range(om.MFnMesh(mesh_path).numVertices)]
+    for face_index, face_vertices in enumerate(face_table):
+        for vertex in face_vertices:
+            if 0 <= vertex < len(table):
+                table[vertex].append(face_index)
+    _VERTEX_INCIDENT_CACHE[key] = table
+    return table
+
+
+from a3ob.mayabridge.export.pure import derive_faces_pure  # re-exported below
 
 
 def _derive_faces_from_vertices(mesh_path, vertices, faces):
     if not vertices:
         return
-    for index, face_vertices in enumerate(_face_vertex_table(mesh_path)):
-        if face_vertices and vertices.issuperset(face_vertices):
-            faces.add(index)
+    derive_faces_pure(
+        _face_vertex_table(mesh_path),
+        _vertex_incident_table(mesh_path),
+        vertices,
+        faces,
+    )
 
 
 __all__ = [
@@ -308,5 +344,6 @@ __all__ = [
     "_parse_component_range",
     "_read_set_components",
     "_derive_faces_from_vertices",
+    "derive_faces_pure",
     "reset_face_vertex_cache",
 ]

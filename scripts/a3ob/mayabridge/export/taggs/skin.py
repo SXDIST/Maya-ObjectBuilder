@@ -68,13 +68,13 @@ def _complete_vertex_component(mesh_path):
     return component
 
 
-def _add_baked_weight_taggs(transform, vertex_source_indices, lod):
-    """Emit bone selections from weights baked onto the transform.
+def _add_baked_weight_taggs(lod_node, vertex_source_indices, lod):
+    """Emit bone selections from weights baked onto the LOD node.
 
     Deleting the skeleton deletes the skinCluster with it, taking every weight along — and the
     export then silently produced a file with no bone selections at all. Baked weights survive
     that, so a rigged model can still be exported from a scene whose rig is gone."""
-    baked = attr.get_string(transform, A.BAKED_WEIGHTS)
+    baked = attr.get_string(lod_node, A.BAKED_WEIGHTS)
     if not baked:
         return 0
 

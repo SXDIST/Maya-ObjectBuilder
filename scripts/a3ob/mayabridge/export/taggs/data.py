@@ -12,16 +12,16 @@ from a3ob.mayabridge.export.parse import *  # noqa: F401,F403
 
 
 
-def _add_property_taggs(transform, lod):
-    for key, value in _split_properties(attr.get_string(transform, A.PROPERTIES)):
+def _add_property_taggs(lod_node, lod):
+    for key, value in _split_properties(attr.get_string(lod_node, A.PROPERTIES)):
         tagg = p3d.Tagg()
         tagg.name = "#Property#"
         tagg.data = p3d.PropertyTaggData(key, value)
         lod.taggs.append(tagg)
 
 
-def _add_mass_tagg(transform, lod):
-    values = attr.get_string(transform, A.MASS_VALUES)
+def _add_mass_tagg(lod_node, lod):
+    values = attr.get_string(lod_node, A.MASS_VALUES)
     if not values:
         return
     tagg = p3d.Tagg()
@@ -46,7 +46,11 @@ def _object_builder_set_objects():
 
     DG iteration order is kept on purpose: it decides the order the selection TAGGs land in
     the file. Listing by attribute (cmds.ls("*.a3obSelectionName")) is faster still, but it
-    reorders them, and there is no reason to churn the output format for that."""
+    reorders them, and there is no reason to churn the output format for that.
+
+    The exporter hoists ONE call of this per export and passes the list to every LOD (30 LODs
+    x 80 sets was 2400 DG walks). Callers that pass a cached list get to skip the walk; the
+    default keeps standalone callers working."""
     found = []
     it = om.MItDependencyNodes(om.MFn.kSet)
     while not it.isDone():
@@ -58,8 +62,10 @@ def _object_builder_set_objects():
     return found
 
 
-def _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod):
-    for set_obj in _object_builder_set_objects():
+def _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod, object_builder_sets=None):
+    if object_builder_sets is None:
+        object_builder_sets = _object_builder_set_objects()
+    for set_obj in object_builder_sets:
         vertices, faces = _read_set_components(set_obj, mesh_path)
         if not vertices and not faces:
             continue
@@ -168,7 +174,7 @@ def _corner_normal_ids(mesh_fn, mesh_path):
     return table
 
 
-def _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
+def _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it, locked_cache):
     """Is this edge a real crease — judged by whichever mechanism actually carries one?
 
     Maya keeps smoothing in TWO independent places and each can be the only one holding the
@@ -203,7 +209,17 @@ def _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
             return not edge_it.isSmooth  # vertex not on both faces; trust the flag
         pairs.append((here, there))
 
-    locked = any(mesh_fn.isNormalLocked(index) for pair in pairs for index in pair)
+    # Memoize the per-normal-id call. On ~38k edges with 4 normal ids per edge, that is
+    # ~150k crossings into Maya per LOD — even though the answer for a normal id never
+    # changes across one export. The cache is cleared at the top of ``_add_sharp_edges_tagg``.
+    def _is_locked(index):
+        cached = locked_cache.get(index)
+        if cached is None:
+            cached = bool(mesh_fn.isNormalLocked(index))
+            locked_cache[index] = cached
+        return cached
+
+    locked = any(_is_locked(index) for pair in pairs for index in pair)
     if not locked:
         return not edge_it.isSmooth
 
@@ -213,7 +229,7 @@ def _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
     return False
 
 
-def _add_sharp_edges_tagg(transform, mesh_path, vertex_source_indices, lod):
+def _add_sharp_edges_tagg(lod_node, mesh_path, vertex_source_indices, lod):
     """Write #SharpEdges# from the LIVE mesh; the stored blob is only a fallback.
 
     Import hardens these edges on the Maya mesh (``apply_sharp_edges``), so the mesh is
@@ -232,9 +248,10 @@ def _add_sharp_edges_tagg(transform, mesh_path, vertex_source_indices, lod):
     mesh_fn = om.MFnMesh(mesh_path)
     normals = mesh_fn.getNormals(om.MSpace.kObject)
     corner_ids = _corner_normal_ids(mesh_fn, mesh_path)
+    locked_cache = {}  # per-mesh, per-normal-id -> bool
     edge_it = om.MItMeshEdge(mesh_path)
     while not edge_it.isDone():
-        if _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it):
+        if _edge_splits_the_shading(mesh_fn, normals, corner_ids, edge_it, locked_cache):
             first = to_source(edge_it.vertexId(0))
             second = to_source(edge_it.vertexId(1))
             if 0 <= first < len(lod.vertices) and 0 <= second < len(lod.vertices):
@@ -255,12 +272,12 @@ def _append_uvset_tagg(lod, data):
     lod.taggs.append(tagg)
 
 
-def _add_uvset_taggs(transform, lod, extra_uv_corners=None):
+def _add_uvset_taggs(lod_node, lod, extra_uv_corners=None):
     """Write the #UVSet# TAGGs from the LIVE Maya mesh.
 
     Every set now comes from the mesh itself: set 0 from the exported face corners, further
     sets from real Maya UV sets (collected in the export loop so triangulation applies to
-    them too). Import creates those UV sets, so nothing has to be stashed on the transform —
+    them too). Import creates those UV sets, so nothing has to be stashed on the LOD node —
     the old ``a3obUVSetTaggs`` blob cost ~1.4 MB per LOD and, being replayed verbatim, threw
     away any UV edit made in Maya.
 
@@ -271,7 +288,7 @@ def _add_uvset_taggs(transform, lod, extra_uv_corners=None):
 
     if not live:
         # Mesh-less LOD: nothing to rebuild from, so a stored blob is all there is.
-        for data in _split_uvset_taggs(attr.get_string(transform, A.UVSET_TAGGS)):
+        for data in _split_uvset_taggs(attr.get_string(lod_node, A.UVSET_TAGGS)):
             _append_uvset_tagg(lod, data)
         return
 
@@ -294,7 +311,7 @@ def _add_uvset_taggs(transform, lod, extra_uv_corners=None):
         return
 
     # Legacy scenes: extra sets were never applied to the mesh, so fall back to the blob.
-    for data in _split_uvset_taggs(attr.get_string(transform, A.UVSET_TAGGS)):
+    for data in _split_uvset_taggs(attr.get_string(lod_node, A.UVSET_TAGGS)):
         if getattr(data, "id", 0) == 0 or len(data.uvs) != len(live):
             continue
         data.id = next_id
@@ -310,6 +327,7 @@ def _add_uvset_taggs(transform, lod, extra_uv_corners=None):
 __all__ = [
     "_add_property_taggs",
     "_add_mass_tagg",
+    "_object_builder_set_objects",
     "_add_selection_and_flag_data",
     "_add_generated_components",
     "_add_sharp_edges_tagg",

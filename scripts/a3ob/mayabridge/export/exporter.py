@@ -37,16 +37,16 @@ def _warn_about_missing_weights(lod_entries):
         return []  # nothing rigged here; a static model is expected to have no weights
 
     unweighted = []
-    for _sort_key, dag_path in lod_entries:
-        mesh_path = _find_first_mesh_path(dag_path)
+    for _sort_key, lod_path in lod_entries:
+        mesh_path = _find_first_mesh_path(lod_path)
         if mesh_path is None:
             continue
         history = cmds.listHistory(mesh_path.fullPathName(), pruneDagObjects=True) or []
         if cmds.ls(history, type="skinCluster"):
             continue
-        if attr.get_string(dag_path.node(), A.BAKED_WEIGHTS):
+        if attr.get_string(lod_path.node(), A.BAKED_WEIGHTS):
             continue
-        unweighted.append(dag_path.partialPathName())
+        unweighted.append(lod_path.partialPathName())
 
     if unweighted:
         om.MGlobal.displayWarning(
@@ -79,16 +79,16 @@ class MayaMeshExport:
             selection = om.MGlobal.getActiveSelectionList()
             exported_paths = set()
             selected_names = selection.getSelectionStrings() if hasattr(selection, "getSelectionStrings") else []
-            for i in range(selection.length()):
+            for selection_index in range(selection.length()):
                 try:
-                    selected_path = selection.getDagPath(i)
+                    selected_path = selection.getDagPath(selection_index)
                 except Exception:
                     continue
                 for lod_path in resolve_lod_paths(selected_path):
-                    full_path = lod_path.fullPathName()
-                    if full_path in exported_paths:
+                    full_path_name = lod_path.fullPathName()
+                    if full_path_name in exported_paths:
                         continue
-                    exported_paths.add(full_path)
+                    exported_paths.add(full_path_name)
                     lod_entries.append((_lod_sort_key(lod_path), lod_path))
             if not lod_entries and selected_names:
                 om.MGlobal.displayError("P3D export failed: selection does not contain an Object Builder LOD, LOD mesh, or mesh component: " + ", ".join(selected_names))
@@ -96,11 +96,14 @@ class MayaMeshExport:
         else:
             it = om.MItDag(om.MItDag.kDepthFirst, om.MFn.kTransform)
             while not it.isDone():
-                transform_path = it.getPath()
-                node = transform_path.node()
-                if attr.get_bool(node, A.IS_LOD):
-                    if not (options.visible_only and not transform_path.isVisible()):
-                        lod_entries.append((_lod_sort_key(transform_path), om.MDagPath(transform_path)))
+                # This walks every transform; only the ones marked A.IS_LOD become LOD paths,
+                # so the pre-check variables are neutrally named.
+                candidate_path = it.getPath()
+                candidate_node = candidate_path.node()
+                if attr.get_bool(candidate_node, A.IS_LOD):
+                    lod_path = candidate_path
+                    if not (options.visible_only and not lod_path.isVisible()):
+                        lod_entries.append((_lod_sort_key(lod_path), om.MDagPath(lod_path)))
                 it.next()
 
         if not lod_entries:
@@ -117,16 +120,19 @@ class MayaMeshExport:
         # Progress + Esc, Maya's own mechanism. A heavy character is dozens of LODs and
         # hundreds of thousands of faces; without this Maya just looks frozen.
         interrupted = False
+        # Walked once per export instead of once per LOD (30 LODs x 80 sets was 2400
+        # DG round-trips). Reused as-is so DG order — which decides TAGG order — is preserved.
+        object_builder_sets = _object_builder_set_objects()
         try:
             with Progress(len(lod_entries)) as progress, BinaryWriter(path) as writer:
                 mlod.begin_write(writer, len(lod_entries))
-                for index, (_sort_key, dag_path) in enumerate(lod_entries):
+                for lod_index, (_sort_key, lod_path) in enumerate(lod_entries):
                     if progress.cancelled():
                         interrupted = True
                         break
-                    lod = _export_mesh_lod(dag_path, options)
+                    lod = _export_mesh_lod(lod_path, options, object_builder_sets)
                     mlod.write_lod(writer, lod)
-                    progress.step(index + 1)
+                    progress.step(lod_index + 1)
         except Exception as error:  # noqa: BLE001 - mirror C++ catch-all
             om.MGlobal.displayError("P3D export failed: %s" % error)
             return False

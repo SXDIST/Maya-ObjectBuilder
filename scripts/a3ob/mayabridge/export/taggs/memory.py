@@ -13,28 +13,28 @@ from a3ob.mayabridge.export.parse import *  # noqa: F401,F403
 
 
 def _has_direct_locator_shape(dag_fn):
-    for j in range(dag_fn.childCount()):
-        if dag_fn.child(j).hasFn(om.MFn.kLocator):
+    for shape_index in range(dag_fn.childCount()):
+        if dag_fn.child(shape_index).hasFn(om.MFn.kLocator):
             return True
     return False
 
 
-def _collect_locators_from_memory_lod(transform_path, options, lod):
-    lod_dag = om.MFnDagNode(transform_path)
+def _collect_locators_from_memory_lod(lod_path, options, lod):
+    lod_dag = om.MFnDagNode(lod_path)
     points = []  # (selection_name, vertex_index)
 
     def add_locator_vertex(loc_path, sel_name):
         if options.apply_transforms:
             bake = loc_path.inclusiveMatrix()
         else:
-            bake = loc_path.inclusiveMatrix() * transform_path.inclusiveMatrix().inverse()
+            bake = loc_path.inclusiveMatrix() * lod_path.inclusiveMatrix().inverse()
         world_pos = om.MPoint(0.0, 0.0, 0.0) * bake
         vertex_index = len(lod.vertices)
         lod.vertices.append(p3d.Vertex(maya_to_core_point(world_pos), 0))
         points.append((sel_name, vertex_index))
 
-    for i in range(lod_dag.childCount()):
-        child = lod_dag.child(i)
+    for child_index in range(lod_dag.childCount()):
+        child = lod_dag.child(child_index)
         if not child.hasFn(om.MFn.kTransform):
             continue
         if attr.get_bool_any(child, A.IS_PROXY, A.IS_PROXY_ALT_SHORT):
@@ -45,8 +45,8 @@ def _collect_locators_from_memory_lod(transform_path, options, lod):
             add_locator_vertex(child_fn.getPath(), sel_name)
         else:
             group_sel_name = attr.get_string(child, A.SELECTION_NAME) or child_fn.name()
-            for j in range(child_fn.childCount()):
-                grandchild = child_fn.child(j)
+            for grandchild_index in range(child_fn.childCount()):
+                grandchild = child_fn.child(grandchild_index)
                 if not grandchild.hasFn(om.MFn.kTransform):
                     continue
                 if attr.get_bool_any(grandchild, A.IS_PROXY, A.IS_PROXY_ALT_SHORT):

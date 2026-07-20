@@ -123,17 +123,17 @@ def skeleton_is_posed(tolerance=1e-4):
         # real DayZ rig, since skintransfer.finish_for_dayz() and a3obInfluence -ri both
         # prune influences by name, not just off the end.
         matrix_indices = cmds.getAttr("%s.matrix" % skin, multiIndices=True) or []
-        for index, joint in zip(matrix_indices, influences):
+        for logical_index, joint in zip(matrix_indices, influences):
             if joint in seen:
                 continue
             try:
-                pre = cmds.getAttr("%s.bindPreMatrix[%d]" % (skin, index))
+                pre = cmds.getAttr("%s.bindPreMatrix[%d]" % (skin, logical_index))
                 world = cmds.xform(joint, query=True, worldSpace=True, matrix=True)
             except Exception:  # noqa: BLE001 - influence removed, or a non-DAG influence
                 continue
             product = om.MMatrix(world) * om.MMatrix(pre)
-            identity = all(abs(product[k] - (1.0 if k in (0, 5, 10, 15) else 0.0)) <= tolerance
-                           for k in range(16))
+            identity = all(abs(product[cell] - (1.0 if cell in (0, 5, 10, 15) else 0.0)) <= tolerance
+                           for cell in range(16))
             if not identity:
                 seen.add(joint)
                 posed.append(joint)
