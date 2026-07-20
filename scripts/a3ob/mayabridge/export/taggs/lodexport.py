@@ -213,15 +213,12 @@ def _taggs_for_lod(lod_node, mesh_path, vertex_source_indices, lod, extra_uv_cor
     """Attach every TAGG to ``lod`` in the order the file format expects.
 
     Order matters: Property/Mass first, selections and flags next, then generated Component
-    selections (opt-in), then #SharpEdges#, then #UVSet#. The live skinCluster wins over
-    the baked-weights fallback; both are appended alongside selections."""
+    selections (opt-in), then #SharpEdges#, then #UVSet#. Weights come only from a live
+    skinCluster; a scene whose skeleton is gone exports with no bone selections."""
     _add_property_taggs(lod_node, lod)
     _add_mass_tagg(lod_node, lod)
     _add_selection_and_flag_data(mesh_path, vertex_source_indices, lod, object_builder_sets)
-    # The live skinCluster wins; baked weights are the fallback for a scene whose skeleton
-    # has been deleted (which removes the skinCluster and every weight with it).
-    if _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod) == 0:
-        _add_baked_weight_taggs(lod_node, vertex_source_indices, lod)
+    _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod)
     if getattr(options, "generate_components", False):
         lod_type = attr.get_int(lod_node, A.LOD_TYPE, 0)
         _add_generated_components(lod_type, mesh_path, vertex_source_indices, lod)

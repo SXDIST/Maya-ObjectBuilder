@@ -61,7 +61,8 @@ def main():
     _harness.check(set(with_rig) == {"Pelvis", "Spine"},
           "the rigged export must carry both bones, got %r" % sorted(with_rig))
 
-    # Bake, then destroy the rig exactly as a user would.
+    # Bake (a3obBakeSkin still writes a3obBakedWeights pending Task 6), then destroy the
+    # rig exactly as a user would.
     baked = cmds.a3obBakeSkin()
     baked = baked[0] if isinstance(baked, (list, tuple)) else baked
     _harness.check(int(baked) == 1, "expected one LOD baked, got %r" % (baked,))
@@ -72,13 +73,14 @@ def main():
     _harness.check(not (cmds.ls(type="skinCluster") or []),
           "deleting the joints should have removed the skinCluster (that is the whole problem)")
 
+    # Task 5: export no longer falls back to the baked attribute, so a deleted rig now
+    # exports with no bone selections at all, even though a3obBakedWeights still holds
+    # data on disk. The full rewrite of this test (honest end-to-end contract, plus the
+    # a3obValidate warning) is Task 10's job; this only fixes the assertion this task
+    # invalidates.
     without_rig = export("without_rig")
-    _harness.check(set(without_rig) == set(with_rig),
-          "baked weights must still export every bone: %r vs %r"
-          % (sorted(with_rig), sorted(without_rig)))
-    for bone, count in with_rig.items():
-        _harness.check(without_rig[bone] == count,
-              "bone %s lost vertices: %d with rig, %d without" % (bone, count, without_rig[bone]))
+    _harness.check(not without_rig,
+          "export must no longer fall back to baked weights (Task 5): got %r" % sorted(without_rig))
 
     # And a scene that has a skeleton but no weights at all must not export silently.
     cmds.setAttr(transform + ".a3obBakedWeights", "", type="string")
@@ -95,8 +97,7 @@ def main():
 
     cmds.delete(joint)
 
-    print("OK weights survive skeleton deletion (%s)"
-          % ", ".join("%s=%d" % (b, n) for b, n in sorted(without_rig.items())))
+    print("OK weights do not survive skeleton deletion once the fallback is gone")
     test_bind_pose_detection()
     test_import_writes_no_bake_on_mesh()
     return 0

@@ -12,8 +12,6 @@ import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
 
 from a3ob.formats import p3d
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge import skinweights as sw
 from a3ob.mayabridge.skinquery import complete_vertex_component
 
@@ -60,41 +58,6 @@ def _influence_names(skin_fn):
             seen[leaf] = full
         names.append(leaf)
     return names
-
-
-def _add_baked_weight_taggs(lod_node, vertex_source_indices, lod):
-    """Emit bone selections from weights baked onto the LOD node.
-
-    Deleting the skeleton deletes the skinCluster with it, taking every weight along — and the
-    export then silently produced a file with no bone selections at all. Baked weights survive
-    that, so a rigged model can still be exported from a scene whose rig is gone."""
-    baked = attr.get_string(lod_node, A.BAKED_WEIGHTS)
-    if not baked:
-        return 0
-
-    existing = {t.name for t in lod.taggs if isinstance(t.name, str)}
-    added = 0
-    for name, pairs in sw.parse_bake_string(baked):
-        if name in existing:
-            continue
-        rows = []
-        for vertex, weight in pairs:
-            source_index = vertex_source_indices[vertex] if vertex < len(vertex_source_indices) else vertex
-            if 0 <= source_index < len(lod.vertices):
-                rows.append((source_index, weight))
-        if not rows:
-            continue
-        tagg = p3d.Tagg()
-        tagg.name = name
-        data = p3d.SelectionTaggData()
-        data.count_verts = len(lod.vertices)
-        data.count_faces = len(lod.faces)
-        data.vertex_weights = sorted(rows)
-        tagg.data = data
-        lod.taggs.append(tagg)
-        existing.add(name)
-        added += 1
-    return added
 
 
 def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
@@ -164,5 +127,4 @@ def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
 
 __all__ = [
     "_add_skin_weight_taggs",
-    "_add_baked_weight_taggs",
 ]
