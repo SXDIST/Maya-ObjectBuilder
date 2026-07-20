@@ -63,6 +63,11 @@ class LodListPanelMixin:
         row.addWidget(_qt_button("Isolate", self._toggle_isolate_lod, "Toggle viewport isolation of the selected LOD (non-destructive).", ":/ghostOff.png"))
         layout.addLayout(row)
 
+        # Named properties are per-LOD data (a3obProperties, exported as that LOD's TAGGs),
+        # so the detail area lives directly under the tree it describes rather than in a
+        # panel of its own — see selected_named_property_lod() for how it follows the row.
+        layout.addWidget(self._build_named_properties_detail())
+
         self.refresh_lod_list()
         return widget
 
@@ -198,6 +203,10 @@ class LodListPanelMixin:
                 self.lod_list_context.setText("Active: {0}".format(_lod_name_from_transform(active)))
             else:
                 self.lod_list_context.setText("{0} LODs — click one to select it.".format(len(rows)))
+
+        # The detail area follows the row the tree ends up highlighting above, whichever
+        # of the rebuild/update-in-place paths just ran.
+        self.refresh_named_properties()
 
 
     def _build_row_editors(self, node):
@@ -341,6 +350,135 @@ class LodListPanelMixin:
         # (rebuild/update-in-place), so this method is only ever reached from a genuine
         # user edit — safe to always resync the rest of the dock (LOD Properties etc.).
         _refresh_context_ui()
+
+
+    # ---- named properties detail area (moved from panels/named_properties.py) ------
+
+    def _build_named_properties_detail(self):
+        widget = qt_widgets.QWidget()
+        layout = qt_widgets.QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
+
+        layout.addWidget(_hint("Named properties on the selected LOD, exported to P3D TAGGs."))
+
+        self.named_list = qt_widgets.QListWidget()
+        self.named_list.currentItemChanged.connect(lambda *_: self.select_named_property())
+        layout.addWidget(self.named_list, 1)
+
+        edit_form = qt_widgets.QFormLayout()
+        self.named_name_combo = qt_widgets.QComboBox()
+        self.named_name_combo.setEditable(True)
+        self.named_name_combo.addItems(sorted(KNOWN_NAMED_PROPS.keys()))
+        self.named_name_combo.currentTextChanged.connect(self._update_named_value_combo)
+        self.named_value_combo = qt_widgets.QComboBox()
+        self.named_value_combo.setEditable(True)
+        edit_form.addRow("Name", self.named_name_combo)
+        edit_form.addRow("Value", self.named_value_combo)
+        layout.addLayout(edit_form)
+
+        self.named_batch_check = qt_widgets.QCheckBox("Apply to all selected LODs")
+        self.named_batch_check.setToolTip("Add/Update writes the property to every selected LOD, not just the active one.")
+        layout.addWidget(self.named_batch_check)
+
+        named_buttons = qt_widgets.QHBoxLayout()
+        named_buttons.addWidget(_qt_button("Add / Update", self._commit_named_property_from_fields, "Save the current name/value pair on the active LOD.", ":/confirm.png"))
+        named_buttons.addWidget(_qt_button("Remove", _remove_named_property, "Remove the selected property from the active LOD.", ":/delete.png"))
+        layout.addLayout(named_buttons)
+
+        return widget
+
+
+    def named_batch_enabled(self):
+        return self.named_batch_check.isChecked() if getattr(self, "named_batch_check", None) is not None else False
+
+
+    def selected_named_property_lod(self):
+        """The LOD the detail area is currently showing.
+
+        The tree's own current row wins — the detail area follows what the user is
+        looking at in the list — and only falls back to the scene selection when no row
+        is current (e.g. right after the dock is built, before anything is picked)."""
+        node = self._selected_lod_list_node()
+        if node:
+            return node
+        try:
+            sel = cmds.ls(selection=True, long=True, transforms=True)
+            return sel[0] if sel else None
+        except RuntimeError:
+            return None
+
+
+    def named_property_name(self):
+        return self.named_name_combo.currentText().strip() if self.named_name_combo is not None else ""
+
+
+    def named_property_value(self):
+        return self.named_value_combo.currentText().strip() if self.named_value_combo is not None else ""
+
+
+    def set_named_property_fields(self, name, value):
+        if self.named_name_combo is not None:
+            self.named_name_combo.blockSignals(True)
+            self.named_name_combo.setCurrentText(name)
+            self.named_name_combo.blockSignals(False)
+        if self.named_value_combo is not None:
+            self.named_value_combo.blockSignals(True)
+            self.named_value_combo.setCurrentText(value)
+            self.named_value_combo.blockSignals(False)
+
+
+    def clear_named_property_fields(self):
+        self.set_named_property_fields("", "")
+
+
+    def _update_named_value_combo(self):
+        if self.named_name_combo is None or self.named_value_combo is None:
+            return
+        name = self.named_name_combo.currentText().strip()
+        self.named_value_combo.blockSignals(True)
+        self.named_value_combo.clear()
+        values = KNOWN_NAMED_PROPS.get(name, [])
+        if values:
+            self.named_value_combo.addItems(values)
+        self.named_value_combo.blockSignals(False)
+        description = NAMED_PROP_DESCRIPTIONS.get(name.lower(), "")
+        self.named_name_combo.setToolTip(description or "DayZ named property stored on the active LOD.")
+
+
+    def refresh_named_properties(self):
+        if self.named_list is None:
+            return
+        self.named_list.clear()
+        self.named_items = {}
+        lod = self.selected_named_property_lod()
+        if not lod:
+            self.clear_named_property_fields()
+            return
+        raw = _safe_get_attr(lod, "a3obProperties", "") or ""
+        for name, value in _split_named_properties(raw):
+            label = f"{name} = {value}"
+            self.named_items[label] = (name, value)
+            self.named_list.addItem(label)
+
+
+    def select_named_property(self):
+        current = self.named_list.currentItem() if self.named_list is not None else None
+        if current is None:
+            return
+        name, value = self.named_items.get(current.text(), ("", ""))
+        self.set_named_property_fields(name, value)
+
+
+    def _commit_named_property_from_fields(self, *_args):
+        self.apply_named_property(self.named_property_name(), self.named_property_value())
+
+
+    def apply_named_property(self, name, value):
+        """Programmatic path for writing a name/value pair — the Add/Update button and
+        tests both call this, so a passing test proves what the button actually does."""
+        batch = self.named_batch_enabled()
+        return _set_named_property_value(name, value, batch=batch)
 
 
     def lod_row_nodes(self):

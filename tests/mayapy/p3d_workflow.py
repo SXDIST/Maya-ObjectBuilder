@@ -366,7 +366,7 @@ def assert_ui_redesign_helpers_load():
     for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
                  "_build_mass_flags_section", "_build_proxies_section",
                  "_build_memory_points_section",
-                 "_build_named_properties_tab", "_build_materials_tab", "_build_selections_tab",
+                 "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
                  "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
         if not hasattr(dock_class, name):

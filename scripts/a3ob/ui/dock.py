@@ -14,7 +14,6 @@ from a3ob.ui.watch import SceneWatcher, ALL_PANELS
 from a3ob.ui.panels.lod_list import LodListPanelMixin
 from a3ob.ui.panels.lod import LodPanelMixin
 from a3ob.ui.panels.metadata import MetadataPanelMixin
-from a3ob.ui.panels.named_properties import NamedPropertiesPanelMixin
 from a3ob.ui.panels.materials import MaterialsPanelMixin
 from a3ob.ui.panels.selections import SelectionsPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
@@ -43,7 +42,7 @@ def _warn_panel_once(title: str, exc: Exception) -> None:
     )
 
 
-class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, NamedPropertiesPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
@@ -112,13 +111,12 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         body_layout.setSpacing(0)
 
         # on_expand re-queries the scene when a panel is opened, so live-scene panels
-        # (materials, selections, named properties) stay fresh even after changes that
-        # do not fire a SelectionChanged event (e.g. reassigning a material).
+        # (materials, selections) stay fresh even after changes that do not fire a
+        # SelectionChanged event (e.g. reassigning a material).
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
             ("LOD Properties", self._build_lod_properties_section(), False, None),
             ("Mass & Flags", self._build_mass_flags_section(), True, None),
-            ("Named Properties", self._build_named_properties_tab(), True, self.refresh_named_properties),
             ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Proxies", self._build_proxies_section(), True, None),
@@ -163,14 +161,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
                 return True
         return False
 
-    def _named_fields_focused(self):
-        for combo in (self.named_name_combo, self.named_value_combo):
-            if combo is None:
-                continue
-            if combo.hasFocus() or (combo.lineEdit() is not None and combo.lineEdit().hasFocus()):
-                return True
-        return False
-
     def _lods_snapshot(self):
         lod = self._poll_lod
         active = _lod_name_from_transform(lod) if lod else None
@@ -194,10 +184,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
                          _safe_get_attr(node, "a3obFlagComponent", "") or "",
                          _set_member_count(node)))
         return (label, tuple(sorted(rows)))
-
-    def _named_snapshot(self):
-        lod = self.selected_named_property_lod()
-        return _safe_get_attr(lod, "a3obProperties", "") if lod else ""
 
     def showEvent(self, event):
         # Coming back on screen: the scene may have moved on while we were hidden.
@@ -253,12 +239,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
                 self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)
             except Exception as exc:  # noqa: BLE001
                 _warn_panel_once("Selections", exc)
-        if "Named Properties" in panels:
-            try:
-                self._poll_panel("Named Properties", self._named_snapshot, self.refresh_named_properties,
-                                 defer=self._named_fields_focused())
-            except Exception as exc:  # noqa: BLE001
-                _warn_panel_once("Named Properties", exc)
 
     def _watcher_retarget(self, lod_name):
         watcher = getattr(self, "_watcher", None)
