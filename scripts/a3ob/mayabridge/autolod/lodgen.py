@@ -1,4 +1,5 @@
 from maya import cmds
+import maya.api.OpenMaya as om
 
 
 from a3ob.mayabridge.autolod.helpers import *  # noqa: F401,F403
@@ -7,40 +8,39 @@ def _generate_resolution_lods(source, settings, visuals):
     start_lod = 0 if settings["first_lod"] == "LOD0" else 1
     ratios = reduction_ladder(settings["reduction"])
     generated = []
-    source_snapshot = cmds.duplicate(source, returnRootsOnly=True)[0]
 
+    # No snapshot duplicate here anymore. It used to exist because index 0 renamed
+    # `source` into LOD1 (cmds.rename), destroying the original — every later index, and
+    # the QEM read below, needed an immutable stand-in once that had happened. `source` is
+    # never renamed or written to by this function now (every index duplicates from it),
+    # so it stays pristine for the whole loop and can be read directly.
+    #
     # Decimate with a faithful Garland-Heckbert QEM edge-collapse (a3ob.mayabridge.autolod.qem) —
     # the same algorithm as Blender's Decimate -> Collapse, giving the even, shape-
     # preserving triangles Maya's sliver-prone polyReduce cannot. One progressive pass
     # snapshots every LOD level at once; None means QEM is unavailable -> polyReduce.
     #
     # Esc during the collapse raises AutoLodCancelled out of here. That happens before any
-    # LOD duplicate exists and before a single decimated mesh is written back, so the only
-    # cleanup owed is the source snapshot taken above — the scene keeps the geometry the
-    # user started with. Deliberately not a fall-through to polyReduce: cancel means stop.
-    try:
-        qem_snaps = _qem_chain_for_ratios(source_snapshot, ratios)
-    except AutoLodCancelled:
-        if cmds.objExists(source_snapshot):
-            cmds.delete(source_snapshot)
-        raise
+    # LOD duplicate exists and before a single decimated mesh is written back, so there is
+    # nothing this function owes to clean up — the scene keeps the geometry the user started
+    # with. Deliberately not a fall-through to polyReduce: cancel means stop.
+    qem_snaps = _qem_chain_for_ratios(source, ratios)
 
     for index, ratio in enumerate((1.0, *ratios)):
         resolution = start_lod + index
         name = "{0}{1}".format(settings["lod_prefix"], resolution)
 
+        duplicate = cmds.duplicate(source, name=name, returnRootsOnly=True)[0]
         if index == 0:
-            # Keep the rename result as a short name (like the duplicate branch below).
-            # Converting to a full path here left a stale path after _parent() reparented
-            # the node, so the full-resolution LOD was silently dropped from the returned
-            # list (and the post-generation selection) even though it existed in the scene.
-            duplicate = cmds.rename(source, name)
-        else:
-            duplicate = cmds.duplicate(source_snapshot, name=name, returnRootsOnly=True)[0]
+            # LOD1 used to BE the source (cmds.rename), which is why it needed nothing here.
+            # It is a copy now, so the two things the rename gave it for free have to be
+            # given explicitly: the source's selection sets, and its rig.
+            _propagate_named_selections(source, duplicate, full_resolution=True)
+            _rebind_like(source, duplicate)
         if ratio < 1.0:
             applied = False
             if qem_snaps is not None and ratio in qem_snaps:
-                applied = _apply_qem_snapshot(duplicate, source_snapshot, qem_snaps[ratio])
+                applied = _apply_qem_snapshot(duplicate, source, qem_snaps[ratio])
             if not applied:
                 # polyReduce fallback (QEM unavailable or failed on this mesh).
                 try:
@@ -68,8 +68,55 @@ def _generate_resolution_lods(source, settings, visuals):
         duplicate = (cmds.ls(duplicate, long=True) or [duplicate])[0]
         generated.append(duplicate)
 
-    cmds.delete(source_snapshot)
     return generated
+
+
+def _rebind_like(source, target):
+    """Bind ``target`` to ``source``'s influences and copy the weight array verbatim.
+
+    ``target`` is a duplicate of ``source``, so vertex order is identical and index i maps
+    to index i — no surface association is needed, and none may be used. Measured on a real
+    garment (6892 verts, 25 influences): writing the array through
+    ``MFnSkinCluster.setWeights`` deviates by 0.0, while ``cmds.copySkinWeights`` with
+    closestPoint/oneToOne deviates by 0.1027 on that same identical geometry, putting five
+    vertices past the 1/254 step the P3D format can even encode. Coincident points make the
+    association pick arbitrarily; there is nothing to tune."""
+    import maya.api.OpenMayaAnim as oma
+
+    source_shape = cmds.listRelatives(source, shapes=True, noIntermediate=True, fullPath=True)
+    if not source_shape:
+        return None
+    source_skin = cmds.ls(cmds.listHistory(source_shape[0], pruneDagObjects=True) or [],
+                          type="skinCluster")
+    if not source_skin:
+        return None  # unrigged source: nothing to carry across
+
+    influences = cmds.skinCluster(source_skin[0], query=True, influence=True) or []
+    if not influences:
+        return None
+
+    def _fn_and_component(mesh):
+        shape = cmds.listRelatives(mesh, shapes=True, noIntermediate=True, fullPath=True)[0]
+        skins = cmds.ls(cmds.listHistory(shape, pruneDagObjects=True) or [], type="skinCluster")
+        selection = om.MSelectionList()
+        selection.add(skins[0])
+        fn = oma.MFnSkinCluster(selection.getDependNode(0))
+        paths = om.MSelectionList()
+        paths.add(shape)
+        component = om.MFnSingleIndexedComponent().create(om.MFn.kMeshVertComponent)
+        om.MFnSingleIndexedComponent(component).setCompleteData(
+            cmds.polyEvaluate(mesh, vertex=True))
+        return fn, paths.getDagPath(0), component
+
+    source_fn, source_path, source_component = _fn_and_component(source)
+    weights, influence_count = source_fn.getWeights(source_path, source_component)
+
+    cmds.skinCluster(influences, target, toSelectedBones=True, bindMethod=0,
+                     skinMethod=0, normalizeWeights=1)
+    target_fn, target_path, target_component = _fn_and_component(target)
+    target_fn.setWeights(target_path, target_component,
+                         om.MIntArray(range(influence_count)), weights, False)
+    return target
 
 
 def _generate_geometry_lod(source, settings, geometries):
