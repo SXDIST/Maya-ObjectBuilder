@@ -52,15 +52,11 @@ def main():
     tip = cmds.joint(position=(0, 2, 0), name="Spine")
     cmds.skinCluster(root, tip, transform, toSelectedBones=True, maximumInfluences=4)
 
-    # a3obBakeSkin is gone (Task 6); write the stale attribute directly through the same
-    # leaf helper it used to call, to simulate what a scene saved by an older plugin
+    # a3obBakeSkin is gone (Task 6), and store_bake is gone too (Task 7); write the stale
+    # attribute directly with cmds, to simulate what a scene saved by an older plugin
     # version can still be carrying.
-    from a3ob.mayabridge.skinquery import store_bake
-    selection = om.MSelectionList()
-    selection.add(transform)
-    transform_obj = selection.getDependNode(0)
-    _harness.check(store_bake(transform_obj, "Pelvis:0=1.0;Spine:1=1.0"),
-          "expected the stale bake text to be stored")
+    cmds.addAttr(transform, longName="a3obBakedWeights", dataType="string")
+    cmds.setAttr(transform + ".a3obBakedWeights", "Pelvis:0=1.0;Spine:1=1.0", type="string")
     _harness.check(cmds.getAttr(transform + ".a3obBakedWeights"),
           "the stale data must actually be present on a3obBakedWeights for this "
           "test to mean anything")

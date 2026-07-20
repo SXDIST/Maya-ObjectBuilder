@@ -1,23 +1,20 @@
-"""Reading a mesh's skinCluster, and storing the baked copy of its weights.
+"""Reading a mesh's skinCluster.
 
 This exists to break a real import cycle. ``weightsync`` needs to read a skinCluster (that
-is what it syncs from) and ``commands.skin`` needs to store a bake (that is what
-``a3obBakeSkin`` does), so each was lazily importing a function out of the other from inside
-a function body — a mutual dependency held apart only by deferring both halves to call time.
-Everything both of them share now lives here, below both, and both import it normally.
+is what it syncs from) and formerly also needed to store a bake; each was lazily importing a
+function out of the other from inside a function body — a mutual dependency held apart only
+by deferring both halves to call time. What both shared lives here, below both, and both
+import it normally.
 
-Deliberately a leaf: it imports the attribute schema and OpenMaya, nothing else from the
-plugin. ``a3ob.mayabridge.skinweights`` was the other candidate home and is the wrong one —
-it is Maya-free on purpose so the pure-Python test suite can exercise the weight math, and
-every function here needs ``maya.api``.
+Deliberately a leaf: it imports only OpenMaya, nothing else from the plugin.
+``a3ob.mayabridge.skinweights`` was the other candidate home and is the wrong one — it is
+Maya-free on purpose so the pure-Python test suite can exercise the weight math, and every
+function here needs ``maya.api``.
 """
 
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
 import maya.cmds as cmds
-
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 
 
 def skin_cluster_for_mesh(mesh_path):
@@ -77,44 +74,10 @@ def read_skin(mesh_path):
     return skin_fn, list(weights), influence_count, vertex_neighbours(mesh_path)
 
 
-def store_bake(transform, text):
-    """Write ``text`` as the LOD's baked weights, keeping the copy it replaces.
-
-    Sync runs on every save from whatever skinCluster is live, which is right until the live
-    one is a rig that was just re-bound: the fresh bind's defaults then overwrite a good bake
-    and the only copy is gone. There is no reliable way to tell a deliberate re-bake from
-    that accident — a fresh bind looks like any other rig — so instead of guessing, the
-    previous value is always kept and ``a3obBakeSkin -restore -previous`` can reach it.
-
-    Note the early return on unchanged text: it is why ``a3obBakeSkin -restore`` writes the
-    previous slot directly instead of coming through here. Do not remove either behaviour."""
-    if not text:
-        return False
-    existing = attr.get_string(transform, A.BAKED_WEIGHTS) or ""
-    if existing == text:
-        return False
-    if existing:
-        # Losing the older copy is the one unrecoverable step in this whole scheme, and it
-        # happens silently on an ordinary save — one save after a re-bind, the good weights
-        # move here; the next save that changes anything pushes them out for good. Say so at
-        # the moment it happens rather than leaving the user to discover it later. Saves are
-        # infrequent, so this cannot become the Script Editor spam a refresh warning would.
-        if attr.get_string(transform, A.BAKED_WEIGHTS_PREVIOUS):
-            om.MGlobal.displayWarning(
-                "MayaObjectBuilder: %s - the older copy of the skin weights has been "
-                "replaced and is no longer recoverable. Use Skinning > Restore Weights "
-                "before saving again if the stored weights are not the ones you want."
-                % om.MFnDependencyNode(transform).name())
-        attr.set_string(transform, A.BAKED_WEIGHTS_PREVIOUS, existing)
-    attr.set_string(transform, A.BAKED_WEIGHTS, text)
-    return True
-
-
 __all__ = [
     "skin_cluster_for_mesh",
     "complete_vertex_component",
     "influence_leaf_names",
     "vertex_neighbours",
     "read_skin",
-    "store_bake",
 ]

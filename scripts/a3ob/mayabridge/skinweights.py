@@ -133,92 +133,6 @@ def find_outliers(weights, influence_count, neighbours_of, threshold=DEFAULT_OUT
                             threshold, min_clean_neighbours)
 
 
-# -- baking ------------------------------------------------------------------
-#
-# Weights live in the skinCluster, and deleting the skeleton deletes the skinCluster with it:
-# the weights are simply gone, and export then writes a file with no bone selections at all.
-# Baking copies them onto the LOD transform so they survive that, and so a rigged model can be
-# exported from a scene that no longer carries the rig.
-#
-# Format: "bone:index=weight,index=weight;bone:..." — only non-zero weights are stored, which
-# is what keeps it to a few hundred KB rather than vertices x bones.
-
-
-def bake_string(influence_names, weights, influence_count):
-    """Serialize a getWeights() array as "bone:index=weight,..." per influencing bone."""
-    parts = []
-    vertex_count = len(weights) // influence_count if influence_count else 0
-    for index, name in enumerate(influence_names):
-        pairs = []
-        for vertex in range(vertex_count):
-            value = weights[vertex * influence_count + index]
-            if value > MIN_ENCODABLE_WEIGHT:
-                pairs.append("%d=%s" % (vertex, repr(float(value))))
-        if pairs:
-            parts.append("%s:%s" % (name, ",".join(pairs)))
-    return ";".join(parts)
-
-
-def parse_bake_string(value):
-    """Inverse of bake_string: returns [(bone, [(vertex, weight), ...]), ...]."""
-    result = []
-    for chunk in (value or "").split(";"):
-        if not chunk or ":" not in chunk:
-            continue
-        name, _, body = chunk.partition(":")
-        pairs = []
-        for item in body.split(","):
-            index, _, weight = item.partition("=")
-            try:
-                pairs.append((int(index), float(weight)))
-            except ValueError:
-                continue
-        if name and pairs:
-            result.append((name, pairs))
-    return result
-
-
-def weights_from_bake(parsed, influence_names, vertex_count):
-    """Rebuild a flat ``getWeights()``-shaped array from parsed bake data.
-
-    Returns ``(weights, missing)`` — the array laid out vertex-major over
-    ``influence_names``, and the baked bone names that rig no longer has.
-
-    Rows are renormalized, because a bone in the bake that the rig lacks would otherwise
-    leave its vertices summing to less than 1.0 — Maya would silently redistribute that
-    remainder itself, which is how a "restore" quietly becomes a different rig. A row that
-    ends up with nothing at all is left at zero rather than smeared across every bone; the
-    caller reports it instead of inventing weights.
-    """
-    influence_count = len(influence_names)
-    weights = [0.0] * (vertex_count * influence_count)
-    if not influence_count or vertex_count <= 0:
-        return weights, [name for name, _pairs in parsed]
-
-    index_of = {}
-    for index, name in enumerate(influence_names):
-        index_of.setdefault(name, index)
-
-    missing = []
-    for name, pairs in parsed:
-        index = index_of.get(name)
-        if index is None:
-            missing.append(name)
-            continue
-        for vertex, weight in pairs:
-            if 0 <= vertex < vertex_count:
-                weights[vertex * influence_count + index] += weight
-
-    for vertex in range(vertex_count):
-        start = vertex * influence_count
-        row = weights[start:start + influence_count]
-        total = sum(row)
-        if total > 0 and abs(total - 1.0) > 1e-9:
-            for offset in range(influence_count):
-                weights[start + offset] = row[offset] / total
-    return weights, missing
-
-
 __all__ = [
     "MAX_INFLUENCES",
     "MIN_ENCODABLE_WEIGHT",
@@ -231,7 +145,4 @@ __all__ = [
     "find_candidates",
     "confirm_outliers",
     "find_outliers",
-    "bake_string",
-    "parse_bake_string",
-    "weights_from_bake",
 ]
