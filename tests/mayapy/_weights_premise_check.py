@@ -1,9 +1,12 @@
-"""Every mesh carrying a bake must also have a live skinCluster (run with mayapy).
+"""Manual gate: every mesh carrying a bake must also have a live skinCluster (run with mayapy).
+
+MANUAL GATE — excluded from suite auto-discovery by the leading underscore in the filename.
+Requires a scene path argument to do any real work; run with no arguments does nothing.
 
 Phase 1 deletes a3obBakedWeights outright. That is only safe while no weight exists
 ONLY as a bake. Point this at a real scene before deleting anything.
 
-Run:  mayapy.exe tests/mayapy/weights_premise_check.py [scene.mb]
+Run:  mayapy.exe tests/mayapy/_weights_premise_check.py <scene.mb>
 """
 
 import sys
@@ -46,7 +49,7 @@ def main():
         # meshes and would otherwise print "OK - 0 baked mesh(es)" — a green result
         # that proves nothing. Say so plainly instead of claiming a real check ran.
         print("SKIP weights premise check — no scene given, nothing was checked "
-              "(run: mayapy tests/mayapy/weights_premise_check.py <scene.mb>)")
+              "(run: mayapy tests/mayapy/_weights_premise_check.py <scene.mb>)")
         return 0
     cmds.file(scene, open=True, force=True)
     orphans = orphan_bakes()
