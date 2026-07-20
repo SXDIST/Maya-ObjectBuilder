@@ -11,11 +11,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MEL = ROOT / "scripts" / "mayaObjectBuilderP3DOptions.mel"
 
-AUTOLOD_KEYS = [
+EXPORT_AUTOLOD_KEYS = [
     "autoLod", "autoLodOutput", "autoLodReduction", "autoLodFirst",
     "autoLodResolution", "autoLodGeometry", "autoLodMemory", "autoLodFire",
     "autoLodView", "autoLodGeometryType", "autoLodFireQuality",
 ]
+
+IMPORT_OPTION_KEYS = [
+    "importTextures",
+]
+
+# All export and import option keys that must be wired in both Set/Get procedures
+OPTION_KEYS = EXPORT_AUTOLOD_KEYS + IMPORT_OPTION_KEYS
 
 SET_PROC = "mayaObjectBuilderP3DSetOptions"
 GET_PROC = "mayaObjectBuilderP3DGetOptions"
@@ -49,16 +56,16 @@ def _extract_proc_body(text, proc_name):
 
 
 def test_every_autolod_key_is_wired_both_ways():
-    """Each autoLod* key must round-trip: SetOptions applies it to a control on open,
-    and GetOptions reads it back out on close. A key wired only one way silently loses
-    the user's choice the next time the dialog reopens.
+    """Each export autoLod* key and import option key must round-trip: SetOptions applies it
+    to a control on open, and GetOptions reads it back out on close. A key wired only one way
+    silently loses the user's choice the next time the dialog reopens.
     """
     text = MEL.read_text(encoding="utf-8", errors="ignore")
     set_body = _strip_comments(_extract_proc_body(text, SET_PROC))
     get_body = _strip_comments(_extract_proc_body(text, GET_PROC))
 
-    missing_set = [key for key in AUTOLOD_KEYS if '"%s"' % key not in set_body]
-    missing_get = [key for key in AUTOLOD_KEYS if '"%s"' % key not in get_body]
+    missing_set = [key for key in OPTION_KEYS if '"%s"' % key not in set_body]
+    missing_get = [key for key in OPTION_KEYS if '"%s"' % key not in get_body]
 
     assert not missing_set, "%s never applies: %r" % (SET_PROC, missing_set)
     assert not missing_get, "%s never emits: %r" % (GET_PROC, missing_get)
