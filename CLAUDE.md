@@ -25,7 +25,7 @@ Each mayapy test runs in its own process — `maya.standalone` cannot be initial
    `mayapy tests/golden.py verify`. **Never run `golden.py capture`**: it overwrites the baseline
    and makes the gate vacuous.
 2. **The `a3ob*` schema** — long+short names in `mayabridge/attributes.py`. Gate:
-   `tests/python/test_attr_schema.py` (35 pairs). A renamed attribute fails no other test; it
+   `tests/python/test_attr_schema.py` (33 pairs). A renamed attribute fails no other test; it
    silently stops resolving data in scenes users already have.
 3. Registered command names, their flags, and the `Arma P3D` translator name.
 
@@ -43,7 +43,7 @@ the Maya layer (API 2.0): `attributes` (schema), `import_/` and `export/` (DAG �
 `skinquery`, `progress`. **`a3ob/ui/`** is the dock: `panels/`, `actions/`, `scene/` (Qt-free),
 `autolod/`, `entry`, `_undo`.
 
-`plug-ins/MayaObjectBuilder.py` registers the seventeen commands (API 2.0);
+`plug-ins/MayaObjectBuilder.py` registers the sixteen commands (API 2.0);
 `MayaObjectBuilderTranslator.py` registers `Arma P3D` (API 1.0). `MPxFileTranslator` is 1.0-only
 while commands need 2.0, so they cannot share a plugin — the main one auto-loads the other.
 
@@ -97,18 +97,15 @@ only stdlib + `maya.cmds` (its `_module_text` duplication is load-bearing).
 
 ### Skin weights and rigs
 
-- Weights live in the `skinCluster`, which Maya deletes with the joints — deleting a skeleton
-  destroys every weight. `a3obBakeSkin` copies them to `a3obBakedWeights`; import writes it too and
-  `weightsync.py` refreshes it on scene SAVE, never on export (export must not silently mutate the
-  scene). Export falls back to it; a live skinCluster always wins.
-- **Nothing may overwrite `a3obBakedWeights` without keeping the old copy.** Sync-on-save refreshes
-  from whatever cluster is live, and after a re-bind that is a fresh bind's defaults, which silently
-  destroyed a good bake. A fresh bind is indistinguishable from any other rig, so there is no honest
-  heuristic: the previous value always goes to `a3obBakedWeightsPrevious`, making `-restore
-  -previous` a swap. `store_bake` skips a write whose text it already holds — which is why the
-  restore path writes the previous slot DIRECTLY.
-  `-restore` writes the whole array via `MFnSkinCluster.setWeights` (~50k non-zero entries on a real
-  garment, where per-vertex `skinPercent` takes minutes), so it does not enter the undo queue.
+- Weights live in the `skinCluster` ALONE now — the branch that mirrored them into
+  `a3obBakedWeights` on import and on every scene save (`weightsync.py`, `a3obBakeSkin -restore
+  [-previous]`) was removed (`docs/specs/2026-07-20-weights-live-skincluster-design.md`). Deleting
+  a skeleton destroys the weights with it, permanently; there is no second copy to fall back on.
+  `a3obValidate` warns when a mesh has lost its rig while a sibling LOD of the same model is still
+  skinned (`_model_has_skinned_sibling` in `commands/validate.py`) — it cannot recover the weights,
+  only flag the loss before export does. Deleting the entire skeleton off a multi-LOD rigged model
+  leaves no skinned sibling either, so that case slips through uncaught; there is no second source
+  of truth left to catch it, which is exactly the point.
 - `bindPreMatrix` is a **sparse multi indexed by `.matrix[]` LOGICAL indices** that do NOT compact
   when an influence is removed. `enumerate(influences)` is the wrong index and made
   `skeleton_is_posed()` report joints on a rig nobody moved: after removing two middle influences
@@ -244,7 +241,6 @@ only stdlib + `maya.cmds` (its `_module_text` duplication is load-bearing).
 | `a3obIsLOD`, `a3obLodType`, `a3obResolution`, `a3obResolutionSignature` | transform | LOD identity |
 | `a3obSourceVertices`, `a3obVertexSourceIndices` | transform | Source vertices from import |
 | `a3obUVSetTaggs`, `a3obSharpEdges` (+ their count/flag) | transform | TAGG preservation |
-| `a3obBakedWeights`, `a3obBakedWeightsPrevious` | transform | Weights outliving the skeleton |
 | `a3obSelectionName`, `a3obIsProxySelection`, `a3obFlagComponent`, `a3obFlagValue` | objectSet | Selections, proxies, flags |
 | `a3obTechnicalSet`, `hiddenInOutliner` | objectSet | Outliner hiding |
 | `a3obTexture`, `a3obMaterial` | shader | `.paa` / `.rvmat` paths driving the PAA pipeline |

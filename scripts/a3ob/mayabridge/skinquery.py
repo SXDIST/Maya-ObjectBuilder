@@ -1,10 +1,9 @@
 """Reading a mesh's skinCluster.
 
-This exists to break a real import cycle. ``weightsync`` needs to read a skinCluster (that
-is what it syncs from) and formerly also needed to store a bake; each was lazily importing a
-function out of the other from inside a function body — a mutual dependency held apart only
-by deferring both halves to call time. What both shared lives here, below both, and both
-import it normally.
+Several callers need this — `commands/skin.py` (outlier detection, transfer, test pose) and
+`commands/validate.py` (the lost-rig warning) — and none of them should duplicate the
+`getWeights`/`vertex_neighbours` plumbing or depend on each other just to get at it. What they
+share lives here, below all of them, and each imports it normally.
 
 Deliberately a leaf: it imports only OpenMaya, nothing else from the plugin.
 ``a3ob.mayabridge.skinweights`` was the other candidate home and is the wrong one — it is

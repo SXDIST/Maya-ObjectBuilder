@@ -1,10 +1,11 @@
 # Weights as mesh data — design
 
 **Date:** 2026-07-19
-**Status:** SHIPPED. Historical design note — kept for the reasoning, not as a to-do.
-Implementation: `mayabridge/weightsync.py` (sync on `kBeforeSave`), `a3obBakedWeights` /
-`a3obBakedWeightsPrevious`, `a3obBakeSkin -restore [-previous]`. Covered by
-`tests/mayapy/{weight_sync,weights_restore,weights_survive_skeleton}.py`.
+**Status:** SUPERSEDED by `docs/specs/2026-07-20-weights-live-skincluster-design.md`, which
+removed everything this shipped. Historical design note — kept for the reasoning, not as a
+to-do; the implementation it describes (`mayabridge/weightsync.py`, `a3obBakedWeights` /
+`a3obBakedWeightsPrevious`, `a3obBakeSkin -restore [-previous]`, and
+`tests/mayapy/{weight_sync,weights_restore,weights_survive_skeleton}.py`) no longer exists.
 **Follows:** the skinning toolkit shipped on `skinning-and-native-cleanup`
 
 ## The problem

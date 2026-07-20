@@ -173,14 +173,15 @@ class ValidateCommand(_Base):
         from a3ob.mayabridge.commands.skin import outliers_for_mesh
         from a3ob.mayabridge.skinquery import read_skin
 
-        if read_skin(mesh_path) is None:
+        skin = read_skin(mesh_path)
+        if skin is None:
             if self._model_has_skinned_sibling(lod):
                 log.warn(name, "mesh has no skinCluster — any bone selections it had are gone "
                                "with the rig and will not be exported")
             return
 
         try:
-            outliers = outliers_for_mesh(mesh_path)
+            outliers = outliers_for_mesh(mesh_path, skin=skin)
         except Exception as error:  # noqa: BLE001 - never let a skin read break validation
             log.warn(name, "could not read skin weights: %s" % error)
             return

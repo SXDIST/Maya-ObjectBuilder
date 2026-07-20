@@ -1,10 +1,10 @@
 # DayZ skin weights — working order
 
-The short version: **weights live in the skinCluster, which Maya deletes together with the
-joints — but the plugin keeps a copy on the mesh so they survive that.** The copy
-(`a3obBakedWeights`) is written on import, refreshed on every scene save, and used by export
-when no skinCluster is present. A live skinCluster always wins, so the copy can never serve
-stale weights over a rig you are still editing.
+The short version: **weights live only in the skinCluster.** Maya deletes it together with the
+joints, and there is no second copy — deleting a skeleton loses every weight on every mesh bound
+to it, for good. Keep the reference skeleton in the scene until you are done exporting.
+`a3obValidate` warns when a mesh has lost its rig while a sibling LOD of the same model is still
+skinned, but it cannot bring the weights back — it can only tell you before export does.
 
 ## 1. Prepare the scene
 
@@ -64,14 +64,12 @@ be there alongside `camo`. If you only see `camo`, the model went out without we
 
 ## Three ways to lose weights
 
-**Deleting the skeleton.** Maya deletes the skinCluster with the joints, and the live weights
-go with it.
-→ Mostly handled for you: the copy on the mesh is refreshed on every **save**, so a `.p3d`
-opened without its rig still exports its weights. `a3obBakeSkin` forces a copy on demand, and
-**`a3obBakeSkin -restore`** writes the stored weights back onto a live skinCluster, matching
-bones by leaf name and renormalizing. The previous contents are kept, so `-restore -previous`
-is a swap — nothing overwrites a good bake unrecoverably. Export warns when the scene has a
-skeleton but a LOD has neither live nor stored weights.
+**Deleting the skeleton.** Maya deletes the skinCluster with the joints, and the weights go
+with it — permanently, with nothing to fall back on.
+→ Not recoverable after the fact: keep the skeleton in the scene until export, and if it does
+get deleted, re-run **Transfer Skin from Body** rather than trying to get the old weights back.
+`a3obValidate` warns when a mesh has no skinCluster while a sibling LOD of the same model still
+does — the signal that this LOD specifically lost its rig, not that the model was never rigged.
 
 **Exporting while posed.** Export reads the *deformed* mesh, so a rotated skeleton is baked
 into the .p3d as if that were the model's shape.

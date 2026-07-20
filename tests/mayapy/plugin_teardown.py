@@ -42,16 +42,6 @@ def main():
               "cycle %d: unloading must remove our scriptJobs, %d left over"
               % (cycle, len(our_script_jobs()) - baseline_jobs))
 
-    # A save with the plugin unloaded must not raise either.
-    cmds.file(new=True, force=True)
-    transform = cmds.polyCylinder(name="orphan", r=1, h=2, ch=False)[0]
-    cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
-    cmds.setAttr(transform + ".a3obIsLOD", True)
-    import tempfile
-    scene = os.path.join(tempfile.mkdtemp(prefix="teardown-"), "scene.ma")
-    cmds.file(rename=scene)
-    cmds.file(save=True, type="mayaAscii", force=True)
-
     print("OK plugin teardown: no callback or scriptJob survives unload (3 cycles)")
     return 0
 

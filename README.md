@@ -243,7 +243,7 @@ Generated `dist/` contents are release artifacts and are not meant to be committ
 | Path | Responsibility |
 |------|----------------|
 | `scripts/a3ob/formats/` | Maya-independent format code (`p3d.py`, `binary.py`, `model_cfg.py`, `paa.py` texture decoder, `rvmat.py`, `serialize.py`) — runs under plain Python, no Maya |
-| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): `attributes.py` (the `a3ob*` schema), Maya↔MLOD conversion (`import_/`, `export/`), `commands/`, `translator.py`, the `paatex/` `.paa`→material pipeline, and the leaf helpers `lodwalk.py`, `skinquery.py`, `progress.py`, `weightsync.py` |
+| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): `attributes.py` (the `a3ob*` schema), Maya↔MLOD conversion (`import_/`, `export/`), `commands/`, `translator.py`, the `paatex/` `.paa`→material pipeline, and the leaf helpers `lodwalk.py`, `skinquery.py`, `progress.py` |
 | `scripts/a3ob/ui/` | Dock UI: `dock.py` + `panels/` (collapsible sections), `actions/` (scene business logic), `scene/` (Qt-free helpers), `autolod/`, `entry.py`, `_undo.py`, `constants.py`, `recent.py` |
 | `scripts/objectBuilderMenu.py`, `objectBuilderAutoLOD.py` | Facades the plugin and the mayapy tests load **by path** — keep them |
 | `plug-ins/MayaObjectBuilder.py` | Main scripted plugin (API 2.0): commands, dock, auto-loads the translator |

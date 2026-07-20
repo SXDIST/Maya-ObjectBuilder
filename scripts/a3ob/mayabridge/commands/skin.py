@@ -14,8 +14,8 @@ unit-tested); this module supplies the Maya plumbing.
 import maya.api.OpenMaya as om
 
 from a3ob.mayabridge import skinweights as sw
-# skinCluster reading lives in a leaf module shared with weightsync. Names are re-exported
-# below, they are part of this module's published surface.
+# skinCluster reading lives in a leaf module shared with commands/validate.py's lost-rig
+# check. Names are re-exported below, they are part of this module's published surface.
 from a3ob.mayabridge.skinquery import (  # noqa: F401
     read_skin,
     skin_cluster_for_mesh,
@@ -24,9 +24,14 @@ from a3ob.mayabridge.skinquery import (  # noqa: F401
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
 
 
-def outliers_for_mesh(mesh_path, threshold=sw.DEFAULT_OUTLIER_THRESHOLD):
-    """Confirmed ``(vertex, clean_neighbours)`` pairs (empty without a skinCluster)."""
-    skin = read_skin(mesh_path)
+def outliers_for_mesh(mesh_path, threshold=sw.DEFAULT_OUTLIER_THRESHOLD, skin=None):
+    """Confirmed ``(vertex, clean_neighbours)`` pairs (empty without a skinCluster).
+
+    Pass ``skin`` (the tuple ``read_skin`` returns) when the caller already read it — a full
+    read is a ``getWeights`` plus an ``MItMeshVertex`` walk over every vertex, so re-reading it
+    per call doubles the cost of a validate pass over a skinned mesh."""
+    if skin is None:
+        skin = read_skin(mesh_path)
     if skin is None:
         return []
     _skin_fn, weights, influence_count, neighbours = skin
