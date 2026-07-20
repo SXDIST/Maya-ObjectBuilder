@@ -32,11 +32,6 @@ class A:
     SOURCE_FACE_COUNT = ("a3obSourceFaceCount", "a3sfc")
     HAS_MASS = ("a3obHasMass", "a3mass")
     MASS_VALUES = ("a3obMassValues", "a3mv")
-    BAKED_WEIGHTS = ("a3obBakedWeights", "a3bw")
-    # The copy the last overwrite replaced. Anything that rewrites BAKED_WEIGHTS stashes the
-    # old value here first: the sync-on-save otherwise replaced a good bake with a fresh
-    # bind's defaults, silently and unrecoverably.
-    BAKED_WEIGHTS_PREVIOUS = ("a3obBakedWeightsPrevious", "a3bwp")
     PROPERTIES = ("a3obProperties", "a3prop")
 
     # LOD transform, import-preserved round-trip metadata (short names verbatim

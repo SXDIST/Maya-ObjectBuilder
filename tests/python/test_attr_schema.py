@@ -18,6 +18,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ATTRIBUTES = ROOT / "scripts" / "a3ob" / "mayabridge" / "attributes.py"
 
+# 2026-07-20: BAKED_WEIGHTS and BAKED_WEIGHTS_PREVIOUS were removed deliberately, taking
+# this list from 35 pairs to 33. The skinCluster is now the only place weights live —
+# docs/specs/2026-07-20-weights-live-skincluster-design.md. Verified first that no mesh
+# held a bake without a live cluster, so no scene lost data.
 # (constant, long name, short name) — exactly as class A declares them.
 GOLDEN = [
     ("IS_LOD", "a3obIsLOD", "a3lod"),
@@ -28,8 +32,6 @@ GOLDEN = [
     ("SOURCE_FACE_COUNT", "a3obSourceFaceCount", "a3sfc"),
     ("HAS_MASS", "a3obHasMass", "a3mass"),
     ("MASS_VALUES", "a3obMassValues", "a3mv"),
-    ("BAKED_WEIGHTS", "a3obBakedWeights", "a3bw"),
-    ("BAKED_WEIGHTS_PREVIOUS", "a3obBakedWeightsPrevious", "a3bwp"),
     ("PROPERTIES", "a3obProperties", "a3prop"),
     ("TEXTURES", "a3obTextures", "a3tex"),
     ("MATERIALS", "a3obMaterials", "a3mat"),
