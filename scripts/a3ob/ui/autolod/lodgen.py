@@ -13,7 +13,17 @@ def _generate_resolution_lods(source, settings, visuals):
     # the same algorithm as Blender's Decimate -> Collapse, giving the even, shape-
     # preserving triangles Maya's sliver-prone polyReduce cannot. One progressive pass
     # snapshots every LOD level at once; None means QEM is unavailable -> polyReduce.
-    qem_snaps = _qem_chain_for_ratios(source_snapshot, ratios)
+    #
+    # Esc during the collapse raises AutoLodCancelled out of here. That happens before any
+    # LOD duplicate exists and before a single decimated mesh is written back, so the only
+    # cleanup owed is the source snapshot taken above — the scene keeps the geometry the
+    # user started with. Deliberately not a fall-through to polyReduce: cancel means stop.
+    try:
+        qem_snaps = _qem_chain_for_ratios(source_snapshot, ratios)
+    except AutoLodCancelled:
+        if cmds.objExists(source_snapshot):
+            cmds.delete(source_snapshot)
+        raise
 
     for index, ratio in enumerate((1.0, *ratios)):
         resolution = start_lod + index

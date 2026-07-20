@@ -195,11 +195,80 @@ def test_live_face_never_references_a_retired_vertex():
     print("OK no live face ever references a retired vertex (vfaces stays in sync)")
 
 
+class _Monitor:
+    """Stands in for a3ob.mayabridge.progress.Progress (duck-typed, Maya-free).
+
+    ``cancel_after`` polls are answered "keep going", then every later poll says cancelled.
+    """
+
+    def __init__(self, cancel_after=None):
+        self.cancel_after = cancel_after
+        self.polls = 0
+        self.steps = []
+
+    def cancelled(self):
+        self.polls += 1
+        return self.cancel_after is not None and self.polls > self.cancel_after
+
+    def step(self, done):
+        self.steps.append(done)
+
+
+def test_monitor_reports_progress_and_never_cancels_by_itself():
+    """A monitor that never cancels must not change the result, and must see real progress.
+
+    The no-op case is the one that ships under mayapy and in batch mode, where MComputation
+    is unavailable and `Progress.cancelled()` is always False — so it is the path that must
+    be provably identical to passing no monitor at all."""
+    points, faces = grid_mesh(24, extra_shells=6)
+    plain = decimate(points, faces, 200)
+    monitor = _Monitor()
+    watched = decimate(points, faces, 200, monitor=monitor)
+
+    check(watched is not None, "an uncancelled decimation must return a result")
+    check(len(plain[0]) == len(watched[0]) and len(plain[1]) == len(watched[1]),
+          "a passive monitor must not change what the decimator produces")
+    check(monitor.polls > 0, "the monitor was never polled — cancel could not work")
+    check(monitor.steps, "the monitor was never stepped — the progress bar would not move")
+    check(monitor.steps == sorted(monitor.steps),
+          "reported progress must be monotonic: %r" % (monitor.steps[:10],))
+    check(all(s >= 0 for s in monitor.steps),
+          "progress must count faces removed, never a negative: %r" % (monitor.steps[:10],))
+    print("OK a passive monitor sees monotonic progress and changes nothing")
+
+
+def test_cancel_returns_nothing_at_all():
+    """Cancelling must yield None, not a partial mesh.
+
+    This is the invariant with teeth. A decimator interrupted mid-run has faces retired and
+    vertices not yet remapped; snapshotting THAT state is exactly how an unreferenced vertex
+    reaches Maya, and `polyNormalPerVertex` segfaults the session on one. So the contract is
+    not "return what we have so far" — it is return nothing, and let the caller keep the
+    geometry the user already had."""
+    points, faces = grid_mesh(24, extra_shells=6)
+
+    check(decimate(points, faces, 50, monitor=_Monitor(cancel_after=0)) is None,
+          "a cancelled decimate() must return None, not a partial mesh")
+
+    targets = [800, 400, 200, 100, 50]
+    check(decimate_chain(points, faces, targets, monitor=_Monitor(cancel_after=0)) is None,
+          "a cancelled decimate_chain() must return None")
+    # Cancelling partway through the ladder must not hand back the targets it already
+    # reached: a caller that saw a dict would build LODs from a half-cancelled run.
+    late = decimate_chain(points, faces, targets, monitor=_Monitor(cancel_after=2))
+    check(late is None,
+          "a ladder cancelled partway must return None, not the snapshots taken so far: %r"
+          % (sorted(late) if late else late,))
+    print("OK cancelling returns nothing — no partial mesh can reach Maya")
+
+
 def main():
     test_decimate_emits_no_orphans()
     test_chain_emits_no_orphans()
     test_awkward_topology_stays_consistent()
     test_live_face_never_references_a_retired_vertex()
+    test_monitor_reports_progress_and_never_cancels_by_itself()
+    test_cancel_returns_nothing_at_all()
     print("qem tests OK")
     return 0
 

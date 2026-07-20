@@ -308,6 +308,9 @@ def set_selected_mass_values(lod, value, modifier=None):
         lod = selected_lod
 
     masses = mass_values_for_lod(lod, 0.0)
+    # Hoisted: the remap is a property of the LOD, not of the component being visited, and
+    # building it re-parses one integer per vertex — 6000 of them per iteration on a real LOD.
+    remap = vertex_source_index_map(lod)
     for i in range(members.length()):
         try:
             dag_path, component = members.getComponent(i)
@@ -316,7 +319,6 @@ def set_selected_mass_values(lod, value, modifier=None):
         if component.isNull() or not component.hasFn(om.MFn.kMeshVertComponent):
             continue
         elements = om.MFnSingleIndexedComponent(component).getElements()
-        remap = vertex_source_index_map(lod)
         for index in elements:
             # Selected components are Maya vertices; masses live in P3D source order.
             slot = remap[index] if 0 <= index < len(remap) else index

@@ -24,21 +24,42 @@ def generate_auto_lods(settings=None):
         cmds.setAttr(geometry_snapshot + ".visibility", False)
         geometry_source = geometry_snapshot
 
-    if settings["resolution"]:
-        generated.extend(_generate_resolution_lods(source, settings, _group("visuals")))
-    if settings["geometry"] or settings["view_geometry"] or settings["fire_geometry"]:
-        geometries = _group("geometries")
-        if settings["geometry"]:
-            generated.append(_generate_geometry_lod(geometry_source, settings, geometries))
-        if settings["view_geometry"]:
-            generated.append(_generate_view_geometry_lod(geometry_source, settings, geometries))
-        if settings["fire_geometry"]:
-            generated.append(_generate_fire_geometry_lod(geometry_source, settings, geometries))
-    if settings["memory"]:
-        generated.append(_generate_memory_lod(geometry_source, settings, _group("point_clouds")))
+    # Groups are made before the generator that fills them, so an Esc mid-decimation
+    # would otherwise leave an empty "visuals" behind — and, worse, the hidden
+    # __auto_lod_geometry_source duplicate, whose delete sits past the raise point.
+    # Only groups this call created are removed, and only while still empty: _group()
+    # happily returns a pre-existing one, which is not ours to delete.
+    ours = []
 
-    if geometry_snapshot and cmds.objExists(geometry_snapshot):
-        cmds.delete(geometry_snapshot)
+    def _own_group(name):
+        existed = set(cmds.ls(type="transform", long=True) or [])
+        node = _group(name)
+        full = (cmds.ls(node, long=True) or [node])[0]
+        if full not in existed:
+            ours.append(full)
+        return node
+
+    try:
+        if settings["resolution"]:
+            generated.extend(_generate_resolution_lods(source, settings, _own_group("visuals")))
+        if settings["geometry"] or settings["view_geometry"] or settings["fire_geometry"]:
+            geometries = _own_group("geometries")
+            if settings["geometry"]:
+                generated.append(_generate_geometry_lod(geometry_source, settings, geometries))
+            if settings["view_geometry"]:
+                generated.append(_generate_view_geometry_lod(geometry_source, settings, geometries))
+            if settings["fire_geometry"]:
+                generated.append(_generate_fire_geometry_lod(geometry_source, settings, geometries))
+        if settings["memory"]:
+            generated.append(_generate_memory_lod(geometry_source, settings, _own_group("point_clouds")))
+    except AutoLodCancelled:
+        for node in ours:
+            if cmds.objExists(node) and not (cmds.listRelatives(node, children=True) or []):
+                cmds.delete(node)
+        raise
+    finally:
+        if geometry_snapshot and cmds.objExists(geometry_snapshot):
+            cmds.delete(geometry_snapshot)
 
     generated = [node for node in generated if node and cmds.objExists(node)]
     if generated:
