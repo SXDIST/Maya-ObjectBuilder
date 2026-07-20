@@ -20,7 +20,7 @@ OPTION_SCRIPT = "mayaObjectBuilderP3DOptions"
 # Mirrors the former C++ kP3DDefaultOptions. Only a handful are consulted here; the
 # rest are UI-facing defaults for the MEL option box.
 DEFAULT_OPTIONS = ";".join([
-    "firstLodOnly=0", "validateMeshes=0", "enclose=1", "groupBy=type",
+    "firstLodOnly=0", "validateMeshes=0", "importTextures=1", "enclose=1", "groupBy=type",
     "absolutePaths=1", "additionalData=1", "customNormals=1", "flags=1",
     "namedProperties=1", "vertexMass=1", "selections=1", "uvSets=1", "materials=1",
     "sections=preserve", "translateSelections=0", "cleanupSelections=0",
@@ -105,11 +105,12 @@ def do_read(expanded_full_name, raw_name, options_string):
     # already imported, so surface a scheduling failure loudly (mirror exporter.py) rather
     # than let the "Imported ... LOD count" info line print regardless.
     om.MGlobal.displayInfo("Imported P3D MLOD LOD count: %d" % len(created))
-    try:
-        cmds.evalDeferred("import a3ob.mayabridge.paatex as _pt; _pt.assign_pending_textures()", lowestPriority=True)
-    except Exception as error:  # noqa: BLE001 - mirror C++ catch-all
-        om.MGlobal.displayError("P3D texture assignment scheduling failed: %s" % error)
-        return False
+    if option_enabled(options, "importTextures", True):
+        try:
+            cmds.evalDeferred("import a3ob.mayabridge.paatex as _pt; _pt.assign_pending_textures()", lowestPriority=True)
+        except Exception as error:  # noqa: BLE001 - mirror C++ catch-all
+            om.MGlobal.displayError("P3D texture assignment scheduling failed: %s" % error)
+            return False
 
 
 def do_write(expanded_full_name, options_string, export_active):

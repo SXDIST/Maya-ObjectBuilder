@@ -165,6 +165,7 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             checkBox -label "Selections" mayaObjectBuilderSelections;
             checkBox -label "UV Sets" mayaObjectBuilderUvSets;
             checkBox -label "Materials" mayaObjectBuilderMaterials;
+            checkBox -label "Import Textures (.paa decode)" mayaObjectBuilderImportTextures;
             optionMenu -label "Sections" mayaObjectBuilderSections;
             menuItem -label "Preserve";
             menuItem -label "Merge";
@@ -387,6 +388,7 @@ global proc mayaObjectBuilderP3DSetOptions(string $settings)
         else if ($key == "selections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderSelections", $value);
         else if ($key == "uvSets") mayaObjectBuilderP3DSetBool("mayaObjectBuilderUvSets", $value);
         else if ($key == "materials") mayaObjectBuilderP3DSetBool("mayaObjectBuilderMaterials", $value);
+        else if ($key == "importTextures") mayaObjectBuilderP3DSetBool("mayaObjectBuilderImportTextures", $value);
         else if ($key == "sections") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderSections", $value);
         else if ($key == "translateSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderTranslateSelections", $value);
         else if ($key == "cleanupSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderCleanupSelections", $value);
@@ -440,6 +442,7 @@ global proc string mayaObjectBuilderP3DGetOptions()
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("selections", "mayaObjectBuilderSelections", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("uvSets", "mayaObjectBuilderUvSets", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("materials", "mayaObjectBuilderMaterials", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("importTextures", "mayaObjectBuilderImportTextures", "1");
     $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("sections", "mayaObjectBuilderSections", "preserve");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("translateSelections", "mayaObjectBuilderTranslateSelections", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("cleanupSelections", "mayaObjectBuilderCleanupSelections", "0");
