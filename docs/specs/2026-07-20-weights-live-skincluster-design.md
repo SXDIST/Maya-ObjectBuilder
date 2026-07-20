@@ -14,7 +14,9 @@ Measured on `Own_Dreykrus.mb` (six garments, 111 joints present, all six skinned
 
 | Measurement | Value |
 |-------------|-------|
-| `a3obBakedWeights` across the scene | 1 429 194 characters |
+| `a3obBakedWeights` across the scene | 1.36 MB |
+| `a3obBakedWeightsPrevious` across the scene | 1.36 MB |
+| Total duplicated weight text | **2.73 MB** |
 | Per weight entry | 24.3 characters |
 | Same data as `uint16` vertex + `uint8` weight | ~180 KB |
 | What a weight becomes in the P3D | **one byte**, 1/254 step |
@@ -52,6 +54,23 @@ If the workflow ever changes back — garments handed off without a rig, or a sc
 stripped of joints — this decision must be revisited, not patched around. The earlier spec
 stays in the repository as the record of why the other answer was chosen.
 
+## The workflow this serves
+
+Weights are transferred **from the reference character body, not from the rig**:
+`skinCluster1` in the measured scene deforms `Male_bodyShape`, and each garment carries its
+own cluster bound to the same joints. The skeleton stays so the result can be posed and
+checked.
+
+The two decisions reinforce each other. Transfer produces a live `skinCluster`; testing
+weights needs a live rig. There is no point in the workflow at which weights exist without
+a cluster to hold them, which is precisely why a second copy has nothing to protect.
+
+**This makes the posed-rig guard load-bearing.** Export reads the deformed mesh, so
+exporting while the rig is posed bakes the pose into the model. That was already true, but
+a workflow that routinely poses the rig to check weights will meet it often.
+`posetest.skeleton_is_posed()` and the `a3obValidate` warning it drives move from a nicety
+to a primary safeguard, and must be exercised by the test suite accordingly.
+
 ## Decision
 
 **The skeleton always stays in the scene.** The `skinCluster` is then the sole storage:
@@ -81,7 +100,7 @@ Write path removed:
 - `a3obBakeSkin`'s bake and `-restore -previous` swap.
 - Import no longer writes `a3obBakedWeights`.
 - `export/taggs/skin.py` keeps `_add_skin_weight_taggs` and drops
-  `_add_baked_weight_taggs` from the normal path — see Migration for the timing.
+  `_add_baked_weight_taggs` entirely.
 
 Added:
 
@@ -90,25 +109,26 @@ Added:
   tells the user the moment the situation arises, instead of silently carrying a copy
   forever against a case that should not happen.
 
-## Migration — the part that must not be rushed
+## Migration — none needed, and why that is safe to assert
 
-`a3obBakedWeights` and `a3obBakedWeightsPrevious` are entries in the `a3ob*` schema, which
-CLAUDE.md names a hard contract, and existing user scenes have both populated. A user whose
-skeleton is already gone has nothing but the bake.
+The plugin has one user, and every scene at risk was checked rather than assumed. In
+`Own_Dreykrus.mb` all six baked meshes carry a live `skinCluster`
+(`pants`/`jacket`/`helmet`/`gloves`/`boots`/`backpack` → `skinCluster5`/`2`/`6`/`7`/`4`/`3`),
+so no weight exists only as a bake. The removal loses nothing.
 
-Therefore:
+Both the write path and the read path go. `a3obBakedWeights` and
+`a3obBakedWeightsPrevious` are deleted from the schema, taking
+`test_attr_schema.py` from 35 pairs to 33.
 
-1. **The schema entries stay.** They are marked deprecated and read-only. Deleting them
-   would be exactly the silent-stop-resolving failure the contract exists to prevent, and
-   `test_attr_schema.py`'s 35 pairs stay at 35.
-2. **The read path stays** for at least one release: `_add_baked_weight_taggs` still runs
-   when a mesh has a bake and no skinCluster, so an already-rigless scene still exports its
-   weights.
-3. **The write path goes now.** Nothing new is baked; nothing existing is erased.
-4. On opening a scene that has a bake but no skinCluster, the dock surfaces a one-time
-   "restore the rig from baked weights" action rather than doing it silently.
+That last point is a deliberate edit to a hard contract, so it is recorded here rather
+than left to look like drift: the contract exists to stop an attribute silently ceasing to
+resolve in scenes that already hold data. Here the data is verified redundant and the
+removal is intentional. **Before implementing, re-run the check above** — if any mesh in
+any scene has a bake and no live cluster, this section is void and the deprecation dance
+comes back.
 
-Only once no supported scene depends on the read path may step 2 be revisited.
+Existing scenes keep the two attributes as inert leftovers until re-saved. A small dock
+action removes them so the 2.73 MB is actually reclaimed.
 
 ## Consequences for the Auto LOD work
 
@@ -127,12 +147,11 @@ format can encode) and must not be used.
 The existing mayapy tests name the behaviour being removed and must be rewritten, not
 deleted wholesale — each encodes a real failure someone hit:
 
-- `weights_survive_skeleton.py` — becomes a test that `a3obValidate` *warns* when the rig
-  is gone, plus that the deprecated read path still exports weights from an existing bake.
-- `weight_sync.py` — becomes a test that saving a scene no longer writes a bake, and that
-  an existing bake is left untouched rather than erased.
-- `weights_restore.py` — keeps the restore-from-bake path under the migration, and drops
-  the `-previous` swap.
+- `weights_survive_skeleton.py` — becomes a test that `a3obValidate` *warns* when a skinned
+  mesh has lost its rig. The warning is the replacement safety net, so it needs the same
+  coverage the bake had.
+- `weight_sync.py` — becomes a test that saving a scene writes no bake.
+- `weights_restore.py` — deleted with the `-restore`/`-previous` swap it covers.
 - `weights_panel_state.py` — the panel must report the live skinCluster, and must stay a
   silent read (`dock_panel_sync.py` rules still apply).
 
@@ -142,7 +161,13 @@ New:
   live skinCluster within the 1/254 encodable step.
 - A scene saved after this change contains no new `a3obBakedWeights` data.
 
-Unchanged gates: `mayapy tests/golden.py verify` and `tests/python/test_attr_schema.py`.
+Unchanged gate: `mayapy tests/golden.py verify`. The byte contract does not move — a mesh
+with a live skinCluster already exports through `_add_skin_weight_taggs`, which this spec
+does not touch.
+
+`tests/python/test_attr_schema.py` **does** move, 35 pairs to 33, and that edit is the
+point rather than a side effect. It must be made in the same commit as the attribute
+removal, with the reason in the message, so the count never looks like it drifted.
 
 ## Open question, deliberately not answered here
 
