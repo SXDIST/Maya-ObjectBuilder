@@ -116,7 +116,12 @@ class SceneWatcher:
         name = plug.partialName(useLongNames=True)
         if not name.startswith("a3ob"):
             return
-        self._notify(LODS, NAMED, MATERIALS, SELECTIONS)
+        # NAMED is not in this tuple: _refresh_dirty_panels has no branch that consumes
+        # it (refresh_lod_list() now refreshes named properties itself, off the LODS
+        # hint), so emitting it here was dead. NAMED/ALL_PANELS stay defined below —
+        # showEvent() still uses ALL_PANELS to mark every panel dirty when the dock
+        # reappears.
+        self._notify(LODS, MATERIALS, SELECTIONS)
 
     def _topology_changed(self, _node, _data=None):
         self._notify(LODS)

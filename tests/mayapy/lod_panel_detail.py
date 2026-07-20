@@ -55,6 +55,29 @@ def main():
         dock.apply_named_property("someCustomThing", "42")
         _harness.check("someCustomThing=42" in (cmds.getAttr(alpha + ".a3obProperties") or ""),
                        "an unknown property name must still be accepted")
+
+        # Regression: refresh_lod_list() now calls refresh_named_properties() at its own
+        # end, and the "LODs" branch of dock._refresh_dirty_panels feeds it with no
+        # defer= (unlike Materials, which passes defer=self._material_fields_focused()).
+        # That means a SceneWatcher callback on the displayed LOD can rebuild the named
+        # properties list while the user is mid-edit in one of the combos. It is safe
+        # today only because refresh_named_properties() writes the combos solely when no
+        # LOD resolves, and clearing/repopulating named_list does not re-fire
+        # currentItemChanged with a valid item. Pin that as a test, not as folklore that
+        # the next "auto-sync the combos" change could silently break.
+        cmds.select(alpha, replace=True)
+        dock.refresh_lod_list()
+        dock.named_name_combo.lineEdit().setText("midEditName")
+        dock.named_value_combo.lineEdit().setText("mid-edit-value")
+        typed_name = dock.named_name_combo.lineEdit().text()
+        typed_value = dock.named_value_combo.lineEdit().text()
+
+        dock.refresh_lod_list()  # the path that now reaches refresh_named_properties()
+
+        _harness.check(dock.named_name_combo.lineEdit().text() == typed_name,
+                       "a LOD list refresh must not clobber an in-progress named-property name edit")
+        _harness.check(dock.named_value_combo.lineEdit().text() == typed_value,
+                       "a LOD list refresh must not clobber an in-progress named-property value edit")
     finally:
         dock.teardown()
     print("OK - named properties follow the selected LOD and accept unknown names")
