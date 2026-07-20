@@ -47,44 +47,6 @@ class LodPanelMixin:
         return widget
 
 
-    def _build_auto_lod_section(self):
-        widget = qt_widgets.QWidget()
-        auto_layout = qt_widgets.QFormLayout(widget)
-        auto_layout.setContentsMargins(0, 0, 0, 0)
-        self.auto_lod_output = qt_widgets.QComboBox()
-        self.auto_lod_output.addItems(["Quads", "Triangles"])
-        self.auto_lod_output.setToolTip("Quads keep quad-dominant LODs; Triangles fully triangulate.")
-        self.auto_lod_reduction = qt_widgets.QComboBox()
-        self.auto_lod_reduction.addItems(["Aggressive", "Balanced", "Light"])
-        self.auto_lod_reduction.setToolTip("Per-step strength: Aggressive halves each LOD, Light barely reduces.")
-        self.auto_lod_first = qt_widgets.QComboBox()
-        self.auto_lod_first.addItems(["LOD1", "LOD0"])
-        self.auto_lod_resolution = qt_widgets.QCheckBox("Resolution LODs")
-        self.auto_lod_resolution.setChecked(True)
-        self.auto_lod_geometry = qt_widgets.QCheckBox("Geometry LOD")
-        self.auto_lod_geometry.setChecked(True)
-        self.auto_lod_memory = qt_widgets.QCheckBox("Memory LOD")
-        self.auto_lod_fire = qt_widgets.QCheckBox("Fire Geometry LOD")
-        self.auto_lod_view = qt_widgets.QCheckBox("View Geometry LOD")
-        self.auto_lod_geometry_type = qt_widgets.QComboBox()
-        self.auto_lod_geometry_type.addItems(["BOX", "NONE"])
-        self.auto_lod_fire_quality = qt_widgets.QSpinBox()
-        self.auto_lod_fire_quality.setRange(1, 10)
-        self.auto_lod_fire_quality.setValue(2)
-        auto_layout.addRow("Output", self.auto_lod_output)
-        auto_layout.addRow("Reduction", self.auto_lod_reduction)
-        auto_layout.addRow("First LOD", self.auto_lod_first)
-        auto_layout.addRow(self.auto_lod_resolution)
-        auto_layout.addRow(self.auto_lod_geometry)
-        auto_layout.addRow(self.auto_lod_memory)
-        auto_layout.addRow(self.auto_lod_fire)
-        auto_layout.addRow(self.auto_lod_view)
-        auto_layout.addRow("Geometry", self.auto_lod_geometry_type)
-        auto_layout.addRow("Fire quality", self.auto_lod_fire_quality)
-        auto_layout.addRow(_qt_button("Generate Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh.", ":/polyReduce.png"))
-        return widget
-
-
     def _build_memory_points_section(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
@@ -108,21 +70,6 @@ class LodPanelMixin:
             if definition["type"] == lod_type:
                 return definition
         return LOD_DEFINITIONS[0]
-
-
-    def auto_lod_settings(self):
-        return {
-            "output": (self.auto_lod_output.currentText() if self.auto_lod_output is not None else "Quads").lower(),
-            "reduction": (self.auto_lod_reduction.currentText() if self.auto_lod_reduction is not None else "Aggressive").lower(),
-            "first_lod": self.auto_lod_first.currentText() if self.auto_lod_first is not None else "LOD1",
-            "resolution": self.auto_lod_resolution.isChecked() if self.auto_lod_resolution is not None else True,
-            "geometry": self.auto_lod_geometry.isChecked() if self.auto_lod_geometry is not None else True,
-            "memory": self.auto_lod_memory.isChecked() if self.auto_lod_memory is not None else False,
-            "fire_geometry": self.auto_lod_fire.isChecked() if self.auto_lod_fire is not None else False,
-            "view_geometry": self.auto_lod_view.isChecked() if self.auto_lod_view is not None else False,
-            "geometry_type": self.auto_lod_geometry_type.currentText() if self.auto_lod_geometry_type is not None else "BOX",
-            "fire_quality": self.auto_lod_fire_quality.value() if self.auto_lod_fire_quality is not None else 2,
-        }
 
 
     def lod_resolution_value(self):

@@ -352,7 +352,7 @@ def assert_ui_redesign_helpers_load():
     ui = runpy.run_path(str(UI_SCRIPT))
     for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_qt_button", "_qt_icon",
                  "_CollapsibleSection", "_panel_optionvar_key", "import_model_cfg_from_ui",
-                 "export_model_cfg_from_ui", "generate_auto_lods_from_ui", "open_dock",
+                 "export_model_cfg_from_ui", "open_dock",
                  "show_plugin_ui", "hide_plugin_ui", "_active_qt_dock", "_refresh_context_ui"):
         if name not in ui:
             raise RuntimeError(f"Missing redesigned UI helper: {name}")
@@ -364,7 +364,7 @@ def assert_ui_redesign_helpers_load():
     # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so
     # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
     for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
-                 "_build_auto_lod_section", "_build_mass_flags_section", "_build_proxies_section",
+                 "_build_mass_flags_section", "_build_proxies_section",
                  "_build_memory_points_section",
                  "_build_named_properties_tab", "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
@@ -373,6 +373,12 @@ def assert_ui_redesign_helpers_load():
             raise RuntimeError(f"Missing Qt dock method: {name}")
     if hasattr(dock_class, "_build_skeleton_section"):
         raise RuntimeError("Skeleton panel should have been removed from the dock")
+    # Auto LOD generation moved to export time (Phase 2); the dock panel and its UI
+    # wrapper were removed, leaving only the generator itself (objectBuilderAutoLOD.py).
+    if hasattr(dock_class, "_build_auto_lod_section") or hasattr(dock_class, "auto_lod_settings"):
+        raise RuntimeError("Auto LOD panel should have been removed from the dock")
+    if "generate_auto_lods_from_ui" in ui:
+        raise RuntimeError("Auto LOD UI wrapper should have been removed")
     # panel optionVar key is derived from the panel title
     if ui["_panel_optionvar_key"]("Mass & Flags") != "MayaObjectBuilder_panel_Mass_Flags_expanded":
         raise RuntimeError("Panel optionVar key helper changed unexpectedly")

@@ -104,16 +104,6 @@ def create_lod_type(lod_type, resolution=0):
     return node
 
 
-def generate_auto_lods_from_ui():
-    load_plugin()
-    dock = _active_qt_dock()
-    if dock is None:
-        return
-    generated = _auto_lod_module().generate_auto_lods(dock.auto_lod_settings())
-    if generated:
-        _refresh_context_ui()
-
-
 __all__ = [
     "_selected_lod_definition",
     "_lod_resolution_value",
@@ -125,5 +115,4 @@ __all__ = [
     "assign_lod_to_selection",
     "LOD_ATTRS",
     "_remove_lod_from_selection",
-    "generate_auto_lods_from_ui",
 ]

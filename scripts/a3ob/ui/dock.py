@@ -56,16 +56,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.lod_resolution = None
         self.lod_context = None
         self.memory_points_group = None
-        self.auto_lod_output = None
-        self.auto_lod_reduction = None
-        self.auto_lod_first = None
-        self.auto_lod_resolution = None
-        self.auto_lod_geometry = None
-        self.auto_lod_memory = None
-        self.auto_lod_fire = None
-        self.auto_lod_view = None
-        self.auto_lod_geometry_type = None
-        self.auto_lod_fire_quality = None
         self.mass_value_field = None
         self.mass_mode_combo = None
         self.mass_total_label = None
@@ -127,7 +117,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
             ("LOD Properties", self._build_lod_properties_section(), False, None),
-            ("Auto LOD", self._build_auto_lod_section(), True, None),
             ("Mass & Flags", self._build_mass_flags_section(), True, None),
             ("Named Properties", self._build_named_properties_tab(), True, self.refresh_named_properties),
             ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
@@ -285,7 +274,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         actions = [
             ("Import P3D", import_p3d, "Open a P3D through Maya's native Arma P3D importer.", ":/fileOpen.png"),
             ("Export P3D", export_p3d, "Export the current scene through Maya's native Arma P3D exporter.", ":/fileSave.png"),
-            ("Auto LOD", generate_auto_lods_from_ui, "Generate DayZ LODs from the selected mesh using the Auto LOD settings.", ":/polyReduce.png"),
             ("Validate", _validate_scene_no_flush, "Validate all Object Builder LODs in the scene.", ":/confirm.png"),
         ]
         for index, (label, callback, tooltip, icon) in enumerate(actions):

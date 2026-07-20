@@ -1,6 +1,5 @@
 """Plugin/menu entry points, dock lifecycle and the module singletons."""
 
-import importlib
 import sys
 from pathlib import Path
 
@@ -55,11 +54,6 @@ def _ensure_script_path():
         sys.path.insert(0, str(SCRIPT_PATH.parent))
     mel.eval('if (!stringArrayContains("' + scripts_dir + '", stringToStringArray(`getenv MAYA_SCRIPT_PATH`, ";"))) putenv MAYA_SCRIPT_PATH (`getenv MAYA_SCRIPT_PATH` + ";' + scripts_dir + '")')
     mel.eval('source "' + scripts_dir + '/mayaObjectBuilderP3DOptions.mel"')
-
-
-def _auto_lod_module():
-    _ensure_script_path()
-    return importlib.import_module("objectBuilderAutoLOD")
 
 
 def load_plugin():
@@ -470,7 +464,6 @@ __all__ = [
     "_qt_dock_widget",
     "_plugin_path",
     "_ensure_script_path",
-    "_auto_lod_module",
     "load_plugin",
     "import_p3d",
     "export_p3d",
