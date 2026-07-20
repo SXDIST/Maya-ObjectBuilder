@@ -88,7 +88,10 @@ import dev_install
 dev_install.install()
 ```
 
-This writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at this repo, so Maya loads `plug-ins/` and `scripts/` directly from here. Edit the Python, reload the plugin, done. Run `dev_install.uninstall()` to remove the module file.
+This writes `Documents/maya/modules/MayaObjectBuilder.mod` pointing at this repo, so Maya loads `plug-ins/` and `scripts/` directly from here. Run `dev_install.uninstall()` to remove the module file.
+
+> [!IMPORTANT]
+> Reloading the plugin picks up changes to ordinary modules — dock panels, actions, scene helpers — but **not to the `a3ob*` command classes**. A registered `MPxCommand` keeps executing the version it was registered with, so an edited `doIt` never runs until Maya restarts. Verify command changes under `mayapy` (`python tests/run_all.py --filter 'command*'`), and restart Maya before judging one by hand.
 
 <details>
 <summary>Headless variant (write the <code>.mod</code> without loading)</summary>
@@ -153,32 +156,39 @@ To rename a point, select the locator transform in the Outliner and press **F2**
 
 ## ✅ Verify from source
 
-There is **no build step**. Run the checklist from the repository root.
-
-**Pure-Python format tests** (plain system Python, no Maya):
+There is **no build step**. One command runs everything from the repository root:
 
 ```bash
-python tests/python/test_p3d_roundtrip.py
-python tests/python/test_model_cfg.py
-python tests/python/test_paa.py          # PAA decoder; skips cleanly without tests/paa/*.paa fixtures
+python tests/run_all.py
 ```
 
-**Python syntax check** (compile every `.py` on disk — robust to package renames):
+That is the 10 pure-Python format tests, `py_compile` over every `.py` on disk, the 25 Maya
+integration workflows (each in its own process — `maya.standalone` cannot be initialized twice),
+and the P3D byte gate. Useful flags:
 
 ```bash
-python -m py_compile $(find scripts plug-ins tests -name '*.py')
+python tests/run_all.py --only python      # no Maya needed
+python tests/run_all.py --filter 'weight*'
+python tests/run_all.py --mayapy "C:/path/to/mayapy.exe"   # or set $MAYAPY
 ```
 
-**Maya integration workflows** (load the plugin, exercise import/export + commands + UI):
+**The P3D byte gate.** `tests/golden.py` records the SHA256 of exported fixtures and re-checks it,
+so a refactor cannot silently change the file format — Object Builder opens a corrupted `.p3d`
+without complaining. `run_all.py` runs it; on its own:
 
 ```bash
-"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
-"/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/model_cfg_workflow.py
+mayapy tests/golden.py verify
 ```
+
+> [!WARNING]
+> Never run `tests/golden.py capture` to make a failing gate pass. That overwrites the baseline
+> with whatever the current code produces, which makes the check meaningless. Capture only when
+> the byte output is *intended* to change, and say so in the commit.
 
 > [!NOTE]
-> The format tests use fixtures under `Arma3ObjectBuilder-master/tests/inputs/`. Clone the reference add-on there if the folder is missing:
-> `git clone https://github.com/MrClock8163/Arma3ObjectBuilder`
+> Fixtures live under `Arma3ObjectBuilder-master/tests/inputs/`. Clone the reference add-on there
+> if the folder is missing: `git clone https://github.com/MrClock8163/Arma3ObjectBuilder`
+> The `.paa` tests skip cleanly without `tests/paa/*.paa`.
 
 ---
 
@@ -232,16 +242,17 @@ Generated `dist/` contents are release artifacts and are not meant to be committ
 
 | Path | Responsibility |
 |------|----------------|
-| `scripts/a3ob/formats/` | Maya-independent format code (`binary.py`, `p3d.py`, `model_cfg.py`, `paa.py` texture decoder, `rvmat.py`) — unit-testable with plain Python |
-| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): attribute schema, Maya↔MLOD conversion (`import_/`, `export/`), `a3ob*` commands, `model.cfg` commands, translator bodies, and the `paatex/` `.paa`→material pipeline |
-| `scripts/a3ob/ui/` | Dock UI package: `dock.py` + `panels/` (collapsible sections), `actions/` (scene business logic), `scene/` (Qt-free helpers), `autolod/`, `entry.py`, `constants.py`, `recent.py` |
-| `scripts/objectBuilderMenu.py` | Thin facade over `a3ob.ui` (kept for the plugin + mayapy tests) |
-| `scripts/objectBuilderAutoLOD.py` | Facade over `a3ob.ui.autolod` (auto-LOD generator) |
+| `scripts/a3ob/formats/` | Maya-independent format code (`p3d.py`, `binary.py`, `model_cfg.py`, `paa.py` texture decoder, `rvmat.py`, `serialize.py`) — runs under plain Python, no Maya |
+| `scripts/a3ob/mayabridge/` | Maya glue (API 2.0): `attributes.py` (the `a3ob*` schema), Maya↔MLOD conversion (`import_/`, `export/`), `commands/`, `translator.py`, the `paatex/` `.paa`→material pipeline, and the leaf helpers `lodwalk.py`, `skinquery.py`, `progress.py`, `weightsync.py` |
+| `scripts/a3ob/ui/` | Dock UI: `dock.py` + `panels/` (collapsible sections), `actions/` (scene business logic), `scene/` (Qt-free helpers), `autolod/`, `entry.py`, `_undo.py`, `constants.py`, `recent.py` |
+| `scripts/objectBuilderMenu.py`, `objectBuilderAutoLOD.py` | Facades the plugin and the mayapy tests load **by path** — keep them |
 | `plug-ins/MayaObjectBuilder.py` | Main scripted plugin (API 2.0): commands, dock, auto-loads the translator |
 | `plug-ins/MayaObjectBuilderTranslator.py` | Companion plugin (API 1.0): the `Arma P3D` `MPxFileTranslator` |
+| `tools/` | Developer-only: `dev_install.py`, `launch_maya_debug.ps1`, `package_release.ps1`. Deliberately **outside** `scripts/`, which Maya puts on `PYTHONPATH` — anything there is importable in every session |
 | `install/` | Release installer run from the extracted zip inside Maya |
-| `tests/python/` | Pure-Python format roundtrip tests |
-| `tests/mayapy/` | Maya integration workflows |
+| `tests/python/` | No-Maya tests: format round-trips, the `a3ob*` schema lock, QEM invariants, the numpy-free fallback path |
+| `tests/mayapy/` | Maya integration workflows; `_harness.py` holds the shared bootstrap and assertions |
+| `tests/run_all.py`, `tests/golden.py` | The one-command runner and the P3D byte gate |
 
 ---
 
