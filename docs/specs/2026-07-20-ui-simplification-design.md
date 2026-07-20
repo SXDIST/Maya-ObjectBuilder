@@ -17,7 +17,8 @@ tell which controls matter. Three changes cut the surface without losing capabil
 | What geometry does export generate from? | Exactly one selected mesh per export |
 | Where do LOD type/resolution live? | Edited inline, in the LOD list row |
 | Texture import default | On (preserves today's behaviour) |
-| The 23 inert option-box controls | Out of scope this round — see Known debt |
+| The 23 unwired option-box controls | Left in place — they are stubs for planned features |
+| The LOD1 rename | Removed; the generator stops consuming its source |
 
 ## Section 1 — merge LODs and LOD Properties
 
@@ -93,35 +94,44 @@ Menu values need entries in `mayaObjectBuilderP3DMenuLabelToValue` and its inver
 3. Generate, export, then delete everything generated — in `finally`, so a cancel or an
    exception leaves the scene as it was and no partial file behind.
 
-### The blocking refactor
+### The non-consuming refactor
 
 `generate_auto_lods` **consumes its source**: `_generate_resolution_lods` does
 `cmds.rename(source, name)` for index 0, so the user's mesh becomes LOD1, is marked as a
-LOD, and is reparented under `visuals`. Transient generation is therefore impossible
-without changing this — the source is one of the nodes that would be deleted.
+LOD, and is reparented under `visuals`. Transient generation is impossible while that
+stands — the source is one of the nodes that would be deleted.
 
-The generator must become non-consuming: index 0 duplicates the source like every other
-index and calls `_propagate_named_selections(source, duplicate, full_resolution=True)`.
-That path already exists and already carries both object-level and component-level sets;
-every a3ob set carries `a3obSelectionName`, which is what the propagation filters on and
-what the dock's `_selections_snapshot` relies on.
-
-**Open risk, must be measured before implementing.** Today LOD1 *is* the source, so it
-carries the live `skinCluster`. A duplicate does not. Per the export contract a live
-skinCluster always wins and export otherwise falls back to `a3obBakedWeights` — a transform
-attribute, which duplication does copy. So a duplicated LOD1 exports from the bake, and on
-an unbaked garment the weights differ from today's output. Clothing is the stated primary
-use case, so this is not hypothetical.
-
-The implementation plan must open with a `mayapy` measurement on a skinned garment:
-export byte counts and weight TAGGs from the consuming path versus the duplicating path.
-If they diverge, the duplicate must carry weights across (`copySkinWeights` onto a fresh
-bind, not `duplicate(upstreamNodes=True)`, which would clone the skeleton) before the rest
-of Section 2 proceeds.
+The rename is removed. Index 0 duplicates the source like every other index and calls
+`_propagate_named_selections(source, duplicate, full_resolution=True)`. That path already
+exists and carries both object-level and component-level sets; every a3ob set carries
+`a3obSelectionName`, which is what the propagation filters on and what the dock's
+`_selections_snapshot` relies on.
 
 Rolling the scene back with `cmds.undo()` instead was considered and rejected:
 `MFnSet.create` and `a3obFindComponents` never enter the undo queue, so the rollback would
 leave orphan sets behind.
+
+### Carrying the skin across — measured, not assumed
+
+A duplicate of a skinned mesh **has no skinCluster**. Since a live skinCluster is what
+export prefers, the duplicated LOD1 must be re-bound, and the re-bind must be exact.
+
+Measured on `Own_Dreykrus.mb` (`jacket`: 6892 verts, 25 influences, 172300 weights):
+
+| Method | Max abs deviation | Verts past the 1/254 encodable step |
+|--------|-------------------|-------------------------------------|
+| `cmds.copySkinWeights`, `closestPoint` / `oneToOne` | **0.1027** | 5 |
+| `MFnSkinCluster.setWeights` with the raw source array | **0.0** | 0 |
+
+`copySkinWeights` is not exact even on geometry duplicated from the source — coincident
+points make `closestPoint` association pick arbitrarily. It must not be used here.
+
+The required sequence is therefore: duplicate → `cmds.skinCluster(influences, dup,
+toSelectedBones=True)` → read the source array with `MFnSkinCluster.getWeights` → write it
+onto the duplicate with `setWeights` over a complete vertex component. A duplicate has
+identical vertex order, so index *i* maps to index *i* and no association step is needed.
+
+`duplicate(upstreamNodes=True)` is not an option — it would clone the skeleton.
 
 ### Layering
 
@@ -163,10 +173,12 @@ Regression gates that must not move:
   picking.
 - `dock_panel_sync.py` — panel refresh must stay silent, with its positive control intact.
 
-## Known debt, deliberately not addressed
+## Adjacent work, deliberately not addressed
+
+### The unwired option keys
 
 `translator.py` reads nine option keys. The option box offers thirty-two. These twenty-three
-are inert — the UI presents choices that change nothing:
+are stubs for features not yet built — the UI presents choices that change nothing:
 
 `enclose`, `groupBy`, `absolutePaths`, `additionalData`, `customNormals`,
 `flags`, `namedProperties`, `vertexMass`, `selections`, `uvSets`, `materials`, `sections`,
@@ -174,5 +186,19 @@ are inert — the UI presents choices that change nothing:
 `collisions`, `warningsAreErrors`, `renumberComponents`, `forceLowercase`,
 `exportTranslateSelections`, `preserveNormals`.
 
-Removing them is the single largest simplification available and is left for a follow-up.
-Until then, no new work should assume any of them has an effect.
+They stay. Until each is wired, no work may assume it has an effect, and the new Auto LOD
+and texture keys must not be modelled on them — those two are wired from day one.
+
+### Weight storage is its own design problem
+
+Measured on `Own_Dreykrus.mb`, `a3obBakedWeights` holds 1 429 194 characters across six
+garments — 24.3 characters per weight entry, storing full float precision for a value the
+P3D encodes in **one byte** at a 1/254 step. The same data as `uint16` vertex + `uint8`
+weight is roughly 180 KB. Two representations (live `skinCluster`, baked string) can also
+silently disagree, which is why `a3obBakedWeightsPrevious` and the restore-swap exist.
+
+Reworking that storage touches a hard contract and is not UI simplification. It gets its
+own spec; nothing in this one changes the bake format. Note for that spec: the P3D
+representation is name → list of `(vertex, weight)` — structurally identical to a Blender
+vertex group. Maya lacks a native per-component-weighted set, which is the whole reason
+the string attribute exists.
