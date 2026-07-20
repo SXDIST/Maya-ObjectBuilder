@@ -8,32 +8,70 @@ from a3ob.ui.widgets import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 
 
-def _why_nothing_restored(which):
-    """Name the actual reason a restore did nothing. Read-only — panels must not write."""
-    attribute = "a3obBakedWeightsPrevious" if which == "previous" else "a3obBakedWeights"
+def _weights_state():
+    """What the LODs in scope actually hold. Read-only — panels must never write.
+
+    The storage model (two hidden attribute slots, refreshed on save) is invisible, so the
+    buttons used to demand the user track it in their head. This is what makes it visible.
+    Kept to cheap attribute and history queries: it runs on every SelectionChanged.
+    """
     lods = [node for node in cmds.ls(selection=True, long=True, type="transform") or []
             if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)]
+    scope = "selected"
     if not lods:
         lods = cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []
-    if not lods:
-        return "Nothing restored: no Object Builder LOD selected."
+        scope = "scene"
 
-    stored, rigged = 0, 0
+    state = {"lods": len(lods), "scope": scope, "stored": 0, "previous": 0, "rigged": 0}
     for lod in lods:
-        if cmds.attributeQuery(attribute, node=lod, exists=True) and cmds.getAttr(lod + "." + attribute):
-            stored += 1
+        for key, attribute in (("stored", "a3obBakedWeights"),
+                               ("previous", "a3obBakedWeightsPrevious")):
+            if (cmds.attributeQuery(attribute, node=lod, exists=True)
+                    and cmds.getAttr(lod + "." + attribute)):
+                state[key] += 1
         shapes = cmds.listRelatives(lod, allDescendents=True, type="mesh",
                                     fullPath=True, noIntermediate=True) or []
         if shapes and cmds.ls(cmds.listHistory(shapes[0], pruneDagObjects=True) or [],
                               type="skinCluster"):
-            rigged += 1
+            state["rigged"] += 1
+    return state
 
-    if not stored:
-        return "Nothing restored: no {0} weights stored on the selected LOD(s).".format(which)
-    if not rigged:
-        return ("Nothing restored: the {0} weights are safe, but there is no skinCluster to "
-                "put them on. Bind the mesh to the skeleton first, then restore.".format(which))
-    return "Nothing restored — see the script editor for why."
+
+def _weights_state_text(state):
+    """One line a rigger can act on, without knowing the storage model exists."""
+    if not state["lods"]:
+        return "No Object Builder LOD in the scene."
+
+    where = "selected LOD" if state["scope"] == "selected" else "scene"
+    if not state["stored"]:
+        return ("No stored weights ({0}). Deleting the rig would lose them — "
+                "bake, or just save the scene.".format(where))
+
+    parts = ["Stored weights on {0}/{1} LOD(s)".format(state["stored"], state["lods"])]
+    if state["previous"]:
+        parts.append("older copy kept")
+    if not state["rigged"]:
+        parts.append("no rig bound - bind before restoring")
+    elif state["previous"]:
+        # store_bake pushes the older copy out the next time the live rig differs from the
+        # stored one, which is one save away after a re-bind. Say so BEFORE it happens.
+        parts.append("WARNING: the older copy is one save from being overwritten")
+    return "  |  ".join(parts)
+
+
+def _why_nothing_restored(which):
+    """Name the actual reason a restore did nothing, instead of pointing at the log."""
+    state = _weights_state()
+    if not state["lods"]:
+        return "Nothing restored: no Object Builder LOD selected."
+    if which == "previous" and not state["previous"]:
+        return "Nothing restored: there is no older copy stored."
+    if which != "previous" and not state["stored"]:
+        return "Nothing restored: no weights stored on the selected LOD(s)."
+    if not state["rigged"]:
+        return ("Nothing restored: the weights are safe, but there is no skinCluster to put "
+                "them on. Bind the mesh to the skeleton first, then restore.")
+    return "Nothing restored - see the script editor for why."
 
 
 class SkinningPanelMixin:
@@ -89,25 +127,37 @@ class SkinningPanelMixin:
             "Bend knees/elbows/shoulders, select deformation spikes, restore the pose.",
             ":/aselect.png"))
 
-        layout.addWidget(_hint("Deleting the skeleton deletes the weights with it. Bake them "
-                               "onto the LODs first and they survive — export falls back to "
-                               "them when no skinCluster is left. Re-bound the mesh since? "
-                               "Restore puts the stored weights back on the new rig."))
+        layout.addWidget(_hint("The mesh keeps its own copy of the weights, refreshed every "
+                               "time you save, so deleting the rig does not lose them. After "
+                               "re-binding, Restore puts them back on the new skeleton."))
+        # The state line is the point: the two attribute slots behind these buttons are
+        # invisible, so without it the user has to track in their head whether a save has
+        # happened since a re-bind in order to pick a button.
+        self.weights_state_label = _hint("")
+        layout.addWidget(self.weights_state_label)
+
         bake_row = qt_widgets.QHBoxLayout()
         bake_row.addWidget(_qt_button(
-            "Bake Weights onto LODs", self.run_bake_skin,
-            "Copy the live skinCluster weights onto the LOD transforms before deleting a rig.",
-            ":/save.png"))
-        bake_row.addWidget(_qt_button(
-            "Restore onto Rig", self.run_restore_skin,
-            "Write the baked weights back onto the current skinCluster, matching bones by "
-            "name. Not undoable — the weights it replaces go to the previous copy.",
+            "Restore Weights", self.run_restore_skin,
+            "Write the stored weights back onto the current skinCluster, matching bones by "
+            "name. Not undoable — what it replaces is kept as the older copy.",
             ":/undo_s.png"))
-        bake_row.addWidget(_qt_button(
-            "Restore Previous", lambda: self.run_restore_skin(previous=True),
+        # Hidden until it is the answer to a question the user has actually asked: it appears
+        # after a restore ("not the copy you wanted?") or when the state shows an older copy
+        # exists and the rig was re-bound. Two Restore buttons side by side was the thing
+        # nobody could choose between.
+        self.restore_previous_button = _qt_button(
+            "Use the Older Copy", lambda: self.run_restore_skin(previous=True),
             "Restore the copy the last overwrite replaced — the way back when a save "
-            "refreshed the bake from a rig you had just re-bound. Runs as a swap.",
-            ":/undo.png"))
+            "refreshed the stored weights from a rig you had just re-bound. Runs as a swap.",
+            ":/undo.png")
+        self.restore_previous_button.setVisible(False)
+        bake_row.addWidget(self.restore_previous_button)
+        bake_row.addWidget(_qt_button(
+            "Bake Now", self.run_bake_skin,
+            "Force a copy right now. Usually unnecessary — saving the scene does it — but "
+            "useful just before deleting a rig if you have not saved since.",
+            ":/save.png"))
         layout.addLayout(bake_row)
 
         layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
@@ -171,21 +221,47 @@ class SkinningPanelMixin:
     def run_bake_skin(self):
         baked = _bake_skin_weights()
         self._set_skinning_summary(
-            "Baked weights onto {0} LOD(s) — they now survive deleting the rig.".format(baked)
-            if baked else "Nothing baked: no skinned LOD found.")
+            "Stored the weights of {0} LOD(s) — they now survive deleting the rig.".format(baked)
+            if baked else "Nothing stored: no skinned LOD found.")
+        self.refresh_weights_state()
 
     def run_restore_skin(self, previous=False):
         restored = _restore_skin_weights(previous)
         which = "previous" if previous else "baked"
         if restored:
             self._set_skinning_summary(
-                "Restored the {0} weights onto {1} LOD(s).".format(which, restored))
+                "Restored onto {0} LOD(s). Not what you expected? The copy it replaced is "
+                "one click away.".format(restored) if not previous
+                else "Restored the older copy onto {0} LOD(s). Running it again swaps "
+                     "back.".format(restored))
+            # Offer the way back only once there is something to go back to, and only after
+            # the user has seen a result they might disagree with.
+            self._show_restore_previous(True)
+            self.refresh_weights_state()
             return
-        # "see the script editor" sent people looking for a bug that was not there. By far the
+        # "see the script editor" sent people hunting for a bug that was not there. By far the
         # most common reason is restoring straight after an Unbind: restore WRITES weights into
         # a live skinCluster, so with no rig bound there is nothing to write onto. The stored
         # copy is untouched — say that, rather than leaving it looking like the bake was lost.
         self._set_skinning_summary(_why_nothing_restored(which))
+        self.refresh_weights_state()
+
+    def _show_restore_previous(self, visible):
+        button = getattr(self, "restore_previous_button", None)
+        if button is not None:
+            button.setVisible(bool(visible))
+
+    def refresh_weights_state(self):
+        """Update the stored-weights line. Silent and read-only: runs on SelectionChanged."""
+        label = getattr(self, "weights_state_label", None)
+        if label is None:
+            return
+        state = _weights_state()
+        label.setText(_weights_state_text(state))
+        # Surface the older copy when it is likely to be the one wanted: a rig is bound and a
+        # previous copy exists, which is exactly the post-re-bind situation.
+        if state["previous"] and state["rigged"]:
+            self._show_restore_previous(True)
 
     def refresh_influences(self):
         """Repopulate the influence list from the selected mesh, keeping the highlight."""

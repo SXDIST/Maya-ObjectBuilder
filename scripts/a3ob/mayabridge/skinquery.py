@@ -94,6 +94,17 @@ def store_bake(transform, text):
     if existing == text:
         return False
     if existing:
+        # Losing the older copy is the one unrecoverable step in this whole scheme, and it
+        # happens silently on an ordinary save — one save after a re-bind, the good weights
+        # move here; the next save that changes anything pushes them out for good. Say so at
+        # the moment it happens rather than leaving the user to discover it later. Saves are
+        # infrequent, so this cannot become the Script Editor spam a refresh warning would.
+        if attr.get_string(transform, A.BAKED_WEIGHTS_PREVIOUS):
+            om.MGlobal.displayWarning(
+                "MayaObjectBuilder: %s - the older copy of the skin weights has been "
+                "replaced and is no longer recoverable. Use Skinning > Restore Weights "
+                "before saving again if the stored weights are not the ones you want."
+                % om.MFnDependencyNode(transform).name())
         attr.set_string(transform, A.BAKED_WEIGHTS_PREVIOUS, existing)
     attr.set_string(transform, A.BAKED_WEIGHTS, text)
     return True

@@ -134,7 +134,9 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Proxies", self._build_proxies_section(), True, None),
             ("Memory Points", self._build_memory_points_section(), True, None),
-            ("Skinning", self._build_skinning_tab(), True, None),
+            # Refreshed on expand rather than on SelectionChanged: the state line costs a
+            # scene scan, and component picking must stay free (dock_refresh_cost.py).
+            ("Skinning", self._build_skinning_tab(), True, self.refresh_weights_state),
             ("Validation", self._build_validation_tab(), True, None),
         ]
         self.memory_points_group = None
