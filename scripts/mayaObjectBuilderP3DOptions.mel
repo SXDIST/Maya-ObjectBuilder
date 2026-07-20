@@ -226,8 +226,8 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             optionMenu -label "First LOD" mayaObjectBuilderAutoLodFirst;
             menuItem -label "LOD1";
             menuItem -label "LOD0";
-            checkBox -label "Resolution LODs" mayaObjectBuilderAutoLodResolution;
-            checkBox -label "Geometry LOD" mayaObjectBuilderAutoLodGeometry;
+            checkBox -label "Resolution LODs" -value true mayaObjectBuilderAutoLodResolution;
+            checkBox -label "Geometry LOD" -value true mayaObjectBuilderAutoLodGeometry;
             checkBox -label "Memory LOD" mayaObjectBuilderAutoLodMemory;
             checkBox -label "Fire Geometry LOD" mayaObjectBuilderAutoLodFire;
             checkBox -label "View Geometry LOD" mayaObjectBuilderAutoLodView;

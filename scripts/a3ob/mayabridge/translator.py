@@ -28,6 +28,9 @@ DEFAULT_OPTIONS = ";".join([
     "exportValidateMeshes=0", "applyModifiers=1", "applyTransforms=1", "sortSections=1",
     "generateComponents=1", "collisions=fail", "validateLods=0", "warningsAreErrors=1",
     "renumberComponents=0", "forceLowercase=1", "exportTranslateSelections=0",
+    "autoLod=0", "autoLodOutput=quads", "autoLodReduction=aggressive", "autoLodFirst=LOD1",
+    "autoLodResolution=1", "autoLodGeometry=1", "autoLodMemory=0", "autoLodFire=0",
+    "autoLodView=0", "autoLodGeometryType=BOX", "autoLodFireQuality=2",
 ])
 
 
