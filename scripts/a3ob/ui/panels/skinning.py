@@ -8,6 +8,34 @@ from a3ob.ui.widgets import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 
 
+def _why_nothing_restored(which):
+    """Name the actual reason a restore did nothing. Read-only — panels must not write."""
+    attribute = "a3obBakedWeightsPrevious" if which == "previous" else "a3obBakedWeights"
+    lods = [node for node in cmds.ls(selection=True, long=True, type="transform") or []
+            if cmds.attributeQuery("a3obIsLOD", node=node, exists=True)]
+    if not lods:
+        lods = cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []
+    if not lods:
+        return "Nothing restored: no Object Builder LOD selected."
+
+    stored, rigged = 0, 0
+    for lod in lods:
+        if cmds.attributeQuery(attribute, node=lod, exists=True) and cmds.getAttr(lod + "." + attribute):
+            stored += 1
+        shapes = cmds.listRelatives(lod, allDescendents=True, type="mesh",
+                                    fullPath=True, noIntermediate=True) or []
+        if shapes and cmds.ls(cmds.listHistory(shapes[0], pruneDagObjects=True) or [],
+                              type="skinCluster"):
+            rigged += 1
+
+    if not stored:
+        return "Nothing restored: no {0} weights stored on the selected LOD(s).".format(which)
+    if not rigged:
+        return ("Nothing restored: the {0} weights are safe, but there is no skinCluster to "
+                "put them on. Bind the mesh to the skeleton first, then restore.".format(which))
+    return "Nothing restored — see the script editor for why."
+
+
 class SkinningPanelMixin:
     def _build_skinning_tab(self):
         widget = qt_widgets.QWidget()
@@ -149,9 +177,15 @@ class SkinningPanelMixin:
     def run_restore_skin(self, previous=False):
         restored = _restore_skin_weights(previous)
         which = "previous" if previous else "baked"
-        self._set_skinning_summary(
-            "Restored the {0} weights onto {1} LOD(s).".format(which, restored) if restored
-            else "Nothing restored — see the script editor for why.")
+        if restored:
+            self._set_skinning_summary(
+                "Restored the {0} weights onto {1} LOD(s).".format(which, restored))
+            return
+        # "see the script editor" sent people looking for a bug that was not there. By far the
+        # most common reason is restoring straight after an Unbind: restore WRITES weights into
+        # a live skinCluster, so with no rig bound there is nothing to write onto. The stored
+        # copy is untouched — say that, rather than leaving it looking like the bake was lost.
+        self._set_skinning_summary(_why_nothing_restored(which))
 
     def refresh_influences(self):
         """Repopulate the influence list from the selected mesh, keeping the highlight."""
