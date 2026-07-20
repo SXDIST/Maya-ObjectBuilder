@@ -13,14 +13,6 @@ def _is_object_builder_set(node):
     return _attr_exists(node, "a3obSelectionName") or _attr_exists(node, "a3obIsProxySelection") or _attr_exists(node, "a3obFlagComponent")
 
 
-def _set_bool_attr(node, attr, value):
-    if not _node_exists(node):
-        return
-    if not _attr_exists(node, attr):
-        cmds.addAttr(node, longName=attr, attributeType="bool")
-    cmds.setAttr(f"{node}.{attr}", bool(value))
-
-
 def _hide_object_builder_set(node):
     if not _is_object_builder_set(node):
         return

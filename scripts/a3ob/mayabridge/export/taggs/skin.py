@@ -15,6 +15,7 @@ from a3ob.formats import p3d
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge import skinweights as sw
+from a3ob.mayabridge.skinquery import complete_vertex_component
 
 _MAX_INFLUENCES = sw.MAX_INFLUENCES  # DayZ blends at most 4 bones per vertex
 
@@ -59,13 +60,6 @@ def _influence_names(skin_fn):
             seen[leaf] = full
         names.append(leaf)
     return names
-
-
-def _complete_vertex_component(mesh_path):
-    comp_fn = om.MFnSingleIndexedComponent()
-    component = comp_fn.create(om.MFn.kMeshVertComponent)
-    comp_fn.setCompleteData(om.MFnMesh(mesh_path).numVertices)
-    return component
 
 
 def _add_baked_weight_taggs(lod_node, vertex_source_indices, lod):
@@ -117,7 +111,7 @@ def _add_skin_weight_taggs(mesh_path, vertex_source_indices, lod):
     if influence_count == 0:
         return 0
 
-    weights, returned_count = skin_fn.getWeights(mesh_path, _complete_vertex_component(mesh_path))
+    weights, returned_count = skin_fn.getWeights(mesh_path, complete_vertex_component(mesh_path))
     if returned_count != influence_count:
         # Maya's contract says this column count equals len(influenceObjects()). Carrying on
         # with a mismatch used to index `names` out of range or silently starve bones of

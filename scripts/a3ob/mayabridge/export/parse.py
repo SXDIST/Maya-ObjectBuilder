@@ -14,7 +14,11 @@ import maya.cmds as cmds
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
+from a3ob.mayabridge.lodwalk import lod_dag_path_for
 from a3ob.formats import p3d
+# The split has to be the same one the import side serializes with, so it is defined once in
+# the Maya-free layer both may import — not copied here again.
+from a3ob.formats.serialize import split_semicolon as _split_semicolon  # noqa: F401
 
 
 
@@ -30,10 +34,6 @@ def maya_to_core_vector(vector):
 # =============================================================================
 # stored-metadata parsing (inverse of mesh_import serialization)
 # =============================================================================
-
-
-def _split_semicolon(value):
-    return [part for part in value.split(";") if part]
 
 
 def _split_float_values(value):
@@ -90,17 +90,7 @@ def _split_properties(value):
 
 def _resolve_lod_path(dag_path):
     """The LOD ancestor of ``dag_path``, if any — the ``lod_path`` walk it stands for."""
-    dag_node = dag_path.node()
-    if dag_node.hasFn(om.MFn.kTransform) and attr.get_bool(dag_node, A.IS_LOD):
-        return om.MDagPath(dag_path)
-    walker = om.MDagPath(dag_path)
-    if walker.hasFn(om.MFn.kMesh):
-        walker.pop()
-    while walker.length() > 0:
-        if walker.node().hasFn(om.MFn.kTransform) and attr.get_bool(walker.node(), A.IS_LOD):
-            return om.MDagPath(walker)
-        walker.pop()
-    return None
+    return lod_dag_path_for(dag_path)
 
 
 def _lod_paths_below(dag_path):

@@ -4,6 +4,7 @@ import re
 
 import maya.api.OpenMaya as om
 
+from a3ob.formats.serialize import split_semicolon  # noqa: F401 - re-exported below
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
 
@@ -20,10 +21,6 @@ _COMPONENT_RE = re.compile(r"^[Cc]omponent\d+$")
 # =============================================================================
 # string / value helpers
 # =============================================================================
-
-
-def split_semicolon(value):
-    return [part for part in value.split(";") if part]
 
 
 def split_properties(value):
@@ -83,7 +80,13 @@ def proxy_selection_name(path, index):
 
 
 def normalize_dayz_path(value):
-    path = value.strip()
+    """A texture/material path in the form DayZ stores it: backslashes, no drive, no runs.
+
+    Single definition for the whole plugin — ``a3ob.ui.scene.attrs`` imports it rather than
+    keeping its own. The UI's former copy accepted ANY character before the colon as a drive
+    letter, so "1:\\weird.paa" and "_:bar" lost their first two characters; the ``isalpha``
+    test here is the correct one and is what survived the merge."""
+    path = (value or "").strip()
     path = path.replace("/", "\\")
     if len(path) >= 2 and path[1] == ":" and path[0].isalpha():
         path = path[2:]

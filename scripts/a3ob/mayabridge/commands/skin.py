@@ -12,54 +12,22 @@ unit-tested); this module supplies the Maya plumbing.
 """
 
 import maya.api.OpenMaya as om
-import maya.api.OpenMayaAnim as oma
-import maya.cmds as cmds
 
 from a3ob.mayabridge import skinweights as sw
+# skinCluster reading and the baked-weight store live in a leaf module: weightsync needs the
+# reading half and this module needs the storing half, which used to be a pair of lazy
+# imports pointing at each other. Names are re-exported below, they are part of this
+# module's published surface.
+from a3ob.mayabridge.skinquery import (  # noqa: F401
+    complete_vertex_component as _complete_vertex_component,
+    influence_leaf_names,
+    read_skin,
+    skin_cluster_for_mesh,
+    store_bake,
+    vertex_neighbours as _vertex_neighbours,
+)
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
-
-
-def skin_cluster_for_mesh(mesh_path):
-    """The skinCluster deforming ``mesh_path``, as an MObject, or None."""
-    history = cmds.listHistory(mesh_path.fullPathName(), pruneDagObjects=True) or []
-    skins = cmds.ls(history, type="skinCluster") or []
-    if not skins:
-        return None
-    selection = om.MSelectionList()
-    selection.add(skins[0])
-    return selection.getDependNode(0)
-
-
-def _complete_vertex_component(mesh_path):
-    component_fn = om.MFnSingleIndexedComponent()
-    component = component_fn.create(om.MFn.kMeshVertComponent)
-    component_fn.setCompleteData(om.MFnMesh(mesh_path).numVertices)
-    return component
-
-
-def _vertex_neighbours(mesh_path):
-    """Connected-vertex ids per vertex."""
-    neighbours = [[] for _ in range(om.MFnMesh(mesh_path).numVertices)]
-    vertex_it = om.MItMeshVertex(mesh_path)
-    while not vertex_it.isDone():
-        neighbours[vertex_it.index()] = list(vertex_it.getConnectedVertices())
-        vertex_it.next()
-    return neighbours
-
-
-def read_skin(mesh_path):
-    """``(skin_fn, weights, influence_count, neighbours)`` for a skinned mesh, or None."""
-    skin_obj = skin_cluster_for_mesh(mesh_path)
-    if skin_obj is None:
-        return None
-    skin_fn = oma.MFnSkinCluster(skin_obj)
-    if not skin_fn.influenceObjects():
-        return None
-    weights, influence_count = skin_fn.getWeights(mesh_path, _complete_vertex_component(mesh_path))
-    if influence_count <= 0:
-        return None
-    return skin_fn, list(weights), influence_count, _vertex_neighbours(mesh_path)
 
 
 def outliers_for_mesh(mesh_path, threshold=sw.DEFAULT_OUTLIER_THRESHOLD):
@@ -349,15 +317,9 @@ class BakeSkinCommand(_Base):
             return
         self.setResult(self._bake(selection_only))
 
-    @staticmethod
-    def _influence_names(skin_fn):
-        return [p.partialPathName().split("|")[-1].split(":")[-1]
-                for p in skin_fn.influenceObjects()]
+    _influence_names = staticmethod(influence_leaf_names)
 
     def _bake(self, selection_only):
-        from a3ob.mayabridge import skinweights as sw
-        from a3ob.mayabridge.weightsync import store_bake
-
         baked = 0
         with undo_chunk():
             for lod in lod_transforms(selection_only):
@@ -389,11 +351,8 @@ class BakeSkinCommand(_Base):
         The price is that the API write never enters the undo queue, so this bakes the live
         weights into the previous slot on the way past — that stash, not Ctrl+Z, is how a
         restore gets taken back."""
-        import maya.api.OpenMayaAnim as oma  # noqa: F401 - MFnSkinCluster already imported
-        from a3ob.mayabridge import skinweights as sw
         from a3ob.mayabridge import attributes as attr
         from a3ob.mayabridge.attributes import A
-        from a3ob.mayabridge.weightsync import store_bake
 
         slot = A.BAKED_WEIGHTS_PREVIOUS if previous else A.BAKED_WEIGHTS
         restored = 0

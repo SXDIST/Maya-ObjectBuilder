@@ -6,6 +6,7 @@ from a3ob.formats.p3d import LodResolution
 
 from a3ob.mayabridge import attributes as attr
 from a3ob.mayabridge.attributes import A
+from a3ob.mayabridge.lodwalk import lod_dag_path_for
 
 from a3ob.mayabridge.commands.helpers.primitives import *  # noqa: F401,F403
 
@@ -44,15 +45,11 @@ def selected_transform_or_null():
 
 
 def lod_transform_for_path(dag_path):
-    node = dag_path.node()
-    while not node.isNull():
-        if node.hasFn(om.MFn.kTransform) and attr.get_bool(node, A.IS_LOD):
-            return node
-        dag = om.MFnDagNode(node)
-        if dag.parentCount() == 0:
-            break
-        node = dag.parent(0)
-    return NULL
+    """The LOD transform at or above ``dag_path``, as an MObject, or NULL.
+
+    The walk itself is shared with the export side — see ``a3ob.mayabridge.lodwalk``."""
+    lod_path = lod_dag_path_for(dag_path)
+    return lod_path.node() if lod_path is not None else NULL
 
 
 def selected_lod_or_null():

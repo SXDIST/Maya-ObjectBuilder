@@ -19,14 +19,26 @@ def _lod_transforms():
     return cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []
 
 
+def _lod_ancestor(item):
+    """The nearest LOD transform at or above ``item``, as a full DAG path, else "".
+
+    ``item`` may be a node or a component ("mesh.f[3]"/"mesh.vtx[7]"); the component part is
+    dropped first. The walk stops at the FIRST node carrying a3obIsLOD — a LOD nested under
+    another LOD belongs to itself, not to the outer one."""
+    current = item.split(".", 1)[0]
+    while current:
+        if _is_lod_transform(current):
+            return (cmds.ls(current, long=True) or [current])[0]
+        parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
+        current = parents[0] if parents else ""
+    return ""
+
+
 def _selected_lod_transform():
     for node in cmds.ls(selection=True, long=True) or []:
-        current = node.split(".", 1)[0]  # component (mesh.f[..]/.vtx[..]) -> its shape/transform
-        while current:
-            if _is_lod_transform(current):
-                return current
-            parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
-            current = parents[0] if parents else ""
+        lod = _lod_ancestor(node)
+        if lod:
+            return lod
     return None
 
 
@@ -51,14 +63,10 @@ def _lod_node_for_set(set_node):
     share a label: a helmet and two body resolutions all came back as "Resolution 1", so
     anything keyed on the label folds them into one."""
     try:
-        members = cmds.sets(set_node, query=True) or []
-        for member in members:
-            current = member.split(".", 1)[0]
-            while current:
-                if _is_lod_transform(current):
-                    return cmds.ls(current, long=True)[0]
-                parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
-                current = parents[0] if parents else ""
+        for member in cmds.sets(set_node, query=True) or []:
+            lod = _lod_ancestor(member)
+            if lod:
+                return lod
     except RuntimeError:  # noqa: BLE001 - set or its members may be stale during scene edit; "" means "Other" bucket
         pass
     return ""
@@ -79,32 +87,35 @@ def _transform_of(node):
     return parents[0] if parents else ""
 
 
-def _owner_node_for_set(set_node):
-    """The node a selection set belongs to: its LOD if it has one, else its own mesh.
+def _owner_node_for(lod, items):
+    """The node some components belong to: their LOD if there is one, else their own mesh.
 
     Selections are useful before a mesh is marked as a LOD — that is the order people
     actually work in, modelling and naming parts first. Keying strictly on the LOD meant a
-    set created on an unmarked mesh existed in the scene but appeared in no panel."""
-    lod = _lod_node_for_set(set_node)
+    set created on an unmarked mesh existed in the scene and exported fine while appearing
+    in no panel at all, which reads as "my selection was not created".
+
+    Hence the fallback, and hence the panels key on an OWNER rather than strictly on a LOD.
+    ``lod`` and ``items`` are the only things that differ between the two seeds below: a
+    selection set (its LOD, its members) and the viewport selection."""
     if lod:
         return lod
-    for member in cmds.sets(set_node, query=True) or []:
-        owner = _transform_of(member.split(".", 1)[0])
+    for item in items:
+        owner = _transform_of(item.split(".", 1)[0])
         if owner:
             return owner
     return ""
 
 
+def _owner_node_for_set(set_node):
+    """The node a selection set belongs to. See ``_owner_node_for``."""
+    return _owner_node_for(_lod_node_for_set(set_node), cmds.sets(set_node, query=True) or [])
+
+
 def _selected_selection_owner():
     """What the Selections panel should be showing: the selected LOD, else the mesh."""
-    lod = _selected_lod_transform()
-    if lod:
-        return lod
-    for node in cmds.ls(selection=True, long=True) or []:
-        owner = _transform_of(node.split(".", 1)[0])
-        if owner:
-            return owner
-    return None
+    return _owner_node_for(_selected_lod_transform(),
+                           cmds.ls(selection=True, long=True) or []) or None
 
 
 def _lod_list_target(active, previous):
@@ -200,6 +211,7 @@ def _set_kind(is_proxy, flag_component):
 __all__ = [
     "_is_lod_transform",
     "_lod_transforms",
+    "_lod_ancestor",
     "_selected_lod_transform",
     "_lod_name_from_transform",
     "_lod_label",
@@ -207,6 +219,7 @@ __all__ = [
     "_lod_node_for_set",
     "_lod_list_target",
     "_transform_of",
+    "_owner_node_for",
     "_owner_node_for_set",
     "_selected_selection_owner",
     "_set_lod_label",

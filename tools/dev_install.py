@@ -26,6 +26,12 @@ def _repo_root():
 
 
 def _modules_dir():
+    # NOTE: install/install_maya.py has its own _modules_dir/_module_text writing the same
+    # .mod format. That duplication is deliberate and must stay. install_maya.py is the
+    # drag-into-Maya end-user installer: it is copied out of this repo and run on its own,
+    # importing nothing but the stdlib and maya.cmds, so it cannot reach anything in tools/.
+    # Nothing in tools/ ships in a release either. Change the .mod format and you must edit
+    # BOTH — there is no shared home for them to have.
     return Path(cmds.internalVar(userAppDir=True)).resolve() / "modules"
 
 

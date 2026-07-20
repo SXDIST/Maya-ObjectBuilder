@@ -205,9 +205,16 @@ def _delete_existing_component_sets(lod, mesh_path):
 def _cmds_ensure_attr(node_name, attr_pair, kind):
     """Add ``attr_pair`` to ``node_name`` via cmds.addAttr if it is not already there.
 
+    This looks like a duplicate of ``attributes.set_bool``/``set_int``/``set_string`` and is
+    NOT one: the two families differ in undo semantics, which is the whole reason both exist.
+
     cmds.addAttr/setAttr (unlike attr.set_* with no modifier, or an MDagModifier) enter
     Maya's own undo queue, which is what a non-undoable _Base command wrapped in
-    undo_chunk() relies on to make attribute writes on a PRE-EXISTING node revertible."""
+    undo_chunk() relies on to make attribute writes on a PRE-EXISTING node revertible.
+    a3obProxy / a3obUpdateProxy are exactly that shape — they build objectSets, which cannot
+    go through an MDagModifier, so they are non-undoable + undo_chunk(). Routing their writes
+    through attr.set_* instead left the rename undone by Ctrl+Z while the metadata silently
+    stayed changed. Collapsing these into the OpenMaya wrappers would reintroduce that."""
     long_name, short_name = attr_pair
     if cmds.attributeQuery(long_name, node=node_name, exists=True):
         return
@@ -271,7 +278,7 @@ def vertex_source_index_map(transform):
     if not raw:
         return []
     indices = []
-    for token in raw.split(";"):
+    for token in split_semicolon(raw):
         token = token.strip()
         if not token:
             continue

@@ -13,9 +13,15 @@ expected to write.
 import maya.api.OpenMaya as om
 import maya.cmds as cmds
 
-from a3ob.mayabridge import attributes as attr
-from a3ob.mayabridge.attributes import A
 from a3ob.mayabridge import skinweights as sw
+# read_skin used to be a lazy import out of commands.skin, and store_bake was defined here
+# and lazily imported BY commands.skin — a genuine mutual cycle held apart only by deferring
+# both halves to call time. They now live in a leaf below both, imported normally.
+from a3ob.mayabridge.skinquery import (  # noqa: F401 - store_bake is re-exported
+    influence_leaf_names,
+    read_skin,
+    store_bake,
+)
 
 _callback_ids = []
 
@@ -25,8 +31,6 @@ def sync_all_lods():
 
     Returns how many LODs were updated. LODs without a skinCluster are left alone:
     their stored weights are the only copy left and must not be cleared."""
-    from a3ob.mayabridge.commands.skin import read_skin
-
     updated = 0
     for lod in cmds.ls("*.a3obIsLOD", objectsOnly=True, long=True) or []:
         shapes = cmds.listRelatives(lod, allDescendents=True, type="mesh",
@@ -40,8 +44,7 @@ def sync_all_lods():
         if skin is None:
             continue
         skin_fn, weights, influence_count, _neighbours = skin
-        names = [p.partialPathName().split("|")[-1].split(":")[-1]
-                 for p in skin_fn.influenceObjects()]
+        names = influence_leaf_names(skin_fn)
         text = sw.bake_string(names, weights, influence_count)
         if not text:
             continue
@@ -50,25 +53,6 @@ def sync_all_lods():
         store_bake(node.getDependNode(0), text)
         updated += 1
     return updated
-
-
-def store_bake(transform, text):
-    """Write ``text`` as the LOD's baked weights, keeping the copy it replaces.
-
-    Sync runs on every save from whatever skinCluster is live, which is right until the live
-    one is a rig that was just re-bound: the fresh bind's defaults then overwrite a good bake
-    and the only copy is gone. There is no reliable way to tell a deliberate re-bake from
-    that accident — a fresh bind looks like any other rig — so instead of guessing, the
-    previous value is always kept and ``a3obBakeSkin -restore -previous`` can reach it."""
-    if not text:
-        return False
-    existing = attr.get_string(transform, A.BAKED_WEIGHTS) or ""
-    if existing == text:
-        return False
-    if existing:
-        attr.set_string(transform, A.BAKED_WEIGHTS_PREVIOUS, existing)
-    attr.set_string(transform, A.BAKED_WEIGHTS, text)
-    return True
 
 
 def _on_before_save(*_args):
@@ -96,4 +80,6 @@ def uninstall():
             pass
 
 
-__all__ = ["sync_all_lods", "install", "uninstall"]
+# store_bake is re-exported: it moved to skinquery, but the plugin, the docs and
+# tests/mayapy/weight_sync.py all reach it as weightsync.store_bake.
+__all__ = ["sync_all_lods", "store_bake", "install", "uninstall"]

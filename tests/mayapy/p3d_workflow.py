@@ -307,6 +307,47 @@ def assert_stale_selection_ui_refresh():
     print("OK stale and empty Selection Manager data is pruned")
 
 
+def assert_dayz_path_helper_is_shared(ui):
+    """The UI path helper and the command-helper one must be one function, and agree.
+
+    They used to be two: a manual character loop in
+    ``mayabridge/commands/helpers/primitives.py`` and a ``re.sub`` in ``ui/scene/attrs.py``.
+    The table below is the set of inputs the merge was checked against — trailing and
+    doubled separators, mixed slashes, an already-normalized path, the empty string, None,
+    and the one case where they genuinely DISAGREED: the regex copy treated any character
+    before a colon as a drive letter, so "1:\\weird.paa" and "_:bar" silently lost their
+    first two characters. The isalpha() test is the correct one and is what was kept."""
+    from a3ob.mayabridge.commands.helpers.primitives import normalize_dayz_path
+
+    if ui["_normalize_dayz_path"] is not normalize_dayz_path:
+        raise RuntimeError("ui/_normalize_dayz_path is no longer the shared primitive")
+
+    cases = [
+        ("", ""),
+        ("   ", ""),
+        (None, ""),                                            # UI fields can hand over None
+        ("tex.paa", "tex.paa"),                                # already normalized
+        (r"P:\Mods\MyMod\tex_ca.paa", r"Mods\MyMod\tex_ca.paa"),
+        ("P:/Mods/MyMod/tex_ca.paa", r"Mods\MyMod\tex_ca.paa"),
+        (r"p:\a\b.paa", r"a\b.paa"),                           # lowercase drive
+        (r"  P:\a\b.paa  ", r"a\b.paa"),                       # surrounding whitespace
+        ("Mods\\\\MyMod\\\\\\tex.paa", r"Mods\MyMod\tex.paa"),  # doubled separators collapse
+        (r"a\b//c\\d", r"a\b\c\d"),                            # mixed slashes
+        ("Mods\\MyMod\\", "Mods\\MyMod\\"),                    # trailing separator is KEPT
+        ("P:", ""),
+        ("P:\\", ""),
+        (r"1:\weird.paa", r"1:\weird.paa"),                    # not a drive: nothing stripped
+        ("_:bar", "_:bar"),
+        ("::foo", "::foo"),
+        ("x:y", "y"),                                          # 'x' is a letter, so it is
+    ]
+    for value, expected in cases:
+        got = normalize_dayz_path(value)
+        if got != expected:
+            raise RuntimeError(f"normalize_dayz_path({value!r}) = {got!r}, expected {expected!r}")
+    print("OK DayZ path normalization has one home and one behaviour")
+
+
 def assert_ui_redesign_helpers_load():
     ui = runpy.run_path(str(UI_SCRIPT))
     for name in ("MayaObjectBuilderDock", "_build_qt_dock", "_delete_qt_dock", "_qt_button", "_qt_icon",
@@ -317,6 +358,7 @@ def assert_ui_redesign_helpers_load():
             raise RuntimeError(f"Missing redesigned UI helper: {name}")
     if ui["_normalize_dayz_path"](r"P:\\Mods\\MyMod\\data\\tex_ca.paa") != r"Mods\MyMod\data\tex_ca.paa":
         raise RuntimeError("DayZ path helper did not normalize Windows paths")
+    assert_dayz_path_helper_is_shared(ui)
     dock_class = ui["MayaObjectBuilderDock"]
     # accordion section builders + reused panel builders + data-refresh methods
     # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so

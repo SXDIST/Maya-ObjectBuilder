@@ -50,6 +50,10 @@ def _install_root():
 
 
 def _modules_dir():
+    # NOTE: tools/dev_install.py has its own _modules_dir/_module_text writing the same .mod
+    # format. Keep both. This file is dragged into Maya and run standalone, so it may import
+    # only the stdlib and maya.cmds — importing a shared helper out of the repo would break
+    # the one thing it is for. Change the .mod format and you must edit BOTH.
     return _maya_documents_dir() / "modules"
 
 
