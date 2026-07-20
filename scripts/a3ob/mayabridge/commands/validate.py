@@ -105,6 +105,7 @@ class ValidateCommand(_Base):
             if not mesh.isNull():
                 self._validate_mesh(lod, mesh, name, source_face_count, proxy_selections, log)
 
+        self._validate_dead_sets(log)
         self._validate_bind_pose(log)
 
         om.MGlobal.displayInfo("a3obValidate: checked LODs=%d, warnings=%d, damage=%d, errors=%d" % (len(lods), log.warnings, log.damages, log.errors))
@@ -245,29 +246,39 @@ class ValidateCommand(_Base):
                 return True
         return False
 
+    def _validate_dead_sets(self, log):
+        """Scene-global: an Object Builder metadata set with no live members will be silently
+        ignored on export. This depends on nothing about any particular mesh, so unlike the
+        per-mesh checks in _validate_object_sets it is called ONCE from doIt after the LOD
+        loop, not once per mesh — walking every set in the scene once per LOD is exactly the
+        cost this was hoisted out to avoid."""
+        it = om.MItDependencyNodes(om.MFn.kSet)
+        while not it.isDone():
+            set_obj = it.thisNode()
+            if is_object_builder_metadata_set(set_obj) and not metadata_set_has_live_members(set_obj):
+                set_name = om.MFnDependencyNode(set_obj).name()
+                log.damage(set_name, "Object Builder set has no live members and will be ignored")
+            it.next()
+
     def _validate_object_sets(self, mesh, lod_name, proxy_placeholders, log):
         it = om.MItDependencyNodes(om.MFn.kSet)
         selection_names = set()
         while not it.isDone():
             set_obj = it.thisNode()
-            if is_object_builder_metadata_set(set_obj):
-                set_name = om.MFnDependencyNode(set_obj).name()
-                if not metadata_set_has_live_members(set_obj):
-                    log.damage(set_name, "Object Builder set has no live members and will be ignored")
-                elif set_contains_mesh(set_obj, mesh):
-                    selection_name = attr.get_string(set_obj, A.SELECTION_NAME)
-                    if selection_name:
-                        if selection_name in selection_names:
-                            log.warn(lod_name, "duplicate selection name")
-                        selection_names.add(selection_name)
-                        if attr.get_bool(set_obj, A.IS_PROXY_SELECTION):
-                            if not is_proxy_selection_name(selection_name):
-                                log.error(lod_name, "invalid proxy selection name")
-                            elif selection_name not in proxy_placeholders:
-                                log.warn(lod_name, "proxy selection has no matching placeholder")
-                    flag_component = attr.get_string(set_obj, A.FLAG_COMPONENT)
-                    if flag_component and flag_component not in ("vertex", "face"):
-                        log.error(lod_name, "invalid flag component type")
-                    if flag_component and attr.get_int(set_obj, A.FLAG_VALUE, 0) == 0:
-                        log.error(lod_name, "invalid zero flag value")
+            if is_object_builder_metadata_set(set_obj) and set_contains_mesh(set_obj, mesh):
+                selection_name = attr.get_string(set_obj, A.SELECTION_NAME)
+                if selection_name:
+                    if selection_name in selection_names:
+                        log.warn(lod_name, "duplicate selection name")
+                    selection_names.add(selection_name)
+                    if attr.get_bool(set_obj, A.IS_PROXY_SELECTION):
+                        if not is_proxy_selection_name(selection_name):
+                            log.error(lod_name, "invalid proxy selection name")
+                        elif selection_name not in proxy_placeholders:
+                            log.warn(lod_name, "proxy selection has no matching placeholder")
+                flag_component = attr.get_string(set_obj, A.FLAG_COMPONENT)
+                if flag_component and flag_component not in ("vertex", "face"):
+                    log.error(lod_name, "invalid flag component type")
+                if flag_component and attr.get_int(set_obj, A.FLAG_VALUE, 0) == 0:
+                    log.error(lod_name, "invalid zero flag value")
             it.next()
