@@ -209,7 +209,12 @@ class ValidateCommand(_Base):
         no skinned sibling either, so that case slips through uncaught. There is no reliable
         way to tell "this model was never rigged" from "every LOD just lost its rig" without a
         second source of truth — which is exactly what a3obBakedWeights used to be, and what
-        this task exists to retire, not reinvent."""
+        this change exists to retire, not reinvent.
+
+        Checking for leftover bone selections instead does not work either: import turns
+        every Selection TAGG into a plain objectSet, so `Pelvis` and `camo_jacket` are
+        indistinguishable once the joints are gone. Reasoning and the accepted consequence:
+        docs/specs/2026-07-20-weights-live-skincluster-design.md."""
         from a3ob.mayabridge.export.parse import resolve_lod_paths, _find_first_mesh_path
         from a3ob.mayabridge.skinquery import read_skin
 

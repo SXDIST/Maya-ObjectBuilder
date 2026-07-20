@@ -104,10 +104,42 @@ Write path removed:
 
 Added:
 
-- `a3obValidate` warns when a skinned mesh has lost its rig, or when a LOD that carries
-  bone selections has no skinCluster. This is the safety net that replaces the bake: it
-  tells the user the moment the situation arises, instead of silently carrying a copy
-  forever against a case that should not happen.
+- `a3obValidate` warns when a skinned mesh has lost its rig **while a sibling LOD of the
+  same model is still skinned**. This is the safety net that replaces the bake: it tells
+  the user the moment the situation arises, instead of silently carrying a copy forever
+  against a case that should not happen.
+
+### The second trigger was dropped, deliberately
+
+An earlier draft of this section also called for a warning "when a LOD that carries bone
+selections has no skinCluster". That was not implemented, and it is not an oversight.
+
+It cannot be implemented honestly. `create_selection_sets` (`import_/builders.py`) turns
+**every** Selection TAGG into an ordinary objectSet carrying `a3obSelectionName` — a bone
+selection named `Pelvis` and a hidden selection named `camo_jacket` are indistinguishable.
+Once the skeleton is gone there is nothing left to match names against, so the check would
+either miss real losses or scold the user about camo sets. Making it work would mean adding
+a bone-selection marker at import time, which would help only models imported after the
+change and would leave every existing scene uncovered.
+
+This is the same reasoning the bake itself rested on: a fresh bind is indistinguishable from
+any other rig, so there is no honest heuristic. A scene with no skeleton is likewise
+indistinguishable from a static prop. Where there is no signal, this plugin says so rather
+than guessing.
+
+### The gap this leaves, stated plainly
+
+Deleting an **entire** skeleton leaves no skinned sibling, so nothing warns — and export is
+silent too, because `_warn_about_missing_weights` returns early when the scene holds no
+joints. Such an export writes a `.p3d` with zero bone selections. Under the old design the
+bake covered this; **this is the one scenario in which this change is strictly worse than
+what it replaced.**
+
+It is accepted because it can only occur by violating the premise this whole design rests
+on: the skeleton stays in the scene. Partial loss — one garment's rig deleted while its
+siblings keep theirs — is the plausible accident, and that is caught. If the workflow ever
+changes such that whole skeletons are removed, this decision must be revisited together
+with the storage decision above, not patched around.
 
 ## Migration — none needed, and why that is safe to assert
 
@@ -127,8 +159,12 @@ removal is intentional. **Before implementing, re-run the check above** — if a
 any scene has a bake and no live cluster, this section is void and the deprecation dance
 comes back.
 
-Existing scenes keep the two attributes as inert leftovers until re-saved. A small dock
-action removes them so the 2.73 MB is actually reclaimed.
+**The 2.73 MB is not reclaimed by removing the code.** Existing scenes keep both attributes
+and their contents indefinitely: nothing reads them, nothing writes them, and re-saving
+preserves them like any other dynamic attribute. Only deleting the attributes frees the
+space. A small dock action does that, and it is deferred to Phase 3 because it needs the
+Preferences window from the Materials spec to have somewhere to live. Until then every
+existing scene still carries its full bake — including the measured one.
 
 ## Consequences for the Auto LOD work
 
