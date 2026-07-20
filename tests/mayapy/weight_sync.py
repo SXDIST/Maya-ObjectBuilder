@@ -1,14 +1,12 @@
-"""Stored weights are refreshed on scene save (run with mayapy).
+"""Saving a scene writes no baked weights (run with mayapy).
 
-a3obBakeSkin exists, but it has to be remembered before deleting a rig. Saving the
-scene refreshes the stored copy automatically, so the weights on disk are always
-current and deleting a skeleton stops being an event.
+Weights used to be mirrored into a3obBakedWeights on every save. The skinCluster is
+the only store now, so a save must leave no such attribute behind.
 
 Run:  mayapy.exe tests/mayapy/weight_sync.py
 """
 
 import os
-import sys
 import tempfile
 
 import _harness
@@ -21,10 +19,10 @@ import maya.cmds as cmds
 def build():
     cmds.file(new=True, force=True)
     transform = cmds.polyCylinder(name="synced", r=1, h=4, sx=8, sy=4, ch=False)[0]
-    cmds.addAttr(transform, longName="a3obIsLOD", attributeType="bool")
+    for name, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
+                       ("a3obResolution", "long")):
+        cmds.addAttr(transform, longName=name, attributeType=kind)
     cmds.setAttr(transform + ".a3obIsLOD", True)
-    cmds.addAttr(transform, longName="a3obLodType", attributeType="long")
-    cmds.addAttr(transform, longName="a3obResolution", attributeType="long")
     cmds.select(clear=True)
     root = cmds.joint(position=(0, -2, 0), name="Pelvis")
     tip = cmds.joint(position=(0, 2, 0), name="Spine")
@@ -34,50 +32,31 @@ def build():
 
 def main():
     cmds.loadPlugin(os.path.join(_harness.REPO, "plug-ins", "MayaObjectBuilder.py"))
-    from a3ob.mayabridge import weightsync
-
     transform = build()
-    _harness.check(not cmds.attributeQuery("a3obBakedWeights", node=transform, exists=True),
-          "nothing should be stored before the first sync")
 
-    updated = weightsync.sync_all_lods()
-    _harness.check(updated == 1, "expected 1 LOD synced, got %r" % (updated,))
-    stored = cmds.getAttr(transform + ".a3obBakedWeights")
-    _harness.check("Pelvis" in stored and "Spine" in stored,
-          "both bones must be stored, got %r" % (stored[:80],))
+    path = os.path.join(tempfile.mkdtemp(), "weights_on_save.ma")
+    cmds.file(rename=path)
+    cmds.file(save=True, type="mayaAscii")
 
-    # Editing weights and syncing again must refresh, not append.
-    shape = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
-    skin = cmds.ls(cmds.listHistory(shape, pruneDagObjects=True) or [], type="skinCluster")[0]
-    cmds.skinPercent(skin, "%s.vtx[0]" % shape, transformValue=[("Pelvis", 1.0), ("Spine", 0.0)])
-    weightsync.sync_all_lods()
-    refreshed = cmds.getAttr(transform + ".a3obBakedWeights")
-    _harness.check(refreshed != stored, "a weight edit must change the stored copy")
-    _harness.check(refreshed.count("Pelvis:") == 1, "syncing must replace, not append")
+    _harness.check(
+        not cmds.attributeQuery("a3obBakedWeights", node=transform, exists=True),
+        "saving must not write a3obBakedWeights")
+    _harness.check(
+        not cmds.attributeQuery("a3obBakedWeightsPrevious", node=transform, exists=True),
+        "saving must not write a3obBakedWeightsPrevious")
 
-    # Saving the scene must sync without an explicit call.
-    weightsync.install()
+    text = open(path, encoding="utf-8", errors="ignore").read()
+    _harness.check("a3obBakedWeights" not in text,
+                   "the saved .ma must contain no baked weights")
+
+    import importlib
     try:
-        cmds.skinPercent(skin, "%s.vtx[1]" % shape, transformValue=[("Pelvis", 1.0), ("Spine", 0.0)])
-        before_save = cmds.getAttr(transform + ".a3obBakedWeights")
-        scene = os.path.join(tempfile.mkdtemp(prefix="sync-"), "scene.ma")
-        cmds.file(rename=scene)
-        cmds.file(save=True, type="mayaAscii", force=True)
-        after_save = cmds.getAttr(transform + ".a3obBakedWeights")
-        _harness.check(after_save != before_save, "saving the scene must refresh the stored weights")
-    finally:
-        weightsync.uninstall()
-
-    # And uninstall must remove the callback.
-    cmds.skinPercent(skin, "%s.vtx[2]" % shape, transformValue=[("Pelvis", 1.0), ("Spine", 0.0)])
-    frozen = cmds.getAttr(transform + ".a3obBakedWeights")
-    cmds.file(save=True, type="mayaAscii", force=True)
-    _harness.check(cmds.getAttr(transform + ".a3obBakedWeights") == frozen,
-          "no callback may survive uninstall()")
-
-    print("OK weights sync on save and the callback is removable")
-    return 0
+        importlib.import_module("a3ob.mayabridge.weightsync")
+    except ImportError:
+        pass
+    else:
+        _harness.check(False, "a3ob.mayabridge.weightsync should no longer exist")
+    print("OK - a save writes no bake and weightsync is gone")
 
 
-if __name__ == "__main__":
-    sys.exit(_harness.run(main))
+main()

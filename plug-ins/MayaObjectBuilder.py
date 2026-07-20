@@ -122,14 +122,6 @@ def initializePlugin(plugin):
 
     _load_translator_plugin()
 
-    # Stored weights are refreshed on every scene save, so losing a skeleton stops
-    # being an event. Guarded: a sync-callback failure must not abort plugin load.
-    try:
-        from a3ob.mayabridge import weightsync
-        weightsync.install()
-    except Exception as error:  # noqa: BLE001
-        om.MGlobal.displayWarning("weightsync install: %s" % error)
-
     _call_ui("show_plugin_ui")
     om.MGlobal.displayInfo("MayaObjectBuilder loaded")
 
@@ -139,13 +131,6 @@ def uninitializePlugin(plugin):
 
     _call_ui("hide_plugin_ui")
     _unload_translator_plugin()
-
-    # A surviving callback fires into freed Python objects and takes Maya down.
-    try:
-        from a3ob.mayabridge import weightsync
-        weightsync.uninstall()
-    except Exception as error:  # noqa: BLE001
-        om.MGlobal.displayWarning("weightsync uninstall: %s" % error)
 
     for command in reversed(_ALL_COMMANDS):
         try:
