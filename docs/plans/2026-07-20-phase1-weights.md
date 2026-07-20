@@ -821,6 +821,19 @@ longer costs a scene scan."
 Deliberately last: everything reading these attributes is gone by now, so this cannot break
 a caller.
 
+- [ ] **Step 0: Sweep for readers this plan did not list**
+
+```bash
+grep -rn "BAKED_WEIGHTS\|a3obBakedWeights" scripts/ plug-ins/ install/ tools/ --include=*.py
+```
+
+Every surviving hit must be a file this task is about to edit. **This step exists because
+the plan missed one.** `export/exporter.py`'s `_warn_about_missing_weights` read
+`A.BAKED_WEIGHTS` to suppress its warning; it was in no task's file list, and deleting the
+schema entry would have raised `AttributeError` on every export of a scene containing a
+joint. Found by review during Task 5 and fixed in `e4e4a99`. Do not assume the list above
+is complete — re-run the grep.
+
 **Files:**
 - Modify: `scripts/a3ob/mayabridge/attributes.py:35-39` — remove `BAKED_WEIGHTS` and
   `BAKED_WEIGHTS_PREVIOUS`
