@@ -18,3 +18,10 @@ install/__pycache__/
 roadmap.md
 # DayZ .paa game assets used for local texture tests (not distributed)
 tests/paa/
+
+# Reference assets dropped in the repo root by a3obReference (Save Selection as Body/
+# Skeleton). These are Bohemia's, published under ADPL-SA — non-commercial, Arma/DayZ only,
+# share-alike — which is incompatible with this repo's MIT licence. Anchored to the root on
+# purpose: docs/specs/2026-07-20-skinning-panel-design.md has them ship from
+# assets/references/ instead, alongside their own LICENCE and attribution.
+/dayz_*.ma
