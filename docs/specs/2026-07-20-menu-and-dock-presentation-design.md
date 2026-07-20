@@ -94,6 +94,19 @@ happens at export. `Import P3D` and `Export P3D` remain, and `Export P3D` gains 
 adjacent **options** button opening the P3D export options, mirroring Maya's option-box
 convention and giving the dock its own one-click route to the Auto LOD settings.
 
+**`Export P3D` becomes a split button** offering *Export All* and *Export Selection*, using
+the same menu-button pattern the LOD list already uses for Add LOD. Export Selection is not
+a secondary case: it is the one that pairs with Auto LOD, which generates from a single
+selected mesh.
+
+**A bug to fix while here.** `entry.export_p3d` sets only `defaultFileExportAllType`, so
+Export Selection is never pre-set to "Arma P3D" and falls back to whatever type Maya used
+last. Both `defaultFileExportAllType` and `defaultFileExportActiveType` must be set. The
+translator and the MEL already handle the Export Selection path correctly —
+`kExportActiveAccessMode` becomes `export_active`, which becomes `selected_only`, and
+`mayaObjectBuilderP3DCurrentFileAction` already recognises `defaultFileExportActiveType`.
+Only the optionVar was missed.
+
 `Import P3D` is not merely a copy of `File > Import`: it pre-selects "Arma P3D" in the
 dialog's type list, which Maya otherwise leaves on whatever was used last. That is the value
 it adds, and it is the reason it stays in the dock while leaving the menu.
@@ -132,6 +145,10 @@ answer is to simplify the layout, not to paint it.
 - The menu contains no Import/Export P3D entry, and `File > Export All`'s option box still
   opens the P3D options with the Auto LOD frame.
 - The Quick Actions options button opens the same dialog.
+- `Export P3D` offers both Export All and Export Selection, and each writes the expected
+  scope.
+- After the dock's export action runs, **both** `defaultFileExportAllType` and
+  `defaultFileExportActiveType` read "Arma P3D" — the second is the one that regressed.
 - `Import P3D` from Quick Actions pre-selects "Arma P3D" even when the last import used a
   different type.
 - Every Save Selection entry is reachable, `female_body` included.

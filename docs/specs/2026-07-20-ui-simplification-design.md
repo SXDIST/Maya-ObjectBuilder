@@ -85,10 +85,18 @@ Menu values need entries in `mayaObjectBuilderP3DMenuLabelToValue` and its inver
 
 ### Export path
 
+**Auto LOD pairs with Export Selection.** Generating from one selected mesh and then writing
+the *whole scene* is incoherent where several models share a scene — the measured one holds
+six garments. Both access modes stay supported, since a single-model scene may reasonably
+use Export All, but Export Selection is the coherent pairing and the dock offers it as a
+first-class choice. See `2026-07-20-menu-and-dock-presentation-design.md`, which also fixes
+the `defaultFileExportActiveType` optionVar that `entry.export_p3d` never set.
+
 `translator.do_write`, when `autoLod=1`:
 
 1. Resolve exactly one source mesh from the selection. Zero or more than one is an error
-   with a plain message, and **no file is written**.
+   with a plain message, and **no file is written**. This holds under both access modes —
+   the source is the selection either way; only the written scope differs.
 2. Suspend undo for the whole generate/export/cleanup span. Without it, Ctrl+Z after an
    export resurrects nodes that were deliberately removed.
 3. Generate, export, then delete everything generated — in `finally`, so a cancel or an
