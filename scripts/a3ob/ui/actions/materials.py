@@ -2,7 +2,7 @@
 
 import maya.cmds as cmds
 
-from a3ob.ui.scene_ops import *  # noqa: F401,F403
+from a3ob.ui.scene import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.actions._common import _undo_chunk  # noqa: F401

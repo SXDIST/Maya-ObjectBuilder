@@ -10,8 +10,8 @@ Use maximum care with format invariants. DayZ/Object Builder compatibility wins 
 
 Primary files:
 - `scripts/a3ob/mayabridge/translator.py` and `plug-ins/MayaObjectBuilderTranslator.py`
-- `scripts/a3ob/mayabridge/mesh_import.py`
-- `scripts/a3ob/mayabridge/mesh_export.py`
+- `scripts/a3ob/mayabridge/import_/importer.py` (`MayaMeshImport`)
+- `scripts/a3ob/mayabridge/export/exporter.py` (`MayaMeshExport`, `ExportOptions`)
 - `scripts/a3ob/formats/p3d.py`
 - `scripts/a3ob/formats/binary.py`
 - `tests/mayapy/p3d_workflow.py`

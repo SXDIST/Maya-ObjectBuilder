@@ -8,7 +8,7 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
 from a3ob.ui.constants import *   # noqa: E402,F401,F403
-from a3ob.ui.scene_ops import *   # noqa: E402,F401,F403
+from a3ob.ui.scene import *       # noqa: E402,F401,F403
 from a3ob.ui.widgets import *     # noqa: E402,F401,F403
 from a3ob.ui.actions import *     # noqa: E402,F401,F403
 from a3ob.ui.entry import *       # noqa: E402,F401,F403

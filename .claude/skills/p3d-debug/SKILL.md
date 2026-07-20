@@ -12,8 +12,8 @@ For deep format reasoning, prefer the `p3d-architect` project subagent.
 ## First inspect
 
 - `scripts/a3ob/mayabridge/translator.py` (and `plug-ins/MayaObjectBuilderTranslator.py` for registration)
-- `scripts/a3ob/mayabridge/mesh_import.py`
-- `scripts/a3ob/mayabridge/mesh_export.py`
+- `scripts/a3ob/mayabridge/import_/importer.py` (`MayaMeshImport`)
+- `scripts/a3ob/mayabridge/export/exporter.py` (`MayaMeshExport`, `ExportOptions`)
 - `scripts/a3ob/formats/p3d.py`
 - `scripts/a3ob/formats/binary.py`
 - `tests/mayapy/p3d_workflow.py`
@@ -45,7 +45,7 @@ For deep format reasoning, prefer the `p3d-architect` project subagent.
 
 ```bash
 python tests/python/test_p3d_roundtrip.py
-python -m py_compile scripts/a3ob/formats/p3d.py scripts/a3ob/mayabridge/mesh_export.py scripts/a3ob/mayabridge/mesh_import.py scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
+python -m py_compile scripts/a3ob/formats/p3d.py scripts/a3ob/mayabridge/export/exporter.py scripts/a3ob/mayabridge/import_/importer.py scripts/objectBuilderMenu.py tests/mayapy/p3d_workflow.py
 "/c/Program Files/Autodesk/Maya2027/bin/mayapy.exe" tests/mayapy/p3d_workflow.py
 ```
 

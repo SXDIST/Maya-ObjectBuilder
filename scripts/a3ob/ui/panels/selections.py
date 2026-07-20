@@ -3,7 +3,7 @@
 from a3ob.ui._qt import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
 from a3ob.ui.widgets import *  # noqa: F401,F403
-from a3ob.ui.scene_ops import *  # noqa: F401,F403
+from a3ob.ui.scene import *  # noqa: F401,F403
 from a3ob.ui.actions import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
 

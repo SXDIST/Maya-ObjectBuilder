@@ -14,8 +14,8 @@ the user says: "рефактори", "почисти код", "вынеси в �
 ## What this skill refactors
 
 **Format & Maya-bridge code (`scripts/a3ob/`)**
-- Extract shared helpers from large functions in `mayabridge/mesh_export.py`,
-  `mayabridge/mesh_import.py`, `mayabridge/commands.py`, and `formats/p3d.py`.
+- Extract shared helpers from large functions in `mayabridge/export/exporter.py`,
+  `mayabridge/import_/importer.py`, `mayabridge/commands/` (package), and `formats/p3d.py`.
 - Rename local variables, parameters, and private helpers for clarity.
 - Split long functions (>80 lines) into focused sub-functions.
 - Remove duplicated attribute-read and status-check boilerplate across command classes.
@@ -56,11 +56,11 @@ the user says: "рефактори", "почисти код", "вынеси в �
 
 1. **`scripts/objectBuilderMenu.py`** — repeated Qt widget construction, UI and
    logic mixed in the same methods. Extract private `_build_*` helpers per panel. Highest impact.
-2. **`scripts/a3ob/mayabridge/commands.py`** (9 command classes) — attribute-read and
+2. **`scripts/a3ob/mayabridge/commands/`** (one module per command class) — attribute-read and
    status-check patterns duplicated across `doIt()` implementations. Extract shared module-level helpers.
-3. **`scripts/a3ob/mayabridge/mesh_export.py`** — `_export_mesh_lod()` is long. Extract
+3. **`scripts/a3ob/mayabridge/export/exporter.py`** — `_export_mesh_lod()` is long. Extract
    material-collection, face-data, and TAGG-writing sub-functions.
-4. **`scripts/a3ob/mayabridge/mesh_import.py`** — `apply_uvs()` and `_assign_materials()` are long.
+4. **`scripts/a3ob/mayabridge/import_/importer.py`** — `apply_uvs()` and `_assign_materials()` are long.
    Extract per-set UV application and per-face material assignment into focused helpers.
 5. **`tests/mayapy/p3d_workflow.py`** — shared import/export setup repeated per test
    section. Extract `setup_test_scene()` and `assert_lod_metadata()` helpers.
@@ -114,9 +114,9 @@ still pass after it.
 ## First inspect
 
 ```
-scripts/a3ob/mayabridge/commands.py
-scripts/a3ob/mayabridge/mesh_export.py
-scripts/a3ob/mayabridge/mesh_import.py
+scripts/a3ob/mayabridge/commands/
+scripts/a3ob/mayabridge/export/exporter.py
+scripts/a3ob/mayabridge/import_/importer.py
 scripts/objectBuilderMenu.py
 ```
 

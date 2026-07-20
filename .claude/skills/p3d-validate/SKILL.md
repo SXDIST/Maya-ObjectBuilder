@@ -29,7 +29,7 @@ python -m py_compile plug-ins/*.py scripts/objectBuilderMenu.py scripts/objectBu
 
 ## Common failures
 
-- `test_p3d_roundtrip` failure: inspect `scripts/a3ob/formats/p3d.py`, `scripts/a3ob/formats/binary.py`, `scripts/a3ob/mayabridge/mesh_export.py`, `scripts/a3ob/mayabridge/mesh_import.py`.
+- `test_p3d_roundtrip` failure: inspect `scripts/a3ob/formats/p3d.py`, `scripts/a3ob/formats/binary.py`, `scripts/a3ob/mayabridge/export/exporter.py`, `scripts/a3ob/mayabridge/import_/importer.py`.
 - `test_model_cfg` failure: inspect `scripts/a3ob/formats/model_cfg.py` and `scripts/a3ob/mayabridge/model_cfg_commands.py`.
 - `py_compile` failure: inspect the exact Python file and line from the traceback.
 - `mayapy` workflow failure: preserve the traceback and inspect the workflow assertion before changing plugin code.

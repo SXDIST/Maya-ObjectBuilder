@@ -11,8 +11,8 @@ import maya.api.OpenMaya as om
 import maya.cmds as cmds
 
 from ..formats.p3d import MLOD
-from .mesh_import import MayaMeshImport
-from .mesh_export import MayaMeshExport, ExportOptions
+from .import_.importer import MayaMeshImport
+from .export.exporter import MayaMeshExport, ExportOptions
 
 TRANSLATOR_NAME = "Arma P3D"
 OPTION_SCRIPT = "mayaObjectBuilderP3DOptions"

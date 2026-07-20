@@ -68,7 +68,7 @@ Two layers, split by whether they need Maya:
   (the single `a3ob*` attribute schema + helpers); `import_/` and `export/` packages (Maya DAG ↔ MLOD
   conversion — `import_/{convert/,builders,importer}` where `convert/` is itself a package
   (`mesh`, `names`); `export/{parse,taggs/,exporter}` where `taggs/` is a package
-  (`data`, `lodexport`, `memory`); `mesh_import.py`/`mesh_export.py` are kept as re-export facades);
+  (`data`, `lodexport`, `memory`));
   `commands/` package (one module per `a3ob*` `MPxCommand` + a shared `helpers/` package —
   `base`, `geometry`, `primitives`, `scene`, `sets`; `__init__` re-exports the classes and the
   `COMMANDS` list); `model_cfg_commands.py` (skeleton import/export); `translator.py` (import/export
@@ -398,13 +398,13 @@ short name is unified to `a3px` on write; `a3pr` (the legacy import short name) 
 Memory LOD (`a3obLodType = 9`) points are Maya **locators** parented under the Memory LOD transform.
 Each locator transform's short name becomes the P3D named selection name.
 
-- **Export** (`_collect_locators_from_memory_lod` in `export/taggs/memory.py`, surfaced through the
-  `mesh_export.py` facade): when the Memory LOD has no mesh child but has locator-containing child
+- **Export** (`_collect_locators_from_memory_lod` in `export/taggs/memory.py`, called from
+  `export/exporter.py`): when the Memory LOD has no mesh child but has locator-containing child
   transforms, each is exported as one vertex + one `SelectionTaggData` TAGG. Proxy transforms are
   skipped.
 - **Import** (`create_locators_for_memory_lod` in `import_/builders.py`, invoked from
-  `import_/importer.py`, surfaced through the `mesh_import.py` facade): single-vertex named selections
-  in a face-less Memory LOD are reconstructed as locators; multi-vertex selections become a group.
+  `import_/importer.py`): single-vertex named selections in a face-less Memory LOD are reconstructed
+  as locators; multi-vertex selections become a group.
 - **UI**: `add_memory_point()` in `ui/actions/memory.py` (facade `objectBuilderMenu.py`) creates a
   locator under the selected Memory LOD.
 
