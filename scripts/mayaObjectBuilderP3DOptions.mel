@@ -213,6 +213,31 @@ global proc int mayaObjectBuilderP3DOptions(string $parent, string $action, stri
             setParent "..";
             setParent "..";
 
+            frameLayout -label "Auto LOD (generated on export)" -collapsable true -collapse true -marginWidth 8 -marginHeight 6;
+            columnLayout -adjustableColumn true -rowSpacing 4;
+            checkBox -label "Generate LODs on export" mayaObjectBuilderAutoLod;
+            optionMenu -label "Output" mayaObjectBuilderAutoLodOutput;
+            menuItem -label "Quads";
+            menuItem -label "Triangles";
+            optionMenu -label "Reduction" mayaObjectBuilderAutoLodReduction;
+            menuItem -label "Aggressive";
+            menuItem -label "Balanced";
+            menuItem -label "Light";
+            optionMenu -label "First LOD" mayaObjectBuilderAutoLodFirst;
+            menuItem -label "LOD1";
+            menuItem -label "LOD0";
+            checkBox -label "Resolution LODs" mayaObjectBuilderAutoLodResolution;
+            checkBox -label "Geometry LOD" mayaObjectBuilderAutoLodGeometry;
+            checkBox -label "Memory LOD" mayaObjectBuilderAutoLodMemory;
+            checkBox -label "Fire Geometry LOD" mayaObjectBuilderAutoLodFire;
+            checkBox -label "View Geometry LOD" mayaObjectBuilderAutoLodView;
+            optionMenu -label "Geometry" mayaObjectBuilderAutoLodGeometryType;
+            menuItem -label "BOX";
+            menuItem -label "NONE";
+            intSliderGrp -label "Fire quality" -field true -minValue 1 -maxValue 10 -value 2 mayaObjectBuilderAutoLodFireQuality;
+            setParent "..";
+            setParent "..";
+
             frameLayout -label "Postprocess" -collapsable true -collapse false -marginWidth 8 -marginHeight 6;
             columnLayout -adjustableColumn true -rowSpacing 4;
             checkBox -label "Renumber Components" mayaObjectBuilderRenumberComponents;
@@ -257,6 +282,21 @@ global proc string mayaObjectBuilderP3DMenuOptionDefault(string $key, string $co
     return $key + "=" + $defaultValue;
 }
 
+global proc mayaObjectBuilderP3DSetInt(string $control, string $value)
+{
+    if (`control -exists $control`) {
+        intSliderGrp -edit -value (int($value)) $control;
+    }
+}
+
+global proc string mayaObjectBuilderP3DIntOptionDefault(string $key, string $control, string $defaultValue)
+{
+    if (`control -exists $control`) {
+        return $key + "=" + (string(`intSliderGrp -query -value $control`));
+    }
+    return $key + "=" + $defaultValue;
+}
+
 global proc string mayaObjectBuilderP3DMenuLabelToValue(string $label)
 {
     if ($label == "None") return "none";
@@ -269,6 +309,15 @@ global proc string mayaObjectBuilderP3DMenuLabelToValue(string $label)
     if ($label == "Ignore") return "ignore";
     if ($label == "Skip") return "skip";
     if ($label == "Fail") return "fail";
+    if ($label == "Quads") return "quads";
+    if ($label == "Triangles") return "triangles";
+    if ($label == "Aggressive") return "aggressive";
+    if ($label == "Balanced") return "balanced";
+    if ($label == "Light") return "light";
+    if ($label == "LOD1") return "LOD1";
+    if ($label == "LOD0") return "LOD0";
+    if ($label == "BOX") return "BOX";
+    if ($label == "NONE") return "NONE";
     return "";
 }
 
@@ -284,6 +333,15 @@ global proc string mayaObjectBuilderP3DMenuValueToLabel(string $value)
     if ($value == "ignore") return "Ignore";
     if ($value == "skip") return "Skip";
     if ($value == "fail") return "Fail";
+    if ($value == "quads") return "Quads";
+    if ($value == "triangles") return "Triangles";
+    if ($value == "aggressive") return "Aggressive";
+    if ($value == "balanced") return "Balanced";
+    if ($value == "light") return "Light";
+    if ($value == "LOD1") return "LOD1";
+    if ($value == "LOD0") return "LOD0";
+    if ($value == "BOX") return "BOX";
+    if ($value == "NONE") return "NONE";
     return "";
 }
 
@@ -348,6 +406,17 @@ global proc mayaObjectBuilderP3DSetOptions(string $settings)
         else if ($key == "renumberComponents") mayaObjectBuilderP3DSetBool("mayaObjectBuilderRenumberComponents", $value);
         else if ($key == "forceLowercase") mayaObjectBuilderP3DSetBool("mayaObjectBuilderForceLowercase", $value);
         else if ($key == "exportTranslateSelections") mayaObjectBuilderP3DSetBool("mayaObjectBuilderExportTranslateSelections", $value);
+        else if ($key == "autoLod") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLod", $value);
+        else if ($key == "autoLodOutput") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderAutoLodOutput", $value);
+        else if ($key == "autoLodReduction") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderAutoLodReduction", $value);
+        else if ($key == "autoLodFirst") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderAutoLodFirst", $value);
+        else if ($key == "autoLodResolution") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLodResolution", $value);
+        else if ($key == "autoLodGeometry") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLodGeometry", $value);
+        else if ($key == "autoLodMemory") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLodMemory", $value);
+        else if ($key == "autoLodFire") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLodFire", $value);
+        else if ($key == "autoLodView") mayaObjectBuilderP3DSetBool("mayaObjectBuilderAutoLodView", $value);
+        else if ($key == "autoLodGeometryType") mayaObjectBuilderP3DSetMenu("mayaObjectBuilderAutoLodGeometryType", $value);
+        else if ($key == "autoLodFireQuality") mayaObjectBuilderP3DSetInt("mayaObjectBuilderAutoLodFireQuality", $value);
     }
 }
 
@@ -390,5 +459,16 @@ global proc string mayaObjectBuilderP3DGetOptions()
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("renumberComponents", "mayaObjectBuilderRenumberComponents", "0");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("forceLowercase", "mayaObjectBuilderForceLowercase", "1");
     $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("exportTranslateSelections", "mayaObjectBuilderExportTranslateSelections", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLod", "mayaObjectBuilderAutoLod", "0");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("autoLodOutput", "mayaObjectBuilderAutoLodOutput", "quads");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("autoLodReduction", "mayaObjectBuilderAutoLodReduction", "aggressive");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("autoLodFirst", "mayaObjectBuilderAutoLodFirst", "LOD1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLodResolution", "mayaObjectBuilderAutoLodResolution", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLodGeometry", "mayaObjectBuilderAutoLodGeometry", "1");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLodMemory", "mayaObjectBuilderAutoLodMemory", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLodFire", "mayaObjectBuilderAutoLodFire", "0");
+    $options += ";" + mayaObjectBuilderP3DBoolOptionDefault("autoLodView", "mayaObjectBuilderAutoLodView", "0");
+    $options += ";" + mayaObjectBuilderP3DMenuOptionDefault("autoLodGeometryType", "mayaObjectBuilderAutoLodGeometryType", "BOX");
+    $options += ";" + mayaObjectBuilderP3DIntOptionDefault("autoLodFireQuality", "mayaObjectBuilderAutoLodFireQuality", "2");
     return $options;
 }
