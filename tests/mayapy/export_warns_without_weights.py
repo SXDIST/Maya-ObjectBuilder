@@ -1,13 +1,14 @@
 """Stale a3obBakedWeights must not silence the missing-weights export warning (mayapy).
 
-Bind, bake (writes a3obBakedWeights), delete the rig, export. The bake never fed the
-export path (Task 5 removed that fallback), so the file comes out with zero bone
-selections -- but the stale attribute still holds the OLD data, and
-`_warn_about_missing_weights` used to treat that as "weights are fine" and stay silent.
-That is exactly backwards: the more stale the bake, the more urgently the warning is
-needed. This also guards the follow-up where `A.BAKED_WEIGHTS` itself goes away --
-before the fix, the guard above `cmds.ls(type="joint")` would not save it and the
-attribute lookup would raise `AttributeError` on every export of a rigged scene.
+Bind, stash a stale a3obBakedWeights value directly (Task 6 removed a3obBakeSkin, but the
+attribute itself can still linger on a scene saved before that -- e.g. from an older
+version of the plugin), delete the rig, export. The bake never fed the export path (Task 5
+removed that fallback), so the file comes out with zero bone selections -- but the stale
+attribute still holds the OLD data, and `_warn_about_missing_weights` used to treat that as
+"weights are fine" and stay silent. That is exactly backwards: the more stale the bake, the
+more urgently the warning is needed. This also guards the follow-up where `A.BAKED_WEIGHTS`
+itself goes away -- before the fix, the guard above `cmds.ls(type="joint")` would not save
+it and the attribute lookup would raise `AttributeError` on every export of a rigged scene.
 
 Run:  mayapy.exe tests/mayapy/export_warns_without_weights.py
 """
@@ -51,11 +52,17 @@ def main():
     tip = cmds.joint(position=(0, 2, 0), name="Spine")
     cmds.skinCluster(root, tip, transform, toSelectedBones=True, maximumInfluences=4)
 
-    baked = cmds.a3obBakeSkin()
-    baked = baked[0] if isinstance(baked, (list, tuple)) else baked
-    _harness.check(int(baked) == 1, "expected one LOD baked, got %r" % (baked,))
+    # a3obBakeSkin is gone (Task 6); write the stale attribute directly through the same
+    # leaf helper it used to call, to simulate what a scene saved by an older plugin
+    # version can still be carrying.
+    from a3ob.mayabridge.skinquery import store_bake
+    selection = om.MSelectionList()
+    selection.add(transform)
+    transform_obj = selection.getDependNode(0)
+    _harness.check(store_bake(transform_obj, "Pelvis:0=1.0;Spine:1=1.0"),
+          "expected the stale bake text to be stored")
     _harness.check(cmds.getAttr(transform + ".a3obBakedWeights"),
-          "the bake must actually write stale data onto a3obBakedWeights for this "
+          "the stale data must actually be present on a3obBakedWeights for this "
           "test to mean anything")
 
     cmds.delete([root, tip])

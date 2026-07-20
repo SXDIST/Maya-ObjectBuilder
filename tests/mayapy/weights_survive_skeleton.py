@@ -4,9 +4,10 @@ Reported from real use: delete the rig, export, and the .p3d comes out with no b
 at all — silently. Reproduced exactly: deleting the joints deletes the skinCluster with them,
 and the weights only ever lived there.
 
-``a3obBakeSkin`` copies the live weights onto the LOD transform so they outlive the rig, and
-export falls back to them when no skinCluster is present. The live skinCluster still wins when
-it exists, so baking can never serve stale weights over a rig you are still editing.
+``a3obBakeSkin`` used to copy live weights onto the LOD transform so they could outlive the
+rig, with export falling back to them when no skinCluster was present. Task 5 removed the
+export fallback and Task 6 removed the command itself: the live skinCluster is now the only
+store, so deleting the rig loses the weights for real, and this test now pins THAT.
 
 Run:  mayapy.exe tests/mayapy/weights_survive_skeleton.py
 """
@@ -61,29 +62,23 @@ def main():
     _harness.check(set(with_rig) == {"Pelvis", "Spine"},
           "the rigged export must carry both bones, got %r" % sorted(with_rig))
 
-    # Bake (a3obBakeSkin still writes a3obBakedWeights pending Task 6), then destroy the
-    # rig exactly as a user would.
-    baked = cmds.a3obBakeSkin()
-    baked = baked[0] if isinstance(baked, (list, tuple)) else baked
-    _harness.check(int(baked) == 1, "expected one LOD baked, got %r" % (baked,))
-    _harness.check(cmds.getAttr(transform + ".a3obBakedWeights"),
-          "baking must write a3obBakedWeights onto the transform")
-
+    # Destroy the rig exactly as a user would (Task 6: a3obBakeSkin is gone — there is no
+    # bake step left to interpose, and there is nothing left to fall back to either).
     cmds.delete([root, tip])
     _harness.check(not (cmds.ls(type="skinCluster") or []),
           "deleting the joints should have removed the skinCluster (that is the whole problem)")
 
-    # Task 5: export no longer falls back to the baked attribute, so a deleted rig now
-    # exports with no bone selections at all, even though a3obBakedWeights still holds
-    # data on disk. The full rewrite of this test (honest end-to-end contract, plus the
-    # a3obValidate warning) is Task 10's job; this only fixes the assertion this task
-    # invalidates.
+    # Task 5: export no longer falls back to a baked attribute at all, so a deleted rig now
+    # exports with no bone selections. The full rewrite of this test (honest end-to-end
+    # contract, plus the a3obValidate warning) is Task 10's job; this only fixes the
+    # assertion this task invalidates.
     without_rig = export("without_rig")
     _harness.check(not without_rig,
           "export must no longer fall back to baked weights (Task 5): got %r" % sorted(without_rig))
 
     # And a scene that has a skeleton but no weights at all must not export silently.
-    cmds.setAttr(transform + ".a3obBakedWeights", "", type="string")
+    # (No baked-attribute setup needed here: Task 5 made the warning key off skinCluster
+    # history alone, not a3obBakedWeights, and Task 6 removed the only thing that wrote it.)
     cmds.select(clear=True)
     joint = cmds.joint(position=(0, 0, 0), name="Lonely")
     from a3ob.mayabridge.export.exporter import _warn_about_missing_weights, _lod_sort_key

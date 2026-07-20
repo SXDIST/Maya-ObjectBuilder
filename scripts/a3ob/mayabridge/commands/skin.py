@@ -14,17 +14,11 @@ unit-tested); this module supplies the Maya plumbing.
 import maya.api.OpenMaya as om
 
 from a3ob.mayabridge import skinweights as sw
-# skinCluster reading and the baked-weight store live in a leaf module: weightsync needs the
-# reading half and this module needs the storing half, which used to be a pair of lazy
-# imports pointing at each other. Names are re-exported below, they are part of this
-# module's published surface.
+# skinCluster reading lives in a leaf module shared with weightsync. Names are re-exported
+# below, they are part of this module's published surface.
 from a3ob.mayabridge.skinquery import (  # noqa: F401
-    complete_vertex_component as _complete_vertex_component,
-    influence_leaf_names,
     read_skin,
     skin_cluster_for_mesh,
-    store_bake,
-    vertex_neighbours as _vertex_neighbours,
 )
 
 from a3ob.mayabridge.commands.helpers import *  # noqa: F401,F403
@@ -111,7 +105,6 @@ __all__ = [
     "TransferSkinCommand",
     "TestPoseCommand",
     "ReferenceAssetCommand",
-    "BakeSkinCommand",
     "skin_cluster_for_mesh",
     "read_skin",
     "outliers_for_mesh",
@@ -286,134 +279,3 @@ class ReferenceAssetCommand(_Base):
         except Exception as error:  # noqa: BLE001 - report, never traceback at the user
             om.MGlobal.displayError("a3obReference: %s" % error)
             self.setResult("")
-
-
-class BakeSkinCommand(_Base):
-    """``a3obBakeSkin`` — copy live skinCluster weights onto the LOD transform.
-
-    Deleting the skeleton deletes the skinCluster and every weight with it, and the export
-    then produces a file with no bone selections at all. Baking first makes the weights
-    survive that."""
-
-    kName = "a3obBakeSkin"
-
-    @staticmethod
-    def creator():
-        return BakeSkinCommand()
-
-    @staticmethod
-    def syntax():
-        s = om.MSyntax()
-        s.addFlag("-so", "-selectionOnly")
-        s.addFlag("-rs", "-restore")     # put the stored weights back onto the live rig
-        s.addFlag("-pv", "-previous")    # ... from the copy the last overwrite replaced
-        return s
-
-    def doIt(self, args):
-        argdb = om.MArgDatabase(self.syntax(), args)
-        selection_only = argdb.isFlagSet("-so")
-        if argdb.isFlagSet("-rs"):
-            self.setResult(self._restore(selection_only, argdb.isFlagSet("-pv")))
-            return
-        self.setResult(self._bake(selection_only))
-
-    _influence_names = staticmethod(influence_leaf_names)
-
-    def _bake(self, selection_only):
-        baked = 0
-        with undo_chunk():
-            for lod in lod_transforms(selection_only):
-                mesh = first_mesh_child(lod)
-                if mesh.isNull():
-                    continue
-                skin = read_skin(om.MFnDagNode(mesh).getPath())
-                if skin is None:
-                    continue
-                skin_fn, weights, influence_count, _neighbours = skin
-                names = self._influence_names(skin_fn)
-                text = sw.bake_string(names, weights, influence_count)
-                if not text:
-                    continue
-                store_bake(lod, text)
-                baked += 1
-                om.MGlobal.displayInfo("a3obBakeSkin: baked %d bone(s) onto %s"
-                                       % (len(names), node_name(lod)))
-
-        if baked == 0:
-            om.MGlobal.displayWarning("a3obBakeSkin: no skinned LOD found to bake")
-        return baked
-
-    def _restore(self, selection_only, previous):
-        """Write the stored weights back onto each LOD's live skinCluster.
-
-        Weights go on through ``MFnSkinCluster.setWeights``: a 13k-vertex garment is ~50k
-        non-zero entries, and doing that one ``skinPercent`` call at a time takes minutes.
-        The price is that the API write never enters the undo queue, so this bakes the live
-        weights into the previous slot on the way past — that stash, not Ctrl+Z, is how a
-        restore gets taken back."""
-        from a3ob.mayabridge import attributes as attr
-        from a3ob.mayabridge.attributes import A
-
-        slot = A.BAKED_WEIGHTS_PREVIOUS if previous else A.BAKED_WEIGHTS
-        restored = 0
-        for lod in lod_transforms(selection_only):
-            mesh = first_mesh_child(lod)
-            if mesh.isNull():
-                continue
-            text = attr.get_string(lod, slot)
-            if not text:
-                om.MGlobal.displayWarning(
-                    "a3obBakeSkin: %s has no %s weights stored"
-                    % (node_name(lod), "previous" if previous else "baked"))
-                continue
-            mesh_path = om.MFnDagNode(mesh).getPath()
-            skin = read_skin(mesh_path)
-            if skin is None:
-                om.MGlobal.displayWarning(
-                    "a3obBakeSkin: %s has no skinCluster to restore onto — bind it first"
-                    % node_name(lod))
-                continue
-            skin_fn, live_weights, live_count, _neighbours = skin
-            names = self._influence_names(skin_fn)
-            vertex_count = om.MFnMesh(mesh_path).numVertices
-
-            parsed = sw.parse_bake_string(text)
-            highest = max((v for _n, pairs in parsed for v, _w in pairs), default=-1)
-            if highest >= vertex_count:
-                # Refuse rather than write a partial rig: the bake belongs to a denser mesh,
-                # so matching by vertex index would land weights on the wrong vertices.
-                om.MGlobal.displayError(
-                    "a3obBakeSkin: %s stores weights for %d vertices but the mesh has %d — "
-                    "the bake is from a different mesh, not restoring"
-                    % (node_name(lod), highest + 1, vertex_count))
-                continue
-
-            weights, missing = sw.weights_from_bake(parsed, names, vertex_count)
-            # Stash what is about to be replaced straight into the previous slot — NOT
-            # through store_bake, which is about keeping BAKED_WEIGHTS current and skips a
-            # write whose text it already holds. That skip is exactly the case here when
-            # restoring the previous copy, and it left the overwritten weights unreachable.
-            # Writing the slot directly also makes `-restore -previous` a swap: run it twice
-            # and you are back, which is what stands in for an undo this cannot offer.
-            attr.set_string(lod, A.BAKED_WEIGHTS_PREVIOUS,
-                            sw.bake_string(names, live_weights, live_count))
-
-            component = _complete_vertex_component(mesh_path)
-            skin_fn.setWeights(mesh_path, component,
-                               om.MIntArray(range(len(names))),
-                               om.MDoubleArray(weights))
-            restored += 1
-            if missing:
-                om.MGlobal.displayWarning(
-                    "a3obBakeSkin: %s — the rig has no %s; their weight was spread over the "
-                    "bones each vertex still has"
-                    % (node_name(lod), ", ".join(missing[:6])))
-            # Bones that actually landed: those in the BAKE minus those the rig lacks.
-            # `names` is the rig's influence list, a different set — subtracting `missing`
-            # from it reported "restored 0 bone(s)" for a restore that had just worked.
-            om.MGlobal.displayInfo("a3obBakeSkin: restored %d bone(s) onto %s"
-                                   % (len(parsed) - len(missing), node_name(lod)))
-
-        if restored == 0:
-            om.MGlobal.displayWarning("a3obBakeSkin: nothing restored")
-        return restored

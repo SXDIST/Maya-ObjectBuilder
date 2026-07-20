@@ -1,7 +1,7 @@
 """MayaObjectBuilder scripted plugin (pure Python).
 
 Replaces the former C++ ``MayaObjectBuilder.mll``. Registers the ``Arma P3D`` file
-translator and the eleven ``a3ob*`` commands, sources the MEL option box, and opens
+translator and the sixteen ``a3ob*`` commands, sources the MEL option box, and opens
 the Python dock UI on load / hides it on unload.
 
 Loadable exactly like the old ``.mll`` (``loadPlugin``, autoload, ``pluginInfo``); the
