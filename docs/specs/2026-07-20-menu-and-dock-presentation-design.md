@@ -11,7 +11,8 @@ Reference Assets submenu arrives from the Skinning spec, and Preferences replace
 Texture Root (.paa)…" from the Materials spec. Structuring it after that growth would mean
 restructuring twice.
 
-The dock, meanwhile, goes from eleven panels to six.
+The dock, meanwhile, goes from eleven panels to five, and loses its fixed Quick Actions
+header entirely.
 
 ## The Bifrost look is native — verified
 
@@ -32,8 +33,9 @@ No custom Qt, no stylesheet, no shipped images are required for the menu.
 **The menu holds only what has no other home.** Every entry below is unreachable except
 through it. This rule is why there is no File section: `Arma P3D` is a registered Maya
 translator — `readSupport` and `writeSupport` both true, filter `*.p3d` — so
-`File > Import` and `File > Export All` already offer P3D natively. A plugin entry would be
-the *third* route to one dialog, after Maya's File menu and the dock's Quick Actions.
+`File > Import`, `File > Export All` and `File > Export Selection` already offer P3D
+natively. A plugin entry would be a second route to a dialog Maya already owns — and the
+same reasoning removes the dock's Quick Actions below.
 
 ```
 MayaObjectBuilder
@@ -69,11 +71,10 @@ Notes on specific entries:
 
 ### Panels, in workflow order
 
-Eleven become six:
+Eleven collapsible panels become five, and the fixed Quick Actions header is gone:
 
 | Panel | Contents after this work |
 |-------|--------------------------|
-| Quick Actions | Import P3D, Export P3D (+ its options button), Validate |
 | LODs | list with inline type/resolution, plus the detail area holding Mass and Named Properties |
 | Selections | selections, proxies and flags, each editable in place |
 | Skinning | four buttons and the influence list |
@@ -83,37 +84,40 @@ Eleven become six:
 Order follows the work: bring a model in, structure its LODs, name parts of it, rig it, add
 memory points, check it.
 
-### Quick Actions
+### Quick Actions is removed
 
-The row keeps its place **above the scroll area**, which is its entire justification: no
-matter which panel is expanded or how far the dock is scrolled, export is one click away.
-Every button in it is reachable elsewhere; being always visible is what it sells.
+The same rule that emptied the menu's File section applies here, and it applies harder: the
+dock should not duplicate Maya's own file operations at all.
 
-Its contents shrink from four to three. The **Auto LOD** button goes — generation now
-happens at export. `Import P3D` and `Export P3D` remain, and `Export P3D` gains a small
-adjacent **options** button opening the P3D export options, mirroring Maya's option-box
-convention and giving the dock its own one-click route to the Auto LOD settings.
+Every button has another home, so nothing becomes unreachable:
 
-**`Export P3D` becomes a split button** offering *Export All* and *Export Selection*, using
-the same menu-button pattern the LOD list already uses for Add LOD. Export Selection is not
-a secondary case: it is the one that pairs with Auto LOD, which generates from a single
-selected mesh.
+| Button | Where it lives instead |
+|--------|------------------------|
+| Import P3D | `File > Import` — `Arma P3D` is a registered translator |
+| Export P3D | `File > Export All` / `File > Export Selection` |
+| Auto LOD | already gone — generation moved into export |
+| Validate | the Validation panel |
 
-**A bug to fix while here.** `entry.export_p3d` sets only `defaultFileExportAllType`, so
-Export Selection is never pre-set to "Arma P3D" and falls back to whatever type Maya used
-last. Both `defaultFileExportAllType` and `defaultFileExportActiveType` must be set. The
-translator and the MEL already handle the Export Selection path correctly —
+The Auto LOD settings keep their one-click route through Maya's own option boxes on
+`File > Export All` and `File > Export Selection`, both of which open
+`mayaObjectBuilderP3DOptions`.
+
+**The loss, stated rather than glossed:** `import_p3d` and `export_p3d` pre-select
+"Arma P3D" in the dialog's type list, and that convenience goes with them. Maya then
+defaults to whatever type was used last, as it does for every other format.
+
+Setting the `defaultFile*Type` optionVars at plugin load to compensate is **rejected**: it
+would hijack `File > Import` for every other format the user works with. A plugin does not
+get to decide what Maya's file dialogs default to.
+
+With Quick Actions gone the dock has no fixed header, and the panel list is the whole dock.
+
+**A bug to fix while here**, since it belongs to the export path either way.
+`entry.export_p3d` sets only `defaultFileExportAllType`, so Export Selection is never
+pre-set to "Arma P3D". The translator and the MEL already handle that path correctly —
 `kExportActiveAccessMode` becomes `export_active`, which becomes `selected_only`, and
 `mayaObjectBuilderP3DCurrentFileAction` already recognises `defaultFileExportActiveType`.
-Only the optionVar was missed.
-
-`Import P3D` is not merely a copy of `File > Import`: it pre-selects "Arma P3D" in the
-dialog's type list, which Maya otherwise leaves on whatever was used last. That is the value
-it adds, and it is the reason it stays in the dock while leaving the menu.
-
-**Export P3D is now the most consequential control in the plugin** — it validates, may
-generate LODs, and writes the file. It should read as the primary action of the row rather
-than one of three equals.
+Only the optionVar was missed. Whatever survives of `export_p3d` must set both.
 
 ### Visual language
 
@@ -138,21 +142,21 @@ answer is to simplify the layout, not to paint it.
 
 ## Testing
 
-- The menu builds with every divider label, icon, submenu and the export option box, and
-  `plugin_teardown.py` still removes it cleanly on unload with no leftover UI.
+- The menu builds with every divider label, icon and submenu, and `plugin_teardown.py`
+  still removes it cleanly on unload with no leftover UI.
 - Building the menu twice does not duplicate entries (the existing `menu(exists=True)`
   guard still holds).
 - The menu contains no Import/Export P3D entry, and `File > Export All`'s option box still
   opens the P3D options with the Auto LOD frame.
-- The Quick Actions options button opens the same dialog.
-- `Export P3D` offers both Export All and Export Selection, and each writes the expected
-  scope.
-- After the dock's export action runs, **both** `defaultFileExportAllType` and
-  `defaultFileExportActiveType` read "Arma P3D" — the second is the one that regressed.
-- `Import P3D` from Quick Actions pre-selects "Arma P3D" even when the last import used a
-  different type.
+- The dock has no Quick Actions group and no Import/Export/Validate buttons outside the
+  Validation panel.
+- `File > Export Selection` writes only the selection, and its option box opens the P3D
+  options with the Auto LOD frame.
+- Any surviving export entry point sets **both** `defaultFileExportAllType` and
+  `defaultFileExportActiveType` — the second is the one that regressed.
+- Plugin load does not write any `defaultFile*Type` optionVar.
 - Every Save Selection entry is reachable, `female_body` included.
-- The dock builds with exactly six sections, in the specified order.
+- The dock builds with exactly five sections, in the specified order.
 - The dock still builds when Qt is unavailable (`QT_AVAILABLE` false path).
 - No widget in `a3ob.ui` sets a **non-empty** stylesheet. Worth an explicit test — this is
   the rule most likely to be broken later by someone making one panel "look better".
