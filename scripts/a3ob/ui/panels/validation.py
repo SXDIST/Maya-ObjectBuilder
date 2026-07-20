@@ -60,7 +60,7 @@ class ValidationPanelMixin:
             return
         self.validation_list.blockSignals(True)
         self.validation_list.clear()
-        errors = warnings = 0
+        errors = warnings = damages = 0
         for row in rows or []:
             parts = row.split("|", 2)
             if len(parts) != 3:
@@ -68,11 +68,16 @@ class ValidationPanelMixin:
             severity, node, message = parts
             if severity == "error":
                 errors += 1
+                icon_path = ":/error.png"
+            elif severity == "damage":
+                damages += 1
+                icon_path = ":/SP_MessageBoxWarning.png"
             else:
                 warnings += 1
+                icon_path = ":/caution.png"
             text = message + ("  ·  " + node if node else "")
             item = qt_widgets.QListWidgetItem(text)
-            icon = _qt_icon(":/error.png" if severity == "error" else ":/caution.png")
+            icon = _qt_icon(icon_path)
             if icon is not None and not icon.isNull():
                 item.setIcon(icon)
             item.setData(qt_core.Qt.UserRole, node)
@@ -81,7 +86,9 @@ class ValidationPanelMixin:
         if not rows:
             self.validation_summary.setText("No issues found ✓")
         else:
-            self.validation_summary.setText("{0} error(s), {1} warning(s) — click a row to select it.".format(errors, warnings))
+            self.validation_summary.setText(
+                "{0} error(s), {1} damage, {2} warning(s) — click a row to select it.".format(
+                    errors, damages, warnings))
 
 
     def _select_validation_node(self):

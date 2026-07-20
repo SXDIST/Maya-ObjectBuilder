@@ -24,6 +24,15 @@ class _IssueLog:
         self._record("error", node, message)
         om.MGlobal.displayError("a3obValidate: %s%s" % (message, (" on " + node) if node else ""))
 
+    def damage(self, node, message):
+        """The file will be written, and will quietly differ from what the scene shows.
+
+        Distinct from a warning because export ASKS before proceeding on one of these, and
+        distinct from an error because the file is not malformed — it is just not what the
+        user thinks they exported."""
+        self._record("damage", node, message)
+        om.MGlobal.displayWarning("a3obValidate: %s%s" % (message, (" on " + node) if node else ""))
+
     @property
     def warnings(self):
         return sum(1 for severity, _, _ in self.items if severity == "warning")
@@ -31,6 +40,10 @@ class _IssueLog:
     @property
     def errors(self):
         return sum(1 for severity, _, _ in self.items if severity == "error")
+
+    @property
+    def damages(self):
+        return sum(1 for severity, _, _ in self.items if severity == "damage")
 
     def as_result(self):
         # "severity|node|message" rows — parsed by the Validation panel.
@@ -94,7 +107,7 @@ class ValidateCommand(_Base):
 
         self._validate_bind_pose(log)
 
-        om.MGlobal.displayInfo("a3obValidate: checked LODs=%d, warnings=%d, errors=%d" % (len(lods), log.warnings, log.errors))
+        om.MGlobal.displayInfo("a3obValidate: checked LODs=%d, warnings=%d, damage=%d, errors=%d" % (len(lods), log.warnings, log.damages, log.errors))
         self.setResult(log.as_result())
 
     def _validate_bind_pose(self, log):
@@ -107,10 +120,10 @@ class ValidateCommand(_Base):
             log.warn("", "could not check bind pose: %s" % error)
             return
         if posed:
-            log.warn(posed[0].split("|")[-1],
-                     "skeleton is not in bind pose (%d joint(s), e.g. %s) — exporting now "
-                     "would bake the pose into the model"
-                     % (len(posed), ", ".join(j.split("|")[-1] for j in posed[:3])))
+            log.damage(posed[0].split("|")[-1],
+                       "skeleton is not in bind pose (%d joint(s), e.g. %s) — exporting now "
+                       "would bake the pose into the model"
+                       % (len(posed), ", ".join(j.split("|")[-1] for j in posed[:3])))
 
     def _proxy_placeholder_selections(self, lod, lod_name, log):
         proxy_selections = set()
@@ -240,7 +253,7 @@ class ValidateCommand(_Base):
             if is_object_builder_metadata_set(set_obj):
                 set_name = om.MFnDependencyNode(set_obj).name()
                 if not metadata_set_has_live_members(set_obj):
-                    log.warn(set_name, "Object Builder set has no live members and will be ignored")
+                    log.damage(set_name, "Object Builder set has no live members and will be ignored")
                 elif set_contains_mesh(set_obj, mesh):
                     selection_name = attr.get_string(set_obj, A.SELECTION_NAME)
                     if selection_name:
