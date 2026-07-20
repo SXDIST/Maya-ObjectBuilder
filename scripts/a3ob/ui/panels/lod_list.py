@@ -68,6 +68,10 @@ class LodListPanelMixin:
         # panel of its own — see selected_named_property_lod() for how it follows the row.
         layout.addWidget(self._build_named_properties_detail())
 
+        # Mass (a3obMassValues) is likewise per-LOD data, exported to a mass TAGG
+        # wherever it exists — see _build_mass_detail() for why it is never hidden.
+        layout.addWidget(self._build_mass_detail())
+
         self.refresh_lod_list()
         return widget
 
@@ -207,6 +211,8 @@ class LodListPanelMixin:
         # The detail area follows the row the tree ends up highlighting above, whichever
         # of the rebuild/update-in-place paths just ran.
         self.refresh_named_properties()
+        self.refresh_mass_summary()
+        self._sync_mass_collapse_state()
 
 
     def _build_row_editors(self, node):
@@ -479,6 +485,162 @@ class LodListPanelMixin:
         tests both call this, so a passing test proves what the button actually does."""
         batch = self.named_batch_enabled()
         return _set_named_property_value(name, value, batch=batch)
+
+
+    # ---- mass detail area (moved from panels/metadata.py) -----------------------------
+
+    def _build_mass_detail(self):
+        """Per-vertex mass on the selected LOD (a3obMassValues), exported to a P3D mass
+        TAGG wherever it exists — export does NOT restrict it by LOD type. The section is
+        therefore always present; only its starting expanded/collapsed state depends on
+        the row's type (see _sync_mass_collapse_state) — never its existence or whether
+        Apply/Clear/etc. actually work."""
+        widget = qt_widgets.QWidget()
+        layout = qt_widgets.QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(UI_SPACING)
+
+        header = qt_widgets.QHBoxLayout()
+        self.mass_toggle_button = qt_widgets.QPushButton("Mass")
+        self.mass_toggle_button.setFlat(True)
+        self.mass_toggle_button.setCheckable(True)
+        self.mass_toggle_button.setCursor(qt_core.Qt.PointingHandCursor)
+        self.mass_toggle_button.setToolTip("Per-vertex mass on the selected LOD, exported to P3D.")
+        button_font = self.mass_toggle_button.font()
+        button_font.setBold(True)
+        self.mass_toggle_button.setFont(button_font)
+        self.mass_toggle_button.toggled.connect(self._on_mass_toggle)
+        header.addWidget(self.mass_toggle_button)
+        layout.addLayout(header)
+
+        self.mass_body = qt_widgets.QWidget()
+        mass_layout = qt_widgets.QFormLayout(self.mass_body)
+        mass_layout.setContentsMargins(12, 0, 0, 0)
+        self.mass_value_field = qt_widgets.QDoubleSpinBox()
+        self.mass_value_field.setDecimals(3)
+        self.mass_value_field.setValue(1.0)
+        self.mass_value_field.setRange(-1000000.0, 1000000.0)
+        self.mass_mode_combo = qt_widgets.QComboBox()
+        self.mass_mode_combo.addItems(["All vertices", "Selected vertices"])
+        self.mass_total_label = qt_widgets.QLabel("Total: —")
+        mass_layout.addRow("Value", self.mass_value_field)
+        mass_layout.addRow("Mode", self.mass_mode_combo)
+        mass_layout.addRow("Current", self.mass_total_label)
+        mass_buttons = qt_widgets.QHBoxLayout()
+        mass_buttons.addWidget(_qt_button("Apply", apply_mass_from_ui, "Set the mass value on the LOD's vertices.", ":/confirm.png"))
+        mass_buttons.addWidget(_qt_button("Clear", clear_mass_from_ui, "Remove all mass data from the LOD.", ":/delete.png"))
+        mass_layout.addRow(mass_buttons)
+
+        self.mass_density_field = qt_widgets.QDoubleSpinBox()
+        self.mass_density_field.setDecimals(1)
+        self.mass_density_field.setRange(0.1, 1000000.0)
+        self.mass_density_field.setValue(1000.0)
+        self.mass_density_field.setToolTip("Density (kg/m3) for 'From volume' — water ~ 1000, wood ~ 700, steel ~ 7850.")
+        mass_layout.addRow("Density", self.mass_density_field)
+        mass_tools = qt_widgets.QHBoxLayout()
+        mass_tools.addWidget(_qt_button("Distribute evenly", distribute_mass_evenly, "Spread the current total mass evenly across all vertices.", ":/confirm.png"))
+        mass_tools.addWidget(_qt_button("From volume", mass_from_volume_from_ui, "Set total mass = bounding-box volume x density, spread evenly.", ":/polyCube.png"))
+        mass_layout.addRow(mass_tools)
+        layout.addWidget(self.mass_body)
+
+        self._mass_collapsed = True
+        self._set_mass_collapsed(True)
+        self.refresh_mass_summary()
+        return widget
+
+
+    def _on_mass_toggle(self, checked):
+        """User clicked the Mass header — a manual override of the collapse-by-relevance
+        default, good for the session but not persisted (the next refresh recomputes it
+        from the row's LOD type, same as the row editors themselves do)."""
+        self._mass_collapsed = not checked
+        if self.mass_body is not None:
+            self.mass_body.setVisible(checked)
+        self.mass_toggle_button.setText("Mass ▾" if checked else "Mass ▸")
+
+
+    def _set_mass_collapsed(self, collapsed):
+        collapsed = bool(collapsed)
+        self._mass_collapsed = collapsed
+        if getattr(self, "mass_body", None) is not None:
+            self.mass_body.setVisible(not collapsed)
+        if getattr(self, "mass_toggle_button", None) is not None:
+            self.mass_toggle_button.blockSignals(True)
+            self.mass_toggle_button.setChecked(not collapsed)
+            self.mass_toggle_button.setText("Mass ▸" if collapsed else "Mass ▾")
+            self.mass_toggle_button.blockSignals(False)
+
+
+    def _sync_mass_collapse_state(self):
+        """Collapse the Mass group when the selected row's LOD type makes mass unusual.
+
+        Collapsed, never hidden and never disabled: export writes a mass TAGG wherever
+        a3obMassValues exists, with no restriction by a3obLodType, so the UI must not be
+        narrower than the format — this only decides prominence, never availability."""
+        if getattr(self, "mass_body", None) is None:
+            return
+        node = self.selected_named_property_lod()
+        lod_type = None
+        if node and cmds.objExists(node) and cmds.attributeQuery("a3obLodType", node=node, exists=True):
+            lod_type = cmds.getAttr(node + ".a3obLodType")
+        self._set_mass_collapsed(lod_type not in GEOMETRY_FAMILY_LOD_TYPES)
+
+
+    def refresh_mass_summary(self):
+        """The running total/vertex-count line under the mass controls. Follows the
+        detail area's row (selected_named_property_lod), not the raw scene selection —
+        matching what selected_named_property_lod already does for named properties."""
+        if getattr(self, "mass_total_label", None) is None:
+            return
+        node = self.selected_named_property_lod()
+        raw = _safe_get_attr(node, "a3obMassValues", "") if node else ""
+        values = []
+        for token in (raw or "").split(";"):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                values.append(float(token))
+            except ValueError:
+                pass
+        if node is None:
+            self.mass_total_label.setText("Total: — (no LOD)")
+        elif not values:
+            self.mass_total_label.setText("Total: — (no mass set)")
+        else:
+            self.mass_total_label.setText("Total: {0:.3f}  ({1} verts)".format(sum(values), len(values)))
+
+
+    def mass_value(self):
+        return self.mass_value_field.value() if self.mass_value_field is not None else 1.0
+
+
+    def mass_mode(self):
+        return self.mass_mode_combo.currentText() if self.mass_mode_combo is not None else "All vertices"
+
+
+    def mass_section_is_present(self):
+        """Mass must be present for EVERY LOD type — collapsed only changes prominence,
+        never availability. True once the detail area has built the group at all."""
+        return getattr(self, "mass_body", None) is not None
+
+
+    def mass_section_is_collapsed(self):
+        return bool(getattr(self, "_mass_collapsed", False))
+
+
+    def apply_mass(self, value):
+        """Programmatic path for setting + applying mass on THIS dock instance.
+
+        Mirrors apply_mass_from_ui() but writes through self directly rather than
+        through _active_qt_dock() — the free function only finds the one dock that
+        was built via _build_qt_dock()/open_dock(), which a test-constructed dock
+        never registers as. Both paths end at the same a3obSetMass command."""
+        if getattr(self, "mass_value_field", None) is not None:
+            self.mass_value_field.setValue(value)
+        load_plugin()
+        with _undo_chunk("Set Mass"):
+            cmds.a3obSetMass(value=value, selectedComponents=(self.mass_mode() == "Selected vertices"))
 
 
     def lod_row_nodes(self):

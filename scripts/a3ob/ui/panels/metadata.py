@@ -9,44 +9,13 @@ from a3ob.ui.entry import *  # noqa: F401,F403
 
 
 class MetadataPanelMixin:
-    def _build_mass_flags_section(self):
+    def _build_flags_section(self):
         widget = qt_widgets.QWidget()
         layout = qt_widgets.QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        layout.addWidget(_hint("Per-vertex mass and per-component flags on the active LOD, exported to P3D."))
-
-        mass_group = qt_widgets.QGroupBox("Mass")
-        mass_layout = qt_widgets.QFormLayout(mass_group)
-        self.mass_value_field = qt_widgets.QDoubleSpinBox()
-        self.mass_value_field.setDecimals(3)
-        self.mass_value_field.setValue(1.0)
-        self.mass_value_field.setRange(-1000000.0, 1000000.0)
-        self.mass_mode_combo = qt_widgets.QComboBox()
-        self.mass_mode_combo.addItems(["All vertices", "Selected vertices"])
-        self.mass_total_label = qt_widgets.QLabel("Total: —")
-        mass_layout.addRow("Value", self.mass_value_field)
-        mass_layout.addRow("Mode", self.mass_mode_combo)
-        mass_layout.addRow("Current", self.mass_total_label)
-        mass_buttons = qt_widgets.QHBoxLayout()
-        mass_buttons.addWidget(_qt_button("Apply", apply_mass_from_ui, "Set the mass value on the LOD's vertices.", ":/confirm.png"))
-        mass_buttons.addWidget(_qt_button("Clear", clear_mass_from_ui, "Remove all mass data from the LOD.", ":/delete.png"))
-        mass_layout.addRow(mass_buttons)
-
-        self.mass_density_field = qt_widgets.QDoubleSpinBox()
-        self.mass_density_field.setDecimals(1)
-        self.mass_density_field.setRange(0.1, 1000000.0)
-        self.mass_density_field.setValue(1000.0)
-        self.mass_density_field.setToolTip("Density (kg/m3) for 'From volume' — water ~ 1000, wood ~ 700, steel ~ 7850.")
-        mass_layout.addRow("Density", self.mass_density_field)
-        mass_tools = qt_widgets.QHBoxLayout()
-        mass_tools.addWidget(_qt_button("Distribute evenly", distribute_mass_evenly, "Spread the current total mass evenly across all vertices.", ":/confirm.png"))
-        mass_tools.addWidget(_qt_button("From volume", mass_from_volume_from_ui, "Set total mass = bounding-box volume x density, spread evenly.", ":/polyCube.png"))
-        mass_layout.addRow(mass_tools)
-        layout.addWidget(mass_group)
-
-        self.refresh_mass_summary()
+        layout.addWidget(_hint("Per-component flags on the active LOD, exported to P3D."))
 
         flags_group = qt_widgets.QGroupBox("Flags")
         flags_layout = qt_widgets.QFormLayout(flags_group)
@@ -85,36 +54,6 @@ class MetadataPanelMixin:
         proxy_layout.addRow(self.proxy_from_selection_check)
         proxy_layout.addRow(_qt_button("Create Proxy", create_proxy_from_ui, "Create a proxy from the path and selected components.", ":/create.png"))
         return widget
-
-
-    def refresh_mass_summary(self):
-        if getattr(self, "mass_total_label", None) is None:
-            return
-        node = _selected_lod_transform()
-        raw = _safe_get_attr(node, "a3obMassValues", "") if node else ""
-        values = []
-        for token in (raw or "").split(";"):
-            token = token.strip()
-            if not token:
-                continue
-            try:
-                values.append(float(token))
-            except ValueError:
-                pass
-        if node is None:
-            self.mass_total_label.setText("Total: — (no LOD)")
-        elif not values:
-            self.mass_total_label.setText("Total: — (no mass set)")
-        else:
-            self.mass_total_label.setText("Total: {0:.3f}  ({1} verts)".format(sum(values), len(values)))
-
-
-    def mass_value(self):
-        return self.mass_value_field.value() if self.mass_value_field is not None else 1.0
-
-
-    def mass_mode(self):
-        return self.mass_mode_combo.currentText() if self.mass_mode_combo is not None else "All vertices"
 
 
     def flag_component(self):

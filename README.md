@@ -116,7 +116,7 @@ The dock is a vertical stack of **collapsible panels** — each remembers its ex
 | 📋 **LODs** | Central list of every LOD in the scene — select, frame, rename, duplicate, delete, add new LODs |
 | 🎚️ **LOD Properties** | Assign P3D LOD type & resolution to the selection |
 | 🤖 **Auto LOD** | Generate resolution/geometry/memory/fire/view LODs from a mesh |
-| ⚖️ **Mass & Flags** | Vertex mass and face/vertex component flags |
+| ⚖️ **Flags** | Face/vertex component flags (vertex mass now lives under the selected LOD in the LODs panel) |
 | 🏷️ **Named Properties** | Key/value properties stored on the selected LOD |
 | 🎨 **Materials** | Texture (`.paa`) and `.rvmat` paths per material, the texture root, and the alpha→transparency toggle |
 | 🗂️ **Selections** | Filter & maintain selections, proxies, and flag sets |

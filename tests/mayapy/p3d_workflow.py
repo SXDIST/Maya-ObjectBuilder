@@ -364,7 +364,7 @@ def assert_ui_redesign_helpers_load():
     # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so
     # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
     for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
-                 "_build_mass_flags_section", "_build_proxies_section",
+                 "_build_flags_section", "_build_proxies_section",
                  "_build_memory_points_section",
                  "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
@@ -380,7 +380,7 @@ def assert_ui_redesign_helpers_load():
     if "generate_auto_lods_from_ui" in ui:
         raise RuntimeError("Auto LOD UI wrapper should have been removed")
     # panel optionVar key is derived from the panel title
-    if ui["_panel_optionvar_key"]("Mass & Flags") != "MayaObjectBuilder_panel_Mass_Flags_expanded":
+    if ui["_panel_optionvar_key"]("Flags") != "MayaObjectBuilder_panel_Flags_expanded":
         raise RuntimeError("Panel optionVar key helper changed unexpectedly")
     # routing helpers must be safe to call with no dock built (Qt-only path, early return)
     if ui["_active_qt_dock"]() is not None:

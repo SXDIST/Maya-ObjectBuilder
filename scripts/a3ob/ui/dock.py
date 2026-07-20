@@ -59,6 +59,9 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.mass_mode_combo = None
         self.mass_total_label = None
         self.mass_density_field = None
+        self.mass_toggle_button = None
+        self.mass_body = None
+        self._mass_collapsed = True
         self.validation_list = None
         self.validation_summary = None
         self.flag_component_combo = None
@@ -116,7 +119,7 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
             ("LOD Properties", self._build_lod_properties_section(), False, None),
-            ("Mass & Flags", self._build_mass_flags_section(), True, None),
+            ("Flags", self._build_flags_section(), True, None),
             ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Proxies", self._build_proxies_section(), True, None),

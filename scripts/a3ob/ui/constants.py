@@ -168,6 +168,11 @@ LOD_DEFINITIONS = [
 LOD_TYPE_NAMES = {definition["type"]: definition["label"] for definition in LOD_DEFINITIONS}
 RESOLUTION_LOD_TYPE = 0  # Resolution LOD: the only type carrying a numeric resolution
 MEMORY_LOD_TYPE = 9      # Memory LOD: holds named locator points
+# Geometry-family LOD types (mirrors the grouping in lod_type_icon below) — mass is
+# USUAL here. It is never restricted to these types at export (a3obMassValues drives
+# the mass TAGG regardless of a3obLodType), so this only decides whether the Mass
+# detail area starts expanded or collapsed — never whether it exists or works.
+GEOMETRY_FAMILY_LOD_TYPES = (6, 7, 8, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24)
 
 
 def lod_type_icon(lod_type):
