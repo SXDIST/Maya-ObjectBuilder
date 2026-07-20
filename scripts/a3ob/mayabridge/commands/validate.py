@@ -160,13 +160,25 @@ class ValidateCommand(_Base):
             if not is_ascii(texture) or not is_ascii(material):
                 log.warn(name, "non-ASCII texture/material path")
 
-        self._validate_skin_weights(mesh_path, name, log)
+        self._validate_skin_weights(lod, mesh_path, name, log)
         self._validate_object_sets(mesh, name, proxy_selections, log)
 
-    def _validate_skin_weights(self, mesh_path, name, log):
+    def _validate_skin_weights(self, lod, mesh_path, name, log):
         """Flag vertices whose skin weights disagree with their neighbours — weight-transfer
-        artefacts that stay invisible in bind pose but export as stray bone selections."""
+        artefacts that stay invisible in bind pose but export as stray bone selections.
+
+        Also flag a mesh whose rig is gone. Weights live only in the skinCluster now, and
+        Maya deletes that with the joints, so a LOD that once had bone selections and now
+        has no cluster will export with none — silently, unless this says so."""
         from a3ob.mayabridge.commands.skin import outliers_for_mesh
+        from a3ob.mayabridge.skinquery import read_skin
+
+        if read_skin(mesh_path) is None:
+            if self._model_has_skinned_sibling(lod):
+                log.warn(name, "mesh has no skinCluster — any bone selections it had are gone "
+                               "with the rig and will not be exported")
+            return
+
         try:
             outliers = outliers_for_mesh(mesh_path)
         except Exception as error:  # noqa: BLE001 - never let a skin read break validation
@@ -175,6 +187,44 @@ class ValidateCommand(_Base):
         if outliers:
             log.warn(name, "%d skin weight outlier vertex(es) — a3obSkinWeights selects them; "
                            "fix with Skin > Smooth Skin Weights" % len(outliers))
+
+    def _model_has_skinned_sibling(self, lod):
+        """Whether another LOD in the same model still carries a live skinCluster while this
+        one does not — the signal that THIS LOD specifically lost its rig, rather than the
+        model never having had one.
+
+        "Same model" is resolved the way export itself groups LODs: the folder directly
+        holding this LOD, walked downward for every LOD transform under it — the identical
+        walk ``export.parse.resolve_lod_paths`` performs when a user selects that folder to
+        export one model. A LOD parented straight under the world has no such folder and is
+        treated as having no siblings, matching export: nothing groups it with anything else
+        either.
+
+        A Geometry/View/Memory LOD is never skinned, so a purely static model — no sibling
+        ever had a skinCluster — stays silent here, which is what keeps this from spamming
+        every unrigged prop.
+
+        Known gap, accepted: deleting the ENTIRE skeleton off a multi-LOD rigged model leaves
+        no skinned sibling either, so that case slips through uncaught. There is no reliable
+        way to tell "this model was never rigged" from "every LOD just lost its rig" without a
+        second source of truth — which is exactly what a3obBakedWeights used to be, and what
+        this task exists to retire, not reinvent."""
+        from a3ob.mayabridge.export.parse import resolve_lod_paths, _find_first_mesh_path
+        from a3ob.mayabridge.skinquery import read_skin
+
+        lod_path = om.MDagPath.getAPathTo(lod)
+        if lod_path.length() <= 1:
+            return False  # parented straight under the world: no folder, no siblings
+
+        parent_path = om.MDagPath(lod_path)
+        parent_path.pop()
+        for sibling_path in resolve_lod_paths(parent_path):
+            if sibling_path.fullPathName() == lod_path.fullPathName():
+                continue
+            sibling_mesh_path = _find_first_mesh_path(sibling_path)
+            if sibling_mesh_path is not None and read_skin(sibling_mesh_path) is not None:
+                return True
+        return False
 
     def _validate_object_sets(self, mesh, lod_name, proxy_placeholders, log):
         it = om.MItDependencyNodes(om.MFn.kSet)
