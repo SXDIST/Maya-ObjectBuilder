@@ -1,0 +1,117 @@
+# Skinning panel: what is left once the storage model goes
+
+**Date:** 2026-07-20
+**Status:** approved, not implemented
+**Depends on:** `2026-07-20-weights-live-skincluster-design.md`,
+`2026-07-20-validation-at-export-design.md`
+
+## Starting point
+
+`panels/skinning.py` is 349 lines and shows, top to bottom: four reference-asset buttons, a
+transfer row with a distance field, Test Pose, a weights-storage block of three buttons and
+a state line, and an influence list with two buttons — separated by four paragraphs of
+explanatory prose.
+
+## What the other specs already remove
+
+The weights-storage block goes with `a3obBakedWeights`: the explanatory paragraph, the
+state line, **Restore Weights**, **Use the Older Copy**, **Bake Now**, plus `_weights_state`,
+`_weights_state_text`, `_why_nothing_restored`, `run_bake_skin`, `run_restore_skin`,
+`_show_restore_previous` and `refresh_weights_state` — roughly 141 of 349 lines, 40% of the
+panel.
+
+That also removes the panel's only `on_expand` callback (`dock.py` registers
+`refresh_weights_state` for "Skinning"). The panel becomes static: expanding it stops
+costing a scene scan.
+
+The panel's own warning text — *"WARNING: the older copy is one save from being
+overwritten"* — disappears with the model that made it necessary. A panel that has to warn
+the user about its own storage was evidence the storage was wrong.
+
+**Select Skin Outliers** arrives here from the Validation panel. It is a weight tool that
+writes a selection, and never belonged in a read-only validator.
+
+## Decisions
+
+### Removed from the panel
+
+- **Add Skeleton.** The reference body carries its own skeleton and `ensure_reference`
+  keeps it, so adding a bare skeleton is the rare case. Moves to the menu.
+- **The `Detached over` field.** `DEFAULT_FAR_DISTANCE = 0.06` is not a guess: it was
+  measured on a real DayZ character — boots 0.009, trousers 0.019, jacket 0.024, helmet
+  0.025, against a backpack at 0.102 — and 0.03, the first guess, wrongly classified parts
+  of the jacket as detached. The field only ever overrode an already-correct value. The
+  `a3obTransferSkin -distance` flag stays as the escape hatch.
+- **The four explanatory paragraphs.** With the panel down to four buttons and a list, the
+  prose outweighs the interface. The detail is already written in the tooltips, which is
+  where it stays.
+
+### Renamed
+
+- **Add Male Body → Add Male Character.** It imports the body *with its materials and its
+  skeleton*; "Body" undersells what lands in the scene.
+
+### Moved to the menu, not deleted
+
+**Save Selection as Body** and **Save Selection as Skeleton** were proposed for deletion.
+They cannot be: reference assets are Bohemia's and are deliberately **not shipped in the
+repository** (`references.py`), so these buttons are the only way to create the asset that
+Add Male Character adds. Deleting them leaves a dead button on any fresh machine, after a
+Maya preferences reset, or for a second user. They look unnecessary only to someone who has
+already run them once — which is the case here: both `dayz_male_body.ma` and
+`dayz_skeleton.ma` are already saved and pointed at by optionVar.
+
+They belong in the menu for a second reason. `save_reference` exports the current selection
+with `force=True` and **no confirmation**: a wrong selection plus one click silently
+replaces the reference asset. A destructive, once-in-a-while action should not sit beside
+buttons pressed daily.
+
+Therefore a **Reference Assets** submenu holds: Add Male Character, Add Skeleton, Save
+Selection as Body, Save Selection as Skeleton. `KINDS` also defines `female_body`, which has
+never had any UI at all; the submenu exposes it for free and removes that inconsistency.
+
+**Added safety:** saving over an existing reference asks first, naming the file it would
+replace. Overwriting a working reference with a mis-selection currently has no way back.
+
+### Added
+
+The transfer result must report **how many shells were rigidified**.
+`transfer_to_target` already returns the count and the panel discards it, saying only
+"Transferred onto N mesh(es)". Removing the distance field removes the user's ability to
+correct a misclassification, so the misclassification must at least become visible — the
+margin between fitted cloth at 0.06 and a backpack at 0.102 is only 1.7×, and a bulky vest
+with pouches could fall in it.
+
+## Resulting panel
+
+```
+[ Add Male Character ]
+[ Transfer Skin from Body ]
+[ Test Pose ]
+[ Select Skin Outliers ]
+
+Filter [____________]
+┌────────────────────┐
+│ bone list          │
+└────────────────────┘
+[ Select Vertices ] [ Remove ]
+
+<summary line>
+```
+
+Four buttons, a filtered list, two list actions, one result line. No prose, no state to
+track, no storage model to understand.
+
+## Testing
+
+- The panel builds with no reference to `a3obBakedWeights` or its helpers.
+- `dock.py` registers no `on_expand` for Skinning; expanding it triggers no scene scan
+  (`dock_refresh_cost.py`).
+- Transfer reports the rigidified-shell count, and reports zero distinctly from "none
+  needed".
+- Transfer uses `DEFAULT_FAR_DISTANCE` when the command is called without `-distance`, and
+  still honours `-distance` when given.
+- Saving over an existing reference prompts; declining leaves the file untouched.
+- Saving with nothing selected still raises the existing clear error rather than writing an
+  empty asset.
+- The panel stays a silent read (`dock_panel_sync.py`), positive control intact.
