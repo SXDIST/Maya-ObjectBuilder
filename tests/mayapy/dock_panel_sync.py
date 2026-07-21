@@ -193,17 +193,17 @@ def test_broken_panel_warns_once_not_on_repeat():
               "the output callback must hear cmds.warning — dedup check below would be vacuous")
         said.clear()
 
-        # First call for "Materials" must warn.
-        dock_module._warn_panel_once("Materials", RuntimeError("scene mid-edit"))
-        materials_warnings = [m for m in said if "Materials" in m]
-        check(len(materials_warnings) == 1,
-              "first panel failure must warn once, got %d: %r" % (len(materials_warnings), materials_warnings))
+        # First call for "Validation" must warn.
+        dock_module._warn_panel_once("Validation", RuntimeError("scene mid-edit"))
+        validation_warnings = [m for m in said if "Validation" in m]
+        check(len(validation_warnings) == 1,
+              "first panel failure must warn once, got %d: %r" % (len(validation_warnings), validation_warnings))
 
         # Second call for the same panel must stay silent.
-        dock_module._warn_panel_once("Materials", RuntimeError("same panel again"))
-        materials_warnings = [m for m in said if "Materials" in m]
-        check(len(materials_warnings) == 1,
-              "repeated failure for the same panel must not re-warn, got %d" % len(materials_warnings))
+        dock_module._warn_panel_once("Validation", RuntimeError("same panel again"))
+        validation_warnings = [m for m in said if "Validation" in m]
+        check(len(validation_warnings) == 1,
+              "repeated failure for the same panel must not re-warn, got %d" % len(validation_warnings))
 
         # A DIFFERENT panel still warns (dedup is per-panel, not global).
         dock_module._warn_panel_once("LODs", RuntimeError("different panel"))

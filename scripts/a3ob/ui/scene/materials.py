@@ -42,43 +42,17 @@ def _material_feeding_shading_group(shading_group):
     return materials[0] if materials else ""
 
 
-def _material_nodes_for_selection():
-    nodes = []
-    seen = set()
-    for shape in _mesh_shapes_from_selection():
-        shading_groups = _valid_nodes(cmds.listConnections(shape, type="shadingEngine") or [])
-        for shading_group in shading_groups:
-            if shading_group in {"initialShadingGroup", "initialParticleSE"} or shading_group in seen:
-                continue
-            seen.add(shading_group)
-            material_node = _material_feeding_shading_group(shading_group)
-            texture = ""
-            material = ""
-            for candidate in _valid_nodes([shading_group, material_node]):
-                if not texture:
-                    texture = _safe_get_attr(candidate, "a3obTexture", "") or ""
-                if not material:
-                    material = _safe_get_attr(candidate, "a3obMaterial", "") or ""
-            nodes.append({"material_node": material_node, "shading_groups": [shading_group], "texture": texture, "material": material})
-    return sorted(nodes, key=lambda item: ((item["material_node"] or "").lower(), item["shading_groups"][0].lower()))
-
-
-def _material_metadata_label(item):
-    name = item["material_node"] or "No material"
-    marker = "●" if (item["texture"] or item["material"]) else "○"
-    return f"{marker}  {name}"
-
-
 def faces_with_material(shading_groups, shapes):
     """The face components ``shading_groups`` are assigned to, within ``shapes``.
 
     A shading group's members come in two shapes and only one of them is components: assign
     a material to a whole mesh — the normal case for a single-material LOD — and the member
-    is the SHAPE, so reading `cmds.sets(...)` alone answers "no faces" for the very meshes
-    the panel most often shows. Those get expanded to the mesh's full face range.
+    is the SHAPE, so reading `cmds.sets(...)` alone answers "no faces" for the common case of
+    a whole-mesh material assignment. Those get expanded to the mesh's full face range.
 
-    Scoped to ``shapes`` (what the panel is currently listing) rather than the whole scene,
-    so picking a helmet's material does not also select the body sharing that material."""
+    Scoped to ``shapes`` (the caller's LOD, e.g. the DayZ Material section of the Attribute
+    Editor) rather than the whole scene, so picking a helmet's material does not also select
+    the body sharing that material."""
     wanted = set()
     for shape in shapes or []:
         wanted.update(cmds.ls(shape, long=True) or [])
@@ -137,8 +111,6 @@ def _set_material_metadata_on_node(node, texture, material):
 __all__ = [
     "_mesh_shapes_from_selection",
     "_material_feeding_shading_group",
-    "_material_nodes_for_selection",
-    "_material_metadata_label",
     "faces_with_material",
     "_set_material_metadata_on_node",
 ]
