@@ -16,7 +16,7 @@ conversation that produced it.
 | 3a — one LOD panel | **done**, 4 tasks, all reviewed |
 | 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
 | 3c — Skinning slims to four buttons | **done**, 4 tasks, all reviewed |
-| 3d — Materials → Attribute Editor; Preferences window | specced, **not planned** |
+| 3d — Materials → Attribute Editor; Preferences window | **planned**, not started |
 | 4 — reference assets ship with the plugin | specced, not planned |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
@@ -90,6 +90,15 @@ launched Maya); it matters whenever a task deletes a module.
   `dayz_skeleton.ma` in `Documents/maya/MayaObjectBuilder/references` and repointed the
   optionVar at it. Stub `references.default_directory` to a `mkdtemp`, and restore every
   optionVar in a `finally` — `skin_transfer.py` has the idiom.
+- **The Attribute Editor CAN be reached headlessly, through the callback hook.** Maya 2027 ships
+  `AEshadingEngineTemplate.mel`, so writing our own would shadow it — but the chain
+  `AEshadingEngineTemplate → AEentityTemplate → AEdependNodeTemplate` fires
+  `callbacks -executeCallbacks -hook "AETemplateCustomContent" $nodeName`, and all of that works
+  under mayapy in batch. Measured: `cmds.callbacks(addCallback=…)` and `listCallbacks` work;
+  the Python `callbacks` command has **no flag for the node name** (`nodeName=` raises "Invalid
+  flag"), so drive it with `mel.eval('callbacks -executeCallbacks -hook "…" "<node>";')` exactly
+  as Maya does; and `cmds.editorTemplate(…)` no-ops rather than raising. Only *rendering* is
+  untestable.
 - **The menu is invisible to every headless test.** `entry.show_plugin_ui` returns immediately
   under `cmds.about(batch=True)`, so menu callbacks must stay one-line wrappers over functions
   that *are* testable. `cmds.confirmDialog` returns `None` under mayapy rather than blocking,
