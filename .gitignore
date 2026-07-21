@@ -24,4 +24,10 @@ tests/paa/
 # share-alike — which is incompatible with this repo's MIT licence. Anchored to the root on
 # purpose: docs/specs/2026-07-20-skinning-panel-design.md has them ship from
 # assets/references/ instead, alongside their own LICENCE and attribution.
+#
+# This root rule stays even now that assets/references/ is tracked: a3obReference's Save
+# Selection as... still writes new Body/Skeleton saves to the repo root first, and those
+# must keep landing here untracked. assets/references/ is the shipped, licensed home for
+# the two prepared files the plugin ships with; it is intentionally not covered by this
+# anchored (root-only) pattern.
 /dayz_*.ma

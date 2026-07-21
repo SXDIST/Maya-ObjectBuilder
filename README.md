@@ -260,5 +260,6 @@ Generated `dist/` contents are release artifacts and are not meant to be committ
 Special thanks to **[MrClock8163/Arma3ObjectBuilder](https://github.com/MrClock8163/Arma3ObjectBuilder)**. This project uses the original Blender add-on as a compatibility reference for Object Builder data structures, P3D behavior, and workflow expectations; the `.paa` texture decoder (`formats/paa.py`: DXT1/DXT5 + LZO1X) is ported from its `io/data_paa.py` and `io/compression.py`.
 
 <div align="center">
-<sub>Licensed under the <a href="LICENSE">MIT License</a>.</sub>
+<sub>Licensed under the <a href="LICENSE">MIT License</a>.</sub><br>
+<sub>The plugin code is MIT. The prepared DayZ reference assets in <a href="assets/references/">assets/references/</a> are a separate work, licensed under Bohemia Interactive's ADPL-SA (non-commercial, Arma/DayZ only, share-alike, attribution to Bohemia Interactive required) — see <a href="assets/references/LICENSE">assets/references/LICENSE</a>.</sub>
 </div>

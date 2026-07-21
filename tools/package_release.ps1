@@ -23,7 +23,7 @@ $RequiredFiles = @(
     "scripts/a3ob/mayabridge/export/__init__.py",
     "scripts/a3ob/ui/constants.py",
     "scripts/a3ob/ui/scene/__init__.py",
-    "scripts/a3ob/ui/autolod/__init__.py",
+    "scripts/a3ob/mayabridge/autolod/__init__.py",
     "scripts/a3ob/ui/dock.py",
     "install/mayaObjectBuilderInstall.py",
     "install/install_maya.py",
@@ -51,6 +51,15 @@ $exclude = @("__pycache__", "*.pyc", "*.pyo")
 Copy-Item (Join-Path $RepoRoot "plug-ins") (Join-Path $StageDir "plug-ins") -Recurse -Exclude $exclude
 Copy-Item (Join-Path $RepoRoot "scripts") (Join-Path $StageDir "scripts") -Recurse -Exclude $exclude
 Get-ChildItem -Path (Join-Path $StageDir "scripts") -Recurse -Include "__pycache__" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+
+# Reference assets (dayz_male_body.ma, dayz_skeleton.ma, LICENSE) are optional: a clone with
+# them pruned must still package cleanly, so this copy is conditional on the folder existing.
+$AssetsDir = Join-Path $RepoRoot "assets"
+if (Test-Path $AssetsDir) {
+    Copy-Item $AssetsDir (Join-Path $StageDir "assets") -Recurse -Exclude $exclude
+} else {
+    Write-Host "assets/ not present - packaging without reference assets"
+}
 
 Copy-Item (Join-Path $RepoRoot "install/mayaObjectBuilderInstall.py") (Join-Path $StageDir "install/mayaObjectBuilderInstall.py")
 Copy-Item (Join-Path $RepoRoot "install/install_maya.py") (Join-Path $StageDir "install/install_maya.py")

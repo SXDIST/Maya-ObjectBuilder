@@ -1,0 +1,38 @@
+Reference assets — separate licence (NOT MIT)
+================================================
+
+This directory contains two prepared Maya scenes:
+
+  - dayz_male_body.ma
+  - dayz_skeleton.ma
+
+These are adaptations of Bohemia Interactive's DayZ male body mesh and skeleton rig,
+sourced from:
+
+  BohemiaInteractive/DayZ-Misc (GitHub) — "Rig and Animations"
+
+They carry materials and `a3obTexture` / `a3obMaterial` paths prepared for this plugin's
+workflow, which makes them a derivative work of that source, not original content of this
+project.
+
+Bohemia Interactive publishes that source under the Arma Public License Share Alike
+(APL-SA / ADPL-SA). This file is a notice, not the licence text itself — the authoritative
+text is published by Bohemia Interactive at:
+
+  https://www.bohemia.net/community/licenses/arma-public-license-share-alike
+
+By using, copying, modifying, or redistributing the files in this directory, you accept
+the terms of that licence, which include (at minimum) these four obligations:
+
+  1. Attribution — retain credit to Bohemia Interactive as the original author of the
+     underlying mesh, rig, and animation data.
+  2. Non-commercial — these assets may not be used for commercial purposes.
+  3. Arma/DayZ only — these assets may only be used to create content for Arma or DayZ
+     titles (including this plugin's DayZ/Object Builder workflow).
+  4. Share-alike — any derivative work built from these assets must be distributed under
+     the same licence (ADPL-SA), not under a different or more permissive one.
+
+This licence applies ONLY to the contents of this `assets/references/` directory. The
+Maya ObjectBuilder plugin's own source code, elsewhere in this repository, is licensed
+under the MIT License (see the top-level `LICENSE` file) and is an independent work — it
+is not a derivative of these mesh/rig assets and is not covered by ADPL-SA.

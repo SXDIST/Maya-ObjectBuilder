@@ -1,7 +1,11 @@
 """Reference assets: the DayZ body proxy and the skeleton, saved once and added by a button.
 
-These are Bohemia assets, so they are NOT stored in the repository. They live in the user's
-Maya folder and are referenced by optionVar, the same way the texture root already works.
+These are Bohemia assets. They ship with the plugin under `assets/references/`, licensed
+separately under ADPL-SA (see `assets/references/LICENSE`) since that licence is
+non-commercial/Arma-DayZ-only/share-alike and incompatible with this repo's MIT code. The
+installer seeds them into the user's Maya folder on install, without overwriting a file the
+user already has there; from then on they live in the user's Maya folder and are referenced
+by optionVar, the same way the texture root already works.
 
 Workflow: set the body up once (materials, `a3obTexture` / `a3obMaterial` paths, whatever else
 belongs on it), save it as a reference, and from then on one button drops it into any scene
