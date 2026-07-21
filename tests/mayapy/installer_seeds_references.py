@@ -121,23 +121,39 @@ def test_the_optionvars_point_at_what_was_copied():
     """Add Male Character works immediately after installation — that is the whole point."""
     installer = load_installer()
     source = tempfile.mkdtemp()
-    make_shipped_assets(source)
+    shipped_stems = ("dayz_male_body", "dayz_skeleton")
+    make_shipped_assets(source, stems=shipped_stems)
 
     with _StubbedDocumentsDir(installer) as documents:
         installer._seed_reference_assets(Path(source))
 
         destination_dir = documents / installer.PLUGIN_NAME / "references"
 
+        # Skip based on what the FIXTURE shipped, not on whether the destination file
+        # exists. Gating on "did the copy land" makes "was this kind shipped" and "did
+        # _seed_reference_assets actually run" indistinguishable — if the function were
+        # reverted to a no-op, every asset.is_file() would be False, every iteration would
+        # `continue`, and this test would report success without calling check() once.
+        checked_kinds = []
         for option_var, stem in installer.REFERENCE_ASSETS:
-            asset = destination_dir / f"{stem}.ma"
-            if not asset.is_file():
+            if stem not in shipped_stems:
                 continue
+            asset = destination_dir / f"{stem}.ma"
             check(cmds.optionVar(exists=option_var),
                   "optionVar %r was never set" % option_var)
             configured = cmds.optionVar(query=option_var)
             check(configured == asset.as_posix(),
                   "optionVar %r points at %r, not the copied asset %r"
                   % (option_var, configured, asset.as_posix()))
+            checked_kinds.append(stem)
+
+        # Positive control: an assertion-free loop (every iteration `continue`-ing) must
+        # not read as success. Without this, the checks above could ALL be skipped and the
+        # test would still print "ok".
+        check(checked_kinds == list(shipped_stems),
+              "expected to check the %d shipped kinds %r, actually checked %r — the loop "
+              "skipped every kind, which is exactly the vacuous-pass this test must catch"
+              % (len(shipped_stems), list(shipped_stems), checked_kinds))
 
 
 def test_a_reference_the_user_already_saved_is_never_overwritten():
@@ -176,6 +192,36 @@ def test_an_optionvar_the_user_already_set_is_left_alone():
         configured = cmds.optionVar(query=option_var)
         check(configured == elsewhere.as_posix(),
               "the user's own optionVar was repointed at the shipped default: now %r" % configured)
+
+
+def test_an_optionvar_set_to_empty_or_a_stale_path_is_reseeded():
+    """An empty-string optionVar and one pointing at a file that no longer exists both mean
+    "not really configured" — the same two states references.reference_path() folds into ""
+    (unsaved) elsewhere in the plugin. _seed_reference_assets must reseed in both cases, or a
+    user whose optionVar happens to be "" (never explicitly saved) or whose reference file was
+    moved/deleted would never get Add Male Character working again after an upgrade."""
+    installer = load_installer()
+    option_var = dict((stem, var) for var, stem in installer.REFERENCE_ASSETS)["dayz_male_body"]
+
+    cases = (
+        ("", "an empty string"),
+        (str(Path(tempfile.mkdtemp(prefix="seed-refs-stale-")) / "deleted.ma"),
+         "a path that no longer exists"),
+    )
+    for existing_value, label in cases:
+        source = tempfile.mkdtemp()
+        make_shipped_assets(source, stems=("dayz_male_body", "dayz_skeleton"))
+        cmds.optionVar(stringValue=(option_var, existing_value))
+
+        with _StubbedDocumentsDir(installer) as documents:
+            installer._seed_reference_assets(Path(source))
+
+            destination_dir = documents / installer.PLUGIN_NAME / "references"
+            asset = destination_dir / "dayz_male_body.ma"
+            configured = cmds.optionVar(query=option_var)
+            check(configured == asset.as_posix(),
+                  "optionVar left at %r (%s) instead of being reseeded to the copied asset %r"
+                  % (configured, label, asset.as_posix()))
 
 
 def test_a_missing_assets_directory_is_not_an_error():
@@ -249,6 +295,7 @@ def main():
                      test_the_optionvars_point_at_what_was_copied,
                      test_a_reference_the_user_already_saved_is_never_overwritten,
                      test_an_optionvar_the_user_already_set_is_left_alone,
+                     test_an_optionvar_set_to_empty_or_a_stale_path_is_reseeded,
                      test_a_missing_assets_directory_is_not_an_error,
                      test_a_kind_with_no_shipped_file_is_skipped,
                      test_reference_assets_match_kinds):
