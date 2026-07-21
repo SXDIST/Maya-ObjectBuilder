@@ -17,18 +17,29 @@ conversation that produced it.
 | 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
 | 3c — Skinning slims to four buttons | **done**, 4 tasks, all reviewed |
 | 3d — Materials → Attribute Editor; Preferences window | **done**, 5 tasks, all reviewed |
-| 4 — reference assets ship with the plugin | specced, not planned |
+| 4 — reference assets ship with the plugin | **done**, 3 tasks, all reviewed |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Suite **62/62**. Dock is **5 panels**, down from 11. The byte gate has not moved once across the
+Suite **65/65**. Dock is **5 panels**, down from 11. The byte gate has not moved once across the
 whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
+
+Phase 4 fixed **two release-breaking defects that predate this branch**, neither in its own spec.
+`_copy_runtime_package` opened with `shutil.rmtree(target)` where `target` is
+`<userAppDir>/MayaObjectBuilder` — the same directory holding `references.default_directory()` and
+the author's `backups/`, which contained a crash folder and an 899 KB weights backup written by no
+code in this repo. Every re-install deleted them. Separately, `6d824ea` moved `autolod` and left
+the file lists in `install_maya.py` and `package_release.ps1` stale in three different ways;
+`REQUIRED_PACKAGE_FILES` is what `_validate_package` refuses to install without, so **every release
+built from this branch would have hard-failed installation for every user.**
+`tests/mayapy/release_manifest_matches_repo.py` now pins both lists to the repo and to each other.
 
 Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
 `docs/plans/2026-07-20-ui-simplification-index.md`. Completed plans:
 `2026-07-20-phase1-weights.md`, `2026-07-20-phase2-export-pipeline.md`,
 `2026-07-20-phase3a-lod-panel.md`, `2026-07-20-phase3b-selections.md`,
-`2026-07-20-phase3c-skinning.md`, `2026-07-20-phase3d-materials.md`.
+`2026-07-20-phase3c-skinning.md`, `2026-07-20-phase3d-materials.md`,
+`2026-07-21-phase4-references.md`.
 
 Phase 3b fixed **two proxy-command defects that predate this branch**, both from the same root
 cause: `proxy_selection_name` is `"proxy:%s.%d" % (path, index)` and encodes **no LOD identity**,
@@ -176,6 +187,16 @@ launched Maya); it matters whenever a task deletes a module.
      6. Phase 3d Task 5 retired the Materials panel's own alpha checkbox and texture-root
         field entirely, so the Preferences window is now the only door to either setting —
         the two-doors-must-stay-in-sync concern this bullet used to name no longer applies.
+   - The **installer**, after Phase 4. It cannot be exercised end to end headlessly — `install()`
+     unloads and reloads the plugin and writes a `.mod` — so only its pure helpers are tested.
+     1. Drag `install/install_maya.py` in with the assets present; the console names the seeded
+        files.
+     2. `references/` and `backups/` in `<userAppDir>/MayaObjectBuilder` **survive the install**.
+        This is the data-loss fix; before Phase 4 they were deleted every time.
+     3. *Add Male Character* works with no prior manual save — the point of the whole phase.
+     4. Hand-edit the seeded `dayz_male_body.ma`, or repoint its optionVar elsewhere, re-run the
+        installer, and confirm it is untouched.
+     5. The plugin still loads and autoloads after the install.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.
