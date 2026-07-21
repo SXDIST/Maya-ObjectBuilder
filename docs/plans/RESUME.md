@@ -157,6 +157,23 @@ launched Maya); it matters whenever a task deletes a module.
         and its `inViewMessage`.
      8. Type `P:/data/x.paa` and confirm the field redraws as `data\x.paa`.
      9. The Script Editor stays silent while clicking around a busy scene with the AE open.
+   - The **Preferences window** added in Phase 3d, reached from the menu where
+     `Set Texture Root (.paa)…` used to be:
+     1. The window renders, with three sections — Texture root, Alpha → transparency, and
+        **Active texture sources** — and no free-text path checker (that was cut).
+     2. It opens with the **dock closed**. It is reached from the menu, which exists
+        independently of the dock, and no headless test can cover that.
+     3. Active texture sources shows a real message immediately on open, no typing.
+        Reproduce the motivating bug by hand — a configured root that EXISTS but is not what
+        resolves the textures — and confirm the message never claims `configured`. A root
+        existing on disk is not evidence it is in use; that was the whole point.
+     4. An untextured scene says so plainly rather than implying a verdict, and a scene over
+        500 materials still opens promptly and admits it sampled.
+     5. Changing the root re-textures already-imported materials; toggling alpha changes
+        viewport transparency on materials already in the scene. Both act on what is already
+        there, not only on the next import — that is what makes them feel real.
+     6. Until Phase 3d Task 5 lands, the Materials panel's own alpha checkbox and the
+        Preferences one must stay in sync: same optionVar, two doors.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.
