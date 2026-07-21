@@ -45,11 +45,12 @@ class SelectionsPanelMixin:
         create_menu = qt_widgets.QMenu(create_button)
         create_menu.addAction("Selection from components", _create_selection_set)
         create_menu.addAction("Proxy...", create_proxy_from_ui)
+        create_menu.addAction("Flag...", apply_flag_from_ui)
         create_button.setMenu(create_menu)
         # Not a lifetime crutch: QMenu(create_button) already parents the menu to the button,
         # so Qt owns it and it survives this method either way. The handle is kept for the
         # same reason the dock keeps selection_list and selection_details — so the menu can be
-        # reached later (Task 3 adds a Flag entry) without digging through the widget tree.
+        # reached later without digging through the widget tree.
         self.selection_create_menu = create_menu
         first_row.addWidget(create_button)
 

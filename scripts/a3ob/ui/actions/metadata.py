@@ -30,14 +30,17 @@ def apply_flag_from_ui():
     dock = _active_qt_dock()
     if dock is None:
         return
-    component_label = dock.flag_component()
-    value = dock.flag_value()
-    name = dock.flag_name()
+    from a3ob.ui.dialogs import flag_dialog
+    answer = flag_dialog(dock)
+    if answer is None:
+        return
+    component, value, name = answer
     if not name:
         cmds.warning("Enter a flag set name")
         return
     with _undo_chunk("Set Flag"):
-        cmds.a3obSetFlag(component=component_label.lower(), value=value, name=name)
+        cmds.a3obSetFlag(component=component, value=value, name=name)
+    _refresh_context_ui()
 
 
 def _validate_proxy_path(path):
