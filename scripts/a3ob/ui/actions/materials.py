@@ -99,32 +99,57 @@ def _shading_group_from_selection():
 
 def select_faces_for_selected_material():
     """Select the faces the shading engine implied by the current selection is assigned to.
-    Returns how many; 0 and a warning when the selection names no material.
+    Returns how many; 0 and a warning when the selection names no material, or when it names
+    more than one and cannot be resolved without guessing.
 
     Menu replacement for the Select Faces button the AE section lost: ``editorTemplate
     -addControl`` renders only attribute fields, so this cannot live in that hook any more.
-    Hypershade can select objects by a material but never faces, so nothing upstream can be
-    relied on to already have the right mesh(es) selected - the scope is rebuilt from the
-    shading group's own members (whatever it is painted onto) before delegating to
-    ``select_faces_for_shading_group``, so the item works with only the shading engine, or
-    only the material, selected."""
+
+    Two selection shapes resolve, and they scope differently:
+
+    * A selected shading engine, or a material feeding one - Hypershade's domain, and
+      Hypershade can select objects by a material but never faces, so nothing upstream can be
+      relied on to already have the right mesh(es) selected. The scope is rebuilt from the
+      shading group's own members (whatever it is painted onto) before delegating to
+      ``select_faces_for_shading_group``.
+    * A selected mesh, transform, or face component - the most natural gesture there is:
+      selecting the geometry you can see. Here the user's selection already IS the intended
+      scope, so it is used as-is, never rebuilt - widening it to every object sharing the
+      material would silently return more than was asked for. A mesh can carry more than one
+      shading engine, so this case refuses to guess: several candidates warn (naming them)
+      and select nothing rather than pick one arbitrarily."""
     shading_group = _shading_group_from_selection()
-    if not shading_group:
-        cmds.warning("Select a DayZ shading engine, or a material feeding one, first")
+    if shading_group:
+        transforms = []
+        seen = set()
+        for member in cmds.sets(shading_group, query=True) or []:
+            node = member.partition(".")[0]
+            if node and node not in seen and _node_exists(node):
+                seen.add(node)
+                transforms.append(node)
+        if transforms:
+            # noExpand: a plain mesh transform is unaffected, but `cmds.select` expands a SET
+            # passed to it into its members rather than selecting the set node itself - the
+            # mistake that bit twice in Phase 3b, once in production code.
+            cmds.select(transforms, replace=True, noExpand=True)
+        return select_faces_for_shading_group(shading_group)
+
+    groups = _shading_groups_assigned_to_selection()
+    if len(groups) == 1:
+        # The selection IS the scope here - do NOT rebuild it from the shading group's other
+        # members, unlike the branch above. That rebuild is correct when nothing upstream had
+        # the right geometry selected; here the user already pointed at exactly the geometry
+        # they meant.
+        return select_faces_for_shading_group(groups[0])
+    if len(groups) > 1:
+        names = sorted(_connected_material(group) or group for group in groups)
+        cmds.warning(
+            "Selection carries more than one material (%s) - select a face of the one you "
+            "want, or select the material itself" % ", ".join(names))
         return 0
-    transforms = []
-    seen = set()
-    for member in cmds.sets(shading_group, query=True) or []:
-        node = member.partition(".")[0]
-        if node and node not in seen and _node_exists(node):
-            seen.add(node)
-            transforms.append(node)
-    if transforms:
-        # noExpand: a plain mesh transform is unaffected, but `cmds.select` expands a SET
-        # passed to it into its members rather than selecting the set node itself - the
-        # mistake that bit twice in Phase 3b, once in production code.
-        cmds.select(transforms, replace=True, noExpand=True)
-    return select_faces_for_shading_group(shading_group)
+
+    cmds.warning("Select a DayZ shading engine, or a material feeding one, first")
+    return 0
 
 
 __all__ = [

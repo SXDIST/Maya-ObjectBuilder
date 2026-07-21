@@ -42,6 +42,43 @@ def _material_feeding_shading_group(shading_group):
     return materials[0] if materials else ""
 
 
+_DEFAULT_SHADING_GROUP = "initialShadingGroup"
+
+
+def _shading_groups_assigned_to_selection():
+    """Every non-default shading engine assigned to the CURRENTLY SELECTED mesh, transform,
+    or face component(s).
+
+    A face component selection (``cmds.ls`` already names it through its shape, e.g.
+    ``"|helmet.f[0:1]"``) is queried directly with ``cmds.listSets(object=..., type=1)``,
+    which resolves to whatever shading engine(s) those specific faces carry - the natural
+    disambiguator when a mesh wears more than one material. A whole mesh/transform selection
+    has no component to key off, so it is expanded to its mesh shapes first (reusing
+    ``_mesh_shapes_from_selection``, since ``listSets`` answers nothing for a transform - only
+    for the shape) and every shading engine found anywhere on those shapes is a candidate.
+
+    ``initialShadingGroup`` - Maya's default placeholder, present on any face nothing has
+    been explicitly assigned to - is never a candidate: a fresh, material-less mesh carries
+    it from creation, and without this exclusion that mesh would resolve to a confident wrong
+    answer ("the default shader") instead of correctly naming no material at all.
+
+    Returns a list, in no particular order: empty when nothing is assigned, one entry when
+    the selection is unambiguous, several when it is not - the caller decides what to do with
+    that count."""
+    selected = cmds.ls(selection=True, long=True) or []
+    components = [item for item in selected if "." in item]
+    targets = components if components else _mesh_shapes_from_selection()
+    groups = []
+    seen = set()
+    for item in targets:
+        for group in _valid_nodes(cmds.listSets(object=item, type=1) or []):
+            if group == _DEFAULT_SHADING_GROUP or group in seen:
+                continue
+            seen.add(group)
+            groups.append(group)
+    return groups
+
+
 def faces_with_material(shading_groups, shapes):
     """The face components ``shading_groups`` are assigned to, within ``shapes``.
 
@@ -111,6 +148,7 @@ def _set_material_metadata_on_node(node, texture, material):
 __all__ = [
     "_mesh_shapes_from_selection",
     "_material_feeding_shading_group",
+    "_shading_groups_assigned_to_selection",
     "faces_with_material",
     "_set_material_metadata_on_node",
 ]

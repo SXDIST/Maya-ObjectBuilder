@@ -127,11 +127,105 @@ def test_the_faces_selected_are_the_ones_the_material_is_assigned_to():
           "must be exactly the two assigned faces, got %r want %r" % (got, expected))
 
 
+def test_a_selected_mesh_with_one_material_resolves_to_its_faces():
+    """The natural gesture: select the mesh you can see. No Hypershade/AE detour needed -
+    a mesh (or its transform) carrying exactly one DayZ shading engine resolves to it."""
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCube(name="helmet", ch=False)[0]
+    _shader, group = shading_group("armour")
+    cmds.sets(mesh, edit=True, forceElement=group)
+
+    cmds.select(mesh, replace=True)
+    result = select_faces_for_selected_material()
+
+    _harness.check(result == 6, "all six faces of the cube, got %r" % (result,))
+
+
+def test_a_selected_face_component_resolves_to_its_material():
+    """A face component is the natural disambiguator: it resolves to whatever shading
+    engine is assigned to those specific faces, not to every material on the mesh."""
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCube(name="helmet", ch=False)[0]
+    shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
+    _shader, plate = shading_group("plate")
+    cmds.sets("%s.f[0:1]" % shape, edit=True, forceElement=plate)
+
+    cmds.select("%s.f[0:1]" % mesh, replace=True)
+    result = select_faces_for_selected_material()
+
+    expected = set(cmds.ls("%s.f[0:1]" % shape, flatten=True, long=True) or [])
+    got = set(cmds.ls(selection=True, flatten=True, long=True) or [])
+    _harness.check(result == 2,
+          "the two faces the component selection named, got %r" % (result,))
+    _harness.check(got == expected,
+          "must be exactly those two faces, got %r want %r" % (got, expected))
+
+
+def test_a_mesh_with_two_materials_warns_and_selects_nothing():
+    """A mesh can carry more than one shading engine - there is no single right answer, so
+    the resolver must refuse rather than guess. Captured with the same positive-control
+    pattern as the no-material case above, so a silently-broken warning fails loudly."""
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCube(name="helmet", ch=False)[0]
+    shape = cmds.listRelatives(mesh, shapes=True, fullPath=True)[0]
+    _shader1, plate = shading_group("plate")
+    _shader2, chainmail = shading_group("chainmail")
+    cmds.sets("%s.f[0:2]" % shape, edit=True, forceElement=plate)
+    cmds.sets("%s.f[3:5]" % shape, edit=True, forceElement=chainmail)
+
+    cmds.select(mesh, replace=True)
+    before = cmds.ls(selection=True, long=True) or []
+
+    said = []
+    callback = om1.MCommandMessage.addCommandOutputCallback(
+        lambda message, message_type, data: said.append(message))
+    try:
+        cmds.warning("select_faces_from_selection_control_signal")
+        _harness.check(any("select_faces_from_selection_control_signal" in m for m in said),
+              "the output callback hears nothing at all - the warning check below "
+              "would pass vacuously")
+        said[:] = []
+
+        result = select_faces_for_selected_material()
+    finally:
+        om1.MMessage.removeCallback(callback)
+
+    _harness.check(result == 0, "ambiguous - must select nothing, got %r" % (result,))
+    after = cmds.ls(selection=True, long=True) or []
+    _harness.check(after == before, "the selection must be left alone, got %r" % (after,))
+    warned = " ".join(said)
+    _harness.check("plate" in warned and "chainmail" in warned,
+          "the warning must name both materials, got %r" % (said,))
+
+
+def test_mesh_selection_does_not_widen_to_a_sharing_object():
+    """Two meshes wear the same material; selecting only one must not pull the other in.
+    Unlike the shading-engine/material case, a geometry selection IS the scope - rebuilding
+    it from the material's full membership would silently widen the result."""
+    cmds.file(new=True, force=True)
+    helmet = cmds.polyCube(name="helmet", ch=False)[0]
+    body = cmds.polyCube(name="body", ch=False)[0]
+    _shader, shared = shading_group("shared")
+    cmds.sets([helmet, body], edit=True, forceElement=shared)
+
+    cmds.select(helmet, replace=True)
+    result = select_faces_for_selected_material()
+
+    _harness.check(result == 6, "only the selected mesh's six faces, got %r" % (result,))
+    selected = cmds.ls(selection=True, long=True) or []
+    _harness.check(all("body" not in item for item in selected),
+          "the unselected sibling must not be dragged in, got %r" % (selected,))
+
+
 def main():
     test_a_selected_shading_engine_resolves_to_itself()
     test_a_selected_material_resolves_to_its_shading_engine()
     test_a_selection_with_no_material_warns_and_selects_nothing()
     test_the_faces_selected_are_the_ones_the_material_is_assigned_to()
+    test_a_selected_mesh_with_one_material_resolves_to_its_faces()
+    test_a_selected_face_component_resolves_to_its_material()
+    test_a_mesh_with_two_materials_warns_and_selects_nothing()
+    test_mesh_selection_does_not_widen_to_a_sharing_object()
     print("select faces from selection: OK")
 
 
