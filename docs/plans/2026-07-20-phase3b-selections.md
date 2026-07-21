@@ -1021,6 +1021,8 @@ _harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
 
+_harness.load_plugin()  # a3obSetFlag / a3obProxy do not exist until the plugin is loaded
+
 from a3ob.ui.scene.selections import selection_set_editable_fields  # noqa: E402
 
 
