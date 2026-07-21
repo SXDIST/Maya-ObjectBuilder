@@ -290,8 +290,7 @@ def _refresh_context_ui(force=True):
     if not force and key == _last_context_key:
         return
     _last_context_key = key
-    dock.refresh_lod_list()  # also refreshes named properties, as of the LOD-detail merge
-    dock.refresh_lod_assignment()
+    dock.refresh_lod_list()  # also refreshes named properties/mass/memory visibility
     dock.refresh_material_metadata()
     dock.refresh_selection_manager(True)
     dock.refresh_mass_summary()

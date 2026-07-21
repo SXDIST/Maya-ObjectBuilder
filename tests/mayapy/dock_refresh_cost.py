@@ -27,7 +27,6 @@ class FakeDock:
         self.rebuilds += 1
 
     refresh_lod_list = _count
-    refresh_lod_assignment = _count
     refresh_named_properties = _count
     refresh_material_metadata = _count
     refresh_selection_manager = _count

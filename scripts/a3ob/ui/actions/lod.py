@@ -8,34 +8,14 @@ from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.actions._common import _undo_chunk  # noqa: F401
 
 
-def _selected_lod_definition():
-    dock = _active_qt_dock()
-    if dock is not None:
-        return dock.selected_lod_definition()
-    return LOD_DEFINITIONS[0]
+def _lod_definition_for_type(lod_type):
+    return next((d for d in LOD_DEFINITIONS if d["type"] == lod_type), LOD_DEFINITIONS[0])
 
 
-def _lod_resolution_value(definition):
-    if not definition["has_resolution"]:
-        return definition["default_resolution"]
-    dock = _active_qt_dock()
-    if dock is not None:
-        return dock.lod_resolution_value()
-    return definition["default_resolution"]
-
-
-def _lod_assignment_label(definition=None, resolution=None):
-    definition = definition or _selected_lod_definition()
-    resolution = _lod_resolution_value(definition) if resolution is None else resolution
+def _lod_assignment_label(definition, resolution):
     if definition["has_resolution"]:
         return f"{definition['label']} {resolution}"
     return definition["label"]
-
-
-def _refresh_lod_assignment_ui(*_):
-    dock = _active_qt_dock()
-    if dock is not None:
-        dock.refresh_lod_assignment()
 
 
 def _lod_node_name(definition, resolution):
@@ -84,17 +64,23 @@ def _mark_node_as_lod(node, definition, resolution):
             cmds.select(clear=True)
 
 
-def assign_lod_to_selection():
+def assign_lod_to_selection(lod_type=RESOLUTION_LOD_TYPE, resolution=None):
+    """Mark the current selection as a LOD — the "Mark Selection as LOD" button.
+
+    Defaults to a plain Resolution LOD: the button that triggers this has no
+    type/resolution picker of its own (that lives on the tree's rows now), so this is
+    the common case of "just mark this mesh". A caller that knows the type explicitly
+    (none today, but kept for symmetry with create_lod_type) can still pass one.
+    """
     load_plugin()
     if not cmds.ls(selection=True):
         cmds.warning("Select a transform, mesh, or component before assigning LOD metadata")
         return
+    definition = _lod_definition_for_type(lod_type)
+    res = resolution if resolution is not None else definition["default_resolution"]
     with _undo_chunk("Create LOD"):
-        definition = _selected_lod_definition()
-        resolution = _lod_resolution_value(definition)
-        _mark_selection_as_lod(definition, resolution)
+        _mark_selection_as_lod(definition, res)
         _refresh_context_ui()
-        _refresh_lod_assignment_ui()
 
 
 LOD_ATTRS = (
@@ -118,7 +104,7 @@ def _remove_lod_from_selection():
 def create_lod_type(lod_type, resolution=0):
     """Create a new empty LOD of a specific type (for the LOD list's Add menu)."""
     load_plugin()
-    definition = next((d for d in LOD_DEFINITIONS if d["type"] == lod_type), LOD_DEFINITIONS[0])
+    definition = _lod_definition_for_type(lod_type)
     res = resolution if definition["has_resolution"] else definition["default_resolution"]
     with _undo_chunk("Add LOD"):
         cmds.select(clear=True)
@@ -130,10 +116,8 @@ def create_lod_type(lod_type, resolution=0):
 
 
 __all__ = [
-    "_selected_lod_definition",
-    "_lod_resolution_value",
+    "_lod_definition_for_type",
     "_lod_assignment_label",
-    "_refresh_lod_assignment_ui",
     "_lod_node_name",
     "_mark_selection_as_lod",
     "_mark_node_as_lod",

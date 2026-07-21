@@ -363,7 +363,7 @@ def assert_ui_redesign_helpers_load():
     # accordion section builders + reused panel builders + data-refresh methods
     # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so
     # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
-    for name in ("_build_ui", "_build_quick_actions", "_build_lod_properties_section",
+    for name in ("_build_ui", "_build_quick_actions",
                  "_build_flags_section", "_build_proxies_section",
                  "_build_memory_points_section",
                  "_build_materials_tab", "_build_selections_tab",
@@ -373,6 +373,13 @@ def assert_ui_redesign_helpers_load():
             raise RuntimeError(f"Missing Qt dock method: {name}")
     if hasattr(dock_class, "_build_skeleton_section"):
         raise RuntimeError("Skeleton panel should have been removed from the dock")
+    # The LOD Properties panel was retired (Phase 3a Task 4): type/resolution moved
+    # into the LOD list's own rows, and the DayZ LOD checkbox became a button + a
+    # row context-menu entry, both driven by assign_lod_to_selection/_remove_lod_from_selection.
+    if hasattr(dock_class, "_build_lod_properties_section"):
+        raise RuntimeError("LOD Properties panel should have been removed from the dock")
+    if hasattr(dock_class, "refresh_lod_assignment"):
+        raise RuntimeError("refresh_lod_assignment should have been removed with its panel")
     # Auto LOD generation moved to export time (Phase 2); the dock panel and its UI
     # wrapper were removed, leaving only the generator itself (objectBuilderAutoLOD.py).
     if hasattr(dock_class, "_build_auto_lod_section") or hasattr(dock_class, "auto_lod_settings"):

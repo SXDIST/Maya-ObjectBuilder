@@ -64,6 +64,9 @@ class LodListPanelMixin:
         add_button.setToolTip("Add a new empty LOD of a chosen type.")
         add_button.clicked.connect(lambda: self._show_add_lod_menu(add_button))
         row.addWidget(add_button)
+        row.addWidget(_qt_button("Mark Selection as LOD", self._mark_selection_as_lod_clicked,
+                                  "Mark the current Maya selection as a DayZ LOD (Resolution type). "
+                                  "Right-click a row for Unmark.", ":/confirm.png"))
         row.addWidget(_qt_button("Frame", self._frame_selected_lod, "Select and frame the LOD in the viewport.", ":/eye.png"))
         row.addWidget(_qt_button("Isolate", self._toggle_isolate_lod, "Toggle viewport isolation of the selected LOD (non-destructive).", ":/ghostOff.png"))
         layout.addLayout(row)
@@ -110,9 +113,32 @@ class LodListPanelMixin:
         menu.addSeparator()
         menu.addAction("Rename…").triggered.connect(lambda *_: self._rename_lod(node))
         menu.addAction("Duplicate").triggered.connect(lambda *_: self._duplicate_lod(node))
+        menu.addAction("Unmark").triggered.connect(lambda *_: self._unmark_lod(node))
         menu.addSeparator()
         menu.addAction("Delete").triggered.connect(lambda *_: self._delete_lod(node))
         menu.popup(self.lod_list.viewport().mapToGlobal(pos))
+
+
+    def _mark_selection_as_lod_clicked(self):
+        """Button in the LOD list's row — replaces the old LOD Properties 'DayZ LOD'
+        checkbox. assign_lod_to_selection() keeps acting on the Maya selection, not on
+        this dock instance, so refresh this instance explicitly afterwards too (mirrors
+        _rename_lod/_duplicate_lod/_delete_lod below, which do the same for their edits)."""
+        assign_lod_to_selection()
+        self.refresh_lod_list()
+
+
+    def _unmark_lod(self, node):
+        """Row context-menu 'Unmark' — replaces the old checkbox's unchecked state.
+
+        _remove_lod_from_selection() acts on the Maya selection, so select the row's own
+        node first; this mirrors _mark_node_as_lod's save/select/restore pattern except a
+        removal has nothing useful to restore selection to afterward."""
+        if not node or not cmds.objExists(node):
+            return
+        cmds.select(node, replace=True)
+        _remove_lod_from_selection()
+        self.refresh_lod_list()
 
 
     def _rename_lod(self, node):
@@ -218,6 +244,10 @@ class LodListPanelMixin:
         self.refresh_named_properties()
         self.refresh_mass_summary()
         self._sync_mass_collapse_state()
+        # Memory Points visibility used to be refreshed by the LOD Properties panel's own
+        # refresh_lod_assignment() (retired with that panel); it follows the selected LOD
+        # too, so it belongs in the same SelectionChanged-driven pass.
+        self._update_memory_points_visibility()
 
 
     def _build_row_editors(self, node):

@@ -49,11 +49,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.lod_list = None
         self.lod_list_context = None
         self._syncing_lod_list = False
-        self.lod_toggle = None
-        self._syncing_from_selection = False
-        self.lod_type_combo = None
-        self.lod_resolution = None
-        self.lod_context = None
         self.memory_points_group = None
         self.mass_value_field = None
         self.mass_mode_combo = None
@@ -93,7 +88,11 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self._poll_lod = None      # selected LOD, resolved once per refresh
         self._watched_lod = None   # LOD the per-node callbacks are currently pointed at
         self._build_ui()
-        self.refresh_lod_assignment()
+        # refresh_lod_list() already ran once during _build_lod_list_section(), but that
+        # happened before the Memory Points section existed (built later in the same
+        # panels list) — memory_points_group was still None, so its visibility was never
+        # set. One more silent, read-only pass now that every widget exists.
+        self._update_memory_points_visibility()
         # Event-driven, not polled: Maya callbacks mark panels dirty and this timer only
         # debounces the burst (a single scene edit can fire many callbacks). While nothing
         # changes it never runs, so an idle dock costs nothing.
@@ -122,7 +121,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         # SelectionChanged event (e.g. reassigning a material).
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
-            ("LOD Properties", self._build_lod_properties_section(), False, None),
             ("Flags", self._build_flags_section(), True, None),
             ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
