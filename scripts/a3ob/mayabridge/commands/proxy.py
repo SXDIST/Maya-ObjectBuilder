@@ -62,7 +62,12 @@ class ProxyCommand(_Base):
 
             update_proxy_placeholder(proxy, proxy_path, proxy_index)
 
-            if from_selection and not proxy_selection_set_exists(selection_name):
+            # Per-LOD, not scene-wide: proxy_selection_name encodes no LOD identity, so the
+            # same proxy in Resolution 1 and Resolution 2 keys on the identical string. A
+            # scene-wide check saw the first LOD's set and skipped creating the second's,
+            # leaving that LOD a placeholder with no matching selection set — the state
+            # a3obValidate flags. The check still prevents a duplicate within one LOD.
+            if from_selection and proxy_selection_set_in_lod(lod, selection_name).isNull():
                 create_proxy_selection_set(selection_name)
 
             om.MGlobal.displayInfo("a3obProxy: created " + selection_name)

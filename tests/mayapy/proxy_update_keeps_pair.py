@@ -32,38 +32,16 @@ def build_proxy(path="p\\weapon.p3d", index=1):
     return transform
 
 
-def _sanitized_set_name(selection_name):
-    name = "a3ob_" + selection_name
-    for ch in (":", "/", "\\", "."):
-        name = name.replace(ch, "_")
-    return name
-
-
-def _make_proxy_set(lod, selection_name):
-    """Build a proxy selection set on ``lod`` the way IMPORT does.
-
-    a3obProxy cannot build the second one: its ``proxy_selection_set_exists`` check is
-    scene-wide, so on a second LOD carrying the same proxy it makes the placeholder and
-    skips the set. Import is where this state really comes from — ``import_/builders.py``
-    writes one set per LOD per proxy TAGG, so a weapon proxy present in Resolution 1 and
-    Resolution 2 yields two sets with the identical ``a3obSelectionName``.
-    """
-    mesh = cmds.listRelatives(lod, children=True, type="mesh", fullPath=True)[0]
-    created = cmds.sets(mesh + ".f[0:1]", name=_sanitized_set_name(selection_name))
-    cmds.addAttr(created, longName="a3obSelectionName", shortName="a3sn", dataType="string")
-    cmds.setAttr(created + ".a3obSelectionName", selection_name, type="string")
-    cmds.addAttr(created, longName="a3obIsProxySelection", shortName="a3ips",
-                 attributeType="bool")
-    cmds.setAttr(created + ".a3obIsProxySelection", True)
-    return created
-
-
 def build_two_lod_model(path="p\\weapon.p3d", index=1):
     """Two LODs of one model, each carrying the SAME proxy — the ordinary multi-LOD case.
 
     ``proxy_selection_name`` encodes no LOD identity: both placeholders and both sets read
     ``proxy:p\\weapon.p3d.1``. Any counterpart lookup that scans the scene and takes the
     first match will therefore cross LOD boundaries.
+
+    Both LODs are built through a3obProxy itself: its set-creation gate is scoped per-LOD
+    (task 1b), so it now builds both LODs' sets without help — this fixture no longer needs
+    to hand-build the second one the way import does.
     """
     cmds.file(new=True, force=True)
     first = _harness.make_lod("res1", resolution=1)
@@ -73,7 +51,6 @@ def build_two_lod_model(path="p\\weapon.p3d", index=1):
     second = _harness.make_lod("res2", resolution=2)
     cmds.select(second + ".f[0:1]", replace=True)
     cmds.a3obProxy(path=path, index=index, fromSelection=True, update=True)
-    _make_proxy_set(second, "proxy:%s.%d" % (path, index))
     return first, second
 
 
@@ -304,6 +281,52 @@ def test_a_proxy_inside_a_namespace_still_syncs():
           "the namespaced set was never found, so it still names %r" % set_name)
 
 
+def test_the_same_proxy_can_be_added_to_a_second_lod():
+    """a3obProxy's set-creation gate must be per-LOD, not scene-wide.
+
+    proxy_selection_name encodes no LOD identity, so res1 and res2 both key on
+    "proxy:p\\weapon.p3d.1". A scene-wide existence check therefore sees res1's set and
+    skips creating res2's — leaving res2 with a placeholder and no set, which is exactly
+    what a3obValidate reports as "proxy placeholder has no matching selection set"."""
+    cmds.file(new=True, force=True)
+    res1 = _harness.make_lod("res1", resolution=1)
+    res2 = _harness.make_lod("res2", resolution=2)
+
+    for lod in (res1, res2):
+        cmds.select(lod + ".f[0:1]", replace=True)
+        cmds.a3obProxy(path="p\\weapon.p3d", index=1, fromSelection=True, update=True)
+
+    for lod in (res1, res2):
+        placeholder = None
+        for child in cmds.listRelatives(lod, children=True, type="transform",
+                                        fullPath=True) or []:
+            if cmds.attributeQuery("a3obIsProxy", node=child, exists=True):
+                placeholder = child
+        check(placeholder is not None, "%s has no proxy placeholder" % lod)
+
+    proxy_sets = [node for node in cmds.ls(type="objectSet") or []
+                  if cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True)]
+    check(len(proxy_sets) == 2,
+          "expected one proxy set per LOD, got %d: %r" % (len(proxy_sets), proxy_sets))
+
+
+def test_adding_the_same_proxy_twice_to_ONE_lod_still_creates_one_set():
+    """The gate must stay a gate. Re-running a3obProxy on the same LOD with the same path
+    and index must not stack a second set on top of the first — that is the duplicate this
+    check exists to prevent, and scoping it per-LOD must not lose it."""
+    cmds.file(new=True, force=True)
+    lod = _harness.make_lod("res1", resolution=1)
+
+    for _ in range(2):
+        cmds.select(lod + ".f[0:1]", replace=True)
+        cmds.a3obProxy(path="p\\weapon.p3d", index=1, fromSelection=True, update=True)
+
+    proxy_sets = [node for node in cmds.ls(type="objectSet") or []
+                  if cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True)]
+    check(len(proxy_sets) == 1,
+          "re-running a3obProxy on one LOD made %d sets: %r" % (len(proxy_sets), proxy_sets))
+
+
 def main():
     _harness.load_plugin()
     for test in (test_update_via_the_placeholder_also_renames_the_set,
@@ -313,7 +336,9 @@ def main():
                  test_updating_one_lod_leaves_the_other_lods_pair_alone,
                  test_updating_through_one_lods_set_leaves_the_other_lod_alone,
                  test_a_set_whose_members_are_gone_touches_nothing,
-                 test_a_proxy_inside_a_namespace_still_syncs):
+                 test_a_proxy_inside_a_namespace_still_syncs,
+                 test_the_same_proxy_can_be_added_to_a_second_lod,
+                 test_adding_the_same_proxy_twice_to_ONE_lod_still_creates_one_set):
         test()
         print("ok:", test.__name__, flush=True)
     print("PROXY UPDATE PAIR: PASS", flush=True)

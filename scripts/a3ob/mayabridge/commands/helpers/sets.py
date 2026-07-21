@@ -313,7 +313,7 @@ def sync_proxy_pair(node, path, index):
     else:
         placeholder = node
         selection_name = attr.get_string(node, A.PROXY_SELECTION)
-        set_obj = _proxy_selection_set_in_lod(_parent_transform(node), selection_name)
+        set_obj = proxy_selection_set_in_lod(_parent_transform(node), selection_name)
 
     if not placeholder.isNull():
         update_proxy_placeholder(placeholder, path, index)
@@ -334,7 +334,7 @@ def _parent_transform(node):
     return parent
 
 
-def _proxy_selection_set_in_lod(lod, selection_name):
+def proxy_selection_set_in_lod(lod, selection_name):
     """The proxy selection set named ``selection_name`` whose members live under ``lod``.
 
     Scoped to one LOD for the reason spelled out in ``sync_proxy_pair``: the name alone is
@@ -458,8 +458,7 @@ __all__ = [
     "update_proxy_selection_set",
     "update_proxy_placeholder",
     "sync_proxy_pair",
-    "_parent_transform",
-    "_proxy_selection_set_in_lod",
+    "proxy_selection_set_in_lod",
     "mass_values_for_lod",
     "mass_slot_count",
     "vertex_source_index_map",
