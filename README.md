@@ -121,7 +121,13 @@ The dock is a vertical stack of **collapsible panels** — each remembers its ex
 
 Per-material texture (`.paa`) / `.rvmat` editing lives in Maya's own **Attribute Editor** (select
 a shading engine — the **DayZ Material** section appears below the stock Shading Group
-Attributes), not in the dock.
+Attributes, holding just the **Texture** and **Material** fields), not in the dock.
+`editorTemplate -callCustom` was measured to never fire from inside the AE's
+`AETemplateCustomContent` hook, so the section is built from `-addControl` alone — which
+renders attribute fields and nothing else. **Select Faces by Material** therefore lives in the
+**MayaObjectBuilder menu** instead: it resolves the shading engine from whatever is currently
+selected (a shading engine, or the material feeding one) and selects the faces it is assigned
+to — the one thing Hypershade's "select objects by material" cannot do.
 
 > [!TIP]
 > **Textures on import** — Maya can't read `.paa` directly, so the plugin decodes each texture to a cached PNG and wires it onto the material (base colour + reconstructed normal from `_nohq` + specular from `_smdi`/`.rvmat`). For the mod-relative paths in a P3D to resolve, set the **texture root** in the **Preferences window** (**MayaObjectBuilder menu > Preferences…**) to your unpacked mod / `P:` drive. Skeleton (`model.cfg`) import/export lives in the **MayaObjectBuilder menu**, not a dock panel.

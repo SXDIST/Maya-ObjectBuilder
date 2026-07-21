@@ -252,6 +252,15 @@ def export_model_cfg(path=None):
             cmds.a3obExportModelCfg(path=selected_path)
 
 
+def _select_faces_for_selected_material():
+    """One-line wrapper for the menu item: the resolver itself is what is testable, per the
+    layering rule every module in this file follows - `a3ob.ui.actions` star-imports `entry`,
+    so the import stays function-local to avoid closing that cycle."""
+    from a3ob.ui.actions.materials import select_faces_for_selected_material
+
+    return select_faces_for_selected_material()
+
+
 def _show_preferences():
     # Function-local import for the same reason as every other cross-leaf import in this
     # file: preferences is a leaf like ae_template, and _build_qt_dock's lazy import is what
@@ -485,6 +494,14 @@ def show_plugin_ui():
                       command=lambda *_: _save_reference_asset("skeleton"))
         cmds.setParent("..", menu=True)
         cmds.menuItem(divider=True, parent=menu)
+        # Replaces the Select Faces button the DayZ Material AE section lost: `addControl`
+        # renders only attribute fields, so it cannot live in that hook any more. Resolves
+        # from whatever is currently selected (a shading engine, or the material feeding
+        # one) rather than any node stored in the AE, which is precisely what went stale
+        # there.
+        cmds.menuItem(label="Select Faces by Material", parent=menu,
+                      command=lambda *_: _select_faces_for_selected_material())
+        cmds.menuItem(divider=True, parent=menu)
         cmds.menuItem(label="Preferences…", parent=menu, command=lambda *_: _show_preferences())
     # The "DayZ Material" section in the Attribute Editor. Function-local import for the same
     # reason as every other import in this file: `ae_template` is a leaf, but keeping the
@@ -551,6 +568,7 @@ __all__ = [
     "_save_reference_asset",
     "import_model_cfg",
     "export_model_cfg",
+    "_select_faces_for_selected_material",
     "_show_preferences",
     "_prompt",
     "_active_qt_dock",

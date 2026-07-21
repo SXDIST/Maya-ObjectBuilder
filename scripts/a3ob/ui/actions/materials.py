@@ -78,8 +78,58 @@ def select_faces_for_shading_group(shading_group):
     return len(cmds.ls(faces, flatten=True) or [])
 
 
+def _shading_group_from_selection():
+    """The shading engine implied by the CURRENT selection: a selected ``shadingEngine``
+    itself, or the one a selected material feeds. ``""`` when neither is present.
+
+    Reads the selection fresh on every call - this is the whole point of the resolver, since
+    a node stored once (the retired in-AE approach) goes stale the instant the user selects
+    something else, while re-reading the selection at call time never can."""
+    selected = _valid_nodes(cmds.ls(selection=True, long=True) or [])
+    for node in selected:
+        if cmds.objectType(node, isType="shadingEngine"):
+            return node
+    for node in selected:
+        if cmds.ls(node, materials=True):
+            groups = _valid_nodes(cmds.listConnections(node, type="shadingEngine") or [])
+            if groups:
+                return groups[0]
+    return ""
+
+
+def select_faces_for_selected_material():
+    """Select the faces the shading engine implied by the current selection is assigned to.
+    Returns how many; 0 and a warning when the selection names no material.
+
+    Menu replacement for the Select Faces button the AE section lost: ``editorTemplate
+    -addControl`` renders only attribute fields, so this cannot live in that hook any more.
+    Hypershade can select objects by a material but never faces, so nothing upstream can be
+    relied on to already have the right mesh(es) selected - the scope is rebuilt from the
+    shading group's own members (whatever it is painted onto) before delegating to
+    ``select_faces_for_shading_group``, so the item works with only the shading engine, or
+    only the material, selected."""
+    shading_group = _shading_group_from_selection()
+    if not shading_group:
+        cmds.warning("Select a DayZ shading engine, or a material feeding one, first")
+        return 0
+    transforms = []
+    seen = set()
+    for member in cmds.sets(shading_group, query=True) or []:
+        node = member.partition(".")[0]
+        if node and node not in seen and _node_exists(node):
+            seen.add(node)
+            transforms.append(node)
+    if transforms:
+        # noExpand: a plain mesh transform is unaffected, but `cmds.select` expands a SET
+        # passed to it into its members rather than selecting the set node itself - the
+        # mistake that bit twice in Phase 3b, once in production code.
+        cmds.select(transforms, replace=True, noExpand=True)
+    return select_faces_for_shading_group(shading_group)
+
+
 __all__ = [
     "_connected_material",
     "write_material_metadata",
     "select_faces_for_shading_group",
+    "select_faces_for_selected_material",
 ]

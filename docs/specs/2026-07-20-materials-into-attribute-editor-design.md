@@ -1,7 +1,8 @@
 # Materials move to the Attribute Editor; preferences get their own window
 
 **Date:** 2026-07-20
-**Status:** approved, not implemented
+**Status:** implemented, with the AE-hosted parts of the design revised after live-Maya
+measurement — see "Per-material editing → AE template" below
 **Related:** `2026-07-20-ui-simplification-design.md`
 
 ## What the panel holds
@@ -39,17 +40,35 @@ only ever shows those belonging to the current selection.
 
 ### Per-material editing → AE template
 
-An `AEshadingEngineTemplate` adds a **DayZ Material** section containing:
+**Superseded by measurement.** This section as originally designed (path pickers with browse
+buttons, and a Select Faces button, both built as custom UI inside the AE) does not work:
+measured in a live Maya 2027 session, `editorTemplate -callCustom` never invokes its procs
+from inside the `AETemplateCustomContent` hook — the section rendered as an empty frame on
+every shading engine. `-addControl` does work, so what shipped is an `AEshadingEngineTemplate`
+adding a **DayZ Material** section containing only:
 
-- **Texture** — path picker with browse, clear and the existing `recent_key="texture"`
-  history.
-- **Material** — the same with `recent_key="rvmat"`.
-- **Select Faces** — the faces this material is assigned to. Hypershade can select objects
-  by material but not faces, so this capability has no native equivalent and must survive
-  the panel it currently lives in.
+- **Texture** — a native attribute field (`-addControl`), no browse button, no recent-paths
+  dropdown — `-addControl` renders an attribute field and nothing else.
+- **Material** — the same.
 
-Editing writes through the same path as today: normalise, store on the shading engine,
-re-resolve the texture. Edits stay instant — there is no Apply button now and none is added.
+Both accept typing and paste, and `write_material_metadata` still records every path in the
+recent-path history for the pickers that remain elsewhere (the texture root lives in the
+Preferences window). Editing writes through the same path as today: normalise, store on the
+shading engine, re-resolve the texture. Edits stay instant — there is no Apply button now and
+none is added.
+
+**Select Faces moved to the menu.** It cannot live in the AE section at all: raw UI built into
+the `AETemplateCustomContent` hook cannot re-point when the AE switches nodes (the hook fires
+once per node type per tab), which is the same defect that ruled out `-callCustom` in the
+first place — a button wired to a stored node would act on the wrong material the moment the
+user selected a different one. `select_faces_for_shading_group` survives unchanged in
+`a3ob/ui/actions/materials.py`; `select_faces_for_selected_material` (same module) resolves
+its target from the **current selection at call time** instead — a selected `shadingEngine`,
+or the one a selected material feeds — and a **Select Faces by Material** entry in the
+MayaObjectBuilder menu calls it. A resolver that re-reads the selection has nothing to go
+stale, which is what makes this safe where the in-AE button was not. Hypershade can select
+objects by material but not faces, so this capability still has no native equivalent and
+still must survive.
 
 **The discoverability wrinkle, stated plainly.** The attributes live on the
 **`shadingEngine`**, not on the material node (`blinn` / `aiStandardSurface`). In Hypershade
@@ -95,7 +114,9 @@ overwrite what the user was typing.
 - Editing a path in the AE writes the normalised value onto the shading engine and
   re-resolves the texture, with no Apply step.
 - Recent-path history is shared with what the panel used, so existing history survives.
-- Select Faces from the AE selects the same faces the panel selected.
+- **Select Faces by Material**, from the MayaObjectBuilder menu, selects the same faces the
+  panel selected — with a shading engine selected, and with just the material selected
+  (`tests/mayapy/select_faces_from_selection.py`).
 - Preferences reports a configured texture root that does not exist, and names the source
   that actually resolved a texture.
 - Alpha → transparency still defaults to off, and toggling it still applies to existing
