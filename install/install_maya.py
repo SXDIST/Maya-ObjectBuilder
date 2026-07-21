@@ -181,9 +181,18 @@ def install():
     target = _install_root()
     _unload_plugin()
     _copy_runtime_package(source, target)
-    seeded = _seed_reference_assets(source)
-    if seeded:
-        print(f"Reference assets installed: {', '.join(p.name for p in seeded)}")
+    # Best-effort, and deliberately unable to fail the install: without the assets the user
+    # simply saves their own reference the way they always did, but a plugin left unloaded with
+    # no .mod written is a broken installation. An absent assets/ directory is already a normal
+    # state, so a disk or permissions failure while copying must not be worse than that.
+    # Warn-and-continue matches _cleanup_legacy_install_roots.
+    try:
+        seeded = _seed_reference_assets(source)
+    except Exception as error:
+        print(f"Warning: could not install reference assets: {error}")
+    else:
+        if seeded:
+            print(f"Reference assets installed: {', '.join(p.name for p in seeded)}")
     module_file = _write_module_file(target)
     plugin_path = target / "plug-ins" / PLUGIN_FILE
     _load_plugin(plugin_path)
