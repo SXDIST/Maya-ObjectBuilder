@@ -61,6 +61,12 @@ class SkinningPanelMixin:
             "Bend knees/elbows/shoulders, select deformation spikes, restore the pose.",
             ":/aselect.png"))
 
+        layout.addWidget(_qt_button(
+            "Select Skin Outliers", self.run_skin_weights,
+            "Select vertices whose weights disagree with their neighbours — transfer "
+            "artefacts, invisible in bind pose. Fix them with Skin > Smooth Skin Weights.",
+            ":/aselect.png"))
+
         layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
                                "the buttons act on what you highlight in it. Removing a "
                                "bone moves its weight to the vertex's remaining bones — "
@@ -118,6 +124,13 @@ class SkinningPanelMixin:
         self._set_skinning_summary(
             "No deformation spikes ✓" if spikes == 0
             else "{0} vertex(es) deform unlike their neighbours — selected.".format(spikes))
+
+    def run_skin_weights(self):
+        count = _run_skin_weights()
+        self._set_skinning_summary(
+            "No skin weight outliers found ✓" if count == 0
+            else "Selected {0} outlier vertex(es) — fix with Skin > Smooth Skin "
+                 "Weights.".format(count))
 
     def refresh_influences(self):
         """Repopulate the influence list from the selected mesh, keeping the highlight."""

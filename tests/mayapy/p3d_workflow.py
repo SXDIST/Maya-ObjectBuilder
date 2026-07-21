@@ -1,3 +1,4 @@
+import inspect
 import os
 import runpy
 import struct
@@ -367,11 +368,21 @@ def assert_ui_redesign_helpers_load():
                  "_build_memory_points_section",
                  "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
-                 "refresh_selection_manager", "selected_selection_set_node", "set_selection_details"):
+                 "refresh_selection_manager", "selected_selection_set_node", "set_selection_details",
+                 "run_skin_weights"):
         if not hasattr(dock_class, name):
             raise RuntimeError(f"Missing Qt dock method: {name}")
     if hasattr(dock_class, "_build_skeleton_section"):
         raise RuntimeError("Skeleton panel should have been removed from the dock")
+    # Select Skin Outliers moved from Validation to Skinning (Phase 3c Task 2): it writes a
+    # selection, which is a skinning action, not a read-only validation report. Both panels
+    # are mixins on the SAME composed dock class, so hasattr(dock_class, "run_skin_weights")
+    # cannot tell which panel built the button and would pass vacuously before and after the
+    # move. Assert on the SOURCE instead -- a real discriminator.
+    if "Select Skin Outliers" in inspect.getsource(dock_class._build_validation_tab):
+        raise RuntimeError("Select Skin Outliers button should have moved out of Validation")
+    if "Select Skin Outliers" not in inspect.getsource(dock_class._build_skinning_tab):
+        raise RuntimeError("Select Skin Outliers button should have moved into Skinning")
     # The Flags and Proxies panels were retired (Phase 3b Task 6): creating a proxy or a
     # flag set moved onto the Selections panel's Create button menu, and editing an
     # existing one moved into the Selections details area (Tasks 2-5). This check lives in
