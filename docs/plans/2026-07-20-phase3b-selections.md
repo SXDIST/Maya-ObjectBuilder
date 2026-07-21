@@ -1085,9 +1085,8 @@ def test_a_deleted_set_reports_an_empty_kind_instead_of_raising():
 
 
 def test_the_editor_page_follows_the_highlighted_row():
-    from a3ob.ui.entry import _build_qt_dock
     lod, flag_set = build_lod_with_a_flag(component="vertex", value=3, name="soft")
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1105,12 +1104,10 @@ def test_the_editor_page_follows_the_highlighted_row():
               "the flag editor page is not showing; index is %d"
               % dock.selection_editor_stack.currentIndex())
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 
 
 def test_an_ordinary_selection_shows_no_editor():
-    from a3ob.ui.entry import _build_qt_dock
     cmds.file(new=True, force=True)
     transform = cmds.polyCube(name="body", ch=False)[0]
     for attribute, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
@@ -1121,7 +1118,7 @@ def test_an_ordinary_selection_shows_no_editor():
     cmds.addAttr(set_node, longName="a3obSelectionName", dataType="string")
     cmds.setAttr(set_node + ".a3obSelectionName", "camo", type="string")
 
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(transform, replace=True)
         dock.refresh_selection_manager()
@@ -1132,15 +1129,13 @@ def test_an_ordinary_selection_shows_no_editor():
               "an ordinary selection showed an editor page (index %d)"
               % dock.selection_editor_stack.currentIndex())
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 
 
 def test_applying_a_flag_edit_writes_through_and_creates_no_set():
     from a3ob.ui.actions.metadata import apply_flag_edit_from_ui
-    from a3ob.ui.entry import _build_qt_dock
     lod, flag_set = build_lod_with_a_flag(component="face", value=8, name="hidden")
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1158,8 +1153,7 @@ def test_applying_a_flag_edit_writes_through_and_creates_no_set():
         check(before == after, "editing a flag changed the set count from %d to %d"
                                % (before, after))
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 
 
 def _user_role():
@@ -1451,9 +1445,8 @@ def test_fields_report_a_proxy_path_and_index():
 
 
 def test_the_proxy_editor_page_follows_the_highlighted_row():
-    from a3ob.ui.entry import _build_qt_dock
     lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=3)
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1469,15 +1462,13 @@ def test_the_proxy_editor_page_follows_the_highlighted_row():
         check(path == "p\\weapon.p3d", "editor shows path %r" % path)
         check(index == 3, "editor shows index %r" % index)
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 
 
 def test_update_writes_the_new_path_to_both_halves():
     from a3ob.ui.actions.metadata import update_proxy_from_ui
-    from a3ob.ui.entry import _build_qt_dock
     lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=1)
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1510,17 +1501,15 @@ def test_update_writes_the_new_path_to_both_halves():
         check(before == len(cmds.ls(type="objectSet") or []),
               "the update left an orphan set behind")
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 
 
 def test_update_restores_the_previous_selection():
     """a3obUpdateProxy acts on the SELECTION, so the action must select the set and put the
     user's selection back — otherwise clicking Update silently changes what is selected."""
     from a3ob.ui.actions.metadata import update_proxy_from_ui
-    from a3ob.ui.entry import _build_qt_dock
     lod, _proxy_set = build_lod_with_a_proxy()
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1537,8 +1526,7 @@ def test_update_restores_the_previous_selection():
         check(before == after,
               "the selection changed from %r to %r across an Update" % (before, after))
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 ```
 
 ```python
@@ -1548,9 +1536,8 @@ def test_undo_after_update_resurrects_no_orphan_set():
     rolled back the DAG side while the sets stayed, leaving orphan a3ob_proxy_* behind.
     Update runs through the same commands, so it inherits the same hazard."""
     from a3ob.ui.actions.metadata import update_proxy_from_ui
-    from a3ob.ui.entry import _build_qt_dock
     lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=1)
-    dock = _build_qt_dock()
+    dock = _built_active_dock()
     try:
         cmds.select(lod, replace=True)
         dock.refresh_selection_manager()
@@ -1574,8 +1561,7 @@ def test_undo_after_update_resurrects_no_orphan_set():
               "after undo there are %d proxy sets, expected 1: %r"
               % (len(proxy_sets), proxy_sets))
     finally:
-        dock.close()
-        dock.deleteLater()
+        _release_active_dock(dock)
 ```
 
 Register all five in `main()`'s tuple, after the existing entries.
