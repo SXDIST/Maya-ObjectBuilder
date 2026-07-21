@@ -136,6 +136,50 @@ def create_proxy_from_ui():
     _refresh_context_ui()
 
 
+def update_proxy_from_ui():
+    """Point the highlighted proxy at a new path and index.
+
+    a3obUpdateProxy takes no target node — it acts on whatever is SELECTED
+    (selected_dependency_node_or_null in commands/update_proxy.py). So this selects the set,
+    runs the command and restores the user's selection in a finally: clicking Update must not
+    silently change what is selected in the viewport, and it must not leave the proxy set
+    selected if the command raises.
+
+    noExpand=True is load-bearing: selecting an objectSet by name ordinarily selects its
+    MEMBERS (that is how "quick select sets" work), not the set node itself.
+    a3obUpdateProxy needs the set node — the same reasoning already applied by
+    tests/mayapy/proxy_update_keeps_pair.py when it selects a proxy set directly."""
+    load_plugin()
+    dock = _active_qt_dock()
+    if dock is None:
+        return
+    set_node = dock.selected_selection_set_node()
+    if not set_node:
+        cmds.warning("Select a proxy in the list to update")
+        return
+    path, index = dock.proxy_edit_values()
+    if not path:
+        cmds.warning("Enter a proxy path")
+        return
+    ok, msg = _validate_proxy_path(path)
+    if not ok:
+        cmds.warning(msg)
+        return
+    previous = cmds.ls(selection=True, long=True) or []
+    try:
+        cmds.select(set_node, replace=True, noExpand=True)
+        with _undo_chunk("Update Proxy"):
+            cmds.a3obUpdateProxy(path=path, index=index)
+    finally:
+        if previous:
+            cmds.select(previous, replace=True)
+        else:
+            cmds.select(clear=True)
+    from a3ob.ui.recent import remember_path
+    remember_path("proxy", path)
+    _refresh_context_ui()
+
+
 def _lod_mass_summary():
     """(total mass, vertex-value count) of the active LOD, or (None, 0) when none."""
     node = _selected_lod_transform()
@@ -209,6 +253,7 @@ __all__ = [
     "apply_flag_edit_from_ui",
     "_validate_proxy_path",
     "create_proxy_from_ui",
+    "update_proxy_from_ui",
     "distribute_mass_evenly",
     "mass_from_volume_from_ui",
 ]

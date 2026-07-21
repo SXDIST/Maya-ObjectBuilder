@@ -31,10 +31,11 @@ class SelectionsPanelMixin:
         # Page 0 is empty: an ordinary Selection row has nothing to edit, and the summary
         # label above already says everything about it. Every page after it is an editor for
         # one row kind — the capability the retired create-only panels never had. Page 1 is
-        # the flag editor; a Proxy row still falls through to page 0 until it gets its own.
+        # the flag editor, page 2 the proxy editor.
         self.selection_editor_stack = qt_widgets.QStackedWidget()
         self.selection_editor_stack.addWidget(qt_widgets.QWidget())
         self.selection_editor_stack.addWidget(self._build_flag_editor_page())
+        self.selection_editor_stack.addWidget(self._build_proxy_editor_page())
         layout.addWidget(self.selection_editor_stack)
 
         first_row = qt_widgets.QHBoxLayout()
@@ -111,6 +112,29 @@ class SelectionsPanelMixin:
                 self.flag_edit_value_field.value())
 
 
+    def _build_proxy_editor_page(self):
+        page = qt_widgets.QWidget()
+        form = qt_widgets.QFormLayout(page)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.proxy_edit_path_field = self._path_picker("Proxy path", "Select proxy P3D", 1,
+                                                       "Arma P3D (*.p3d)", recent_key="proxy")
+        self.proxy_edit_index_field = qt_widgets.QSpinBox()
+        self.proxy_edit_index_field.setRange(0, 2147483647)
+        form.addRow("Path", self.proxy_edit_path_field)
+        form.addRow("Index", self.proxy_edit_index_field)
+        form.addRow(_qt_button("Update", update_proxy_from_ui,
+                               "Point the highlighted proxy at a new path and index",
+                               ":/confirm.png"))
+        return page
+
+
+    def proxy_edit_values(self):
+        field = _picker_field(self.proxy_edit_path_field)
+        path = field.text().strip() if field is not None else ""
+        index = self.proxy_edit_index_field.value() if self.proxy_edit_index_field is not None else 1
+        return path, index
+
+
     def show_selection_editor(self, fields):
         """Switch the details area to the page matching the highlighted row's kind.
 
@@ -134,6 +158,17 @@ class SelectionsPanelMixin:
                 self.flag_edit_component_combo.blockSignals(False)
                 self.flag_edit_value_field.blockSignals(False)
             self.selection_editor_stack.setCurrentIndex(1)
+            return
+        if kind == "Proxy":
+            field = _picker_field(self.proxy_edit_path_field)
+            if field is not None:
+                field.blockSignals(True)
+                field.setText(fields.get("proxy_path", ""))
+                field.blockSignals(False)
+            self.proxy_edit_index_field.blockSignals(True)
+            self.proxy_edit_index_field.setValue(int(fields.get("proxy_index", 0)))
+            self.proxy_edit_index_field.blockSignals(False)
+            self.selection_editor_stack.setCurrentIndex(2)
             return
         self.selection_editor_stack.setCurrentIndex(0)
 

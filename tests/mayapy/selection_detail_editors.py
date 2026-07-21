@@ -13,7 +13,10 @@ traceback at all. Creating the QApplication first makes Maya's init reuse it ins
 Run:  mayapy.exe tests/mayapy/selection_detail_editors.py
 """
 
+import contextlib
+import os
 import sys
+import tempfile
 
 from PySide6 import QtWidgets
 
@@ -190,46 +193,36 @@ def test_a_zero_flag_value_warns_and_writes_nothing():
         _release_active_dock(dock)
 
 
-def test_a_proxy_row_shows_the_blank_page():
-    """Pinned so Task 5's proxy editor page is a visible change, not a silent one.
-
-    A Proxy row has no editor today: it falls through show_selection_editor's flag
-    branch to page 0, the same blank page an ordinary Selection gets."""
-    cmds.file(new=True, force=True)
-    transform = cmds.polyCube(name="body", ch=False)[0]
-    for attribute, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
-                            ("a3obResolution", "long")):
-        cmds.addAttr(transform, longName=attribute, attributeType=kind)
-    cmds.setAttr(transform + ".a3obIsLOD", True)
-    cmds.setAttr(transform + ".a3obResolution", 1)
-    cmds.select(transform + ".f[0:1]", replace=True)
-    cmds.a3obProxy(path="p\\weapon.p3d", index=1, fromSelection=True, update=True)
-
-    dock = _built_active_dock()
-    try:
-        cmds.select(transform, replace=True)
-        dock.refresh_selection_manager()
-        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
-        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
-        check(proxy_rows, "the proxy set is not listed at all; rows are %r"
-                          % [row.data(_user_role())["kind"] for row in rows])
-        dock.selection_list.setCurrentItem(proxy_rows[0])
-        check(dock.selection_editor_stack.currentIndex() == 0,
-              "a proxy row showed an editor page (index %d)"
-              % dock.selection_editor_stack.currentIndex())
-    finally:
-        _release_active_dock(dock)
+# Task 4 pinned a `test_a_proxy_row_shows_the_blank_page` here, asserting a Proxy row
+# fell through to the blank page (index 0) because it had no editor of its own yet. Task 5
+# gives it one, so that assertion is now the wrong answer by design — keeping it would pit
+# two tests against each other. `test_the_proxy_editor_page_follows_the_highlighted_row`
+# below covers the identical scenario (a proxy row highlighted, via the same
+# build_lod_with_a_proxy fixture) and asserts the new, correct index (2), so it supersedes
+# the retired test rather than duplicating it under another name.
 
 
 def test_a_flag_edit_undoes():
     """_undo_chunk is the whole safety argument for writing attributes directly.
 
     The brief chose cmds.setAttr over a new a3ob* command on the grounds that "a plain
-    cmds.setAttr undoes correctly". Nothing tested that claim, so this does."""
+    cmds.setAttr undoes correctly". apply_flag_edit_from_ui writes TWO attributes
+    (a3obFlagComponent and a3obFlagValue) in one click, so the only assertion that pins
+    _undo_chunk as load-bearing — rather than incidental — is that a SINGLE cmds.undo()
+    reverts BOTH of them together. Changing only the value and checking only the value
+    back would pass even with the `with _undo_chunk(...):` wrapper deleted, because Maya's
+    own per-call undo record would revert that one setAttr regardless; two independently
+    undoable setAttr calls still let one cmds.undo() restore the last one. This was
+    witnessed directly: with the chunk removed, this test failed with
+    'Ctrl+Z did not restore the component; got 'vertex'' while the value alone came back
+    correctly — proving the chunk is what makes both attributes revert atomically."""
     from a3ob.ui.actions.metadata import apply_flag_edit_from_ui
     lod, flag_set = build_lod_with_a_flag(component="face", value=8, name="hidden")
     # mayapy starts with undo disabled; a user session never is. Enable it AFTER the
-    # fixture so the queue holds only the edit under test.
+    # fixture so the queue holds only the edit under test, and restore whatever state
+    # undo was in before this test — later tests in this file run with undo globally on
+    # otherwise, accumulating an ever-growing queue.
+    previous_undo_state = cmds.undoInfo(query=True, state=True)
     cmds.undoInfo(state=True, infinity=True)
     dock = _built_active_dock()
     try:
@@ -240,15 +233,195 @@ def test_a_flag_edit_undoes():
         check(flag_rows, "the flag set is not listed at all")
         dock.selection_list.setCurrentItem(flag_rows[0])
 
+        dock.flag_edit_component_combo.setCurrentIndex(1)  # Face -> Vertex
         dock.flag_edit_value_field.setValue(64)
         apply_flag_edit_from_ui()
         check(cmds.getAttr(flag_set + ".a3obFlagValue") == 64,
               "the flag value was not written before the undo could be tested")
+        check(cmds.getAttr(flag_set + ".a3obFlagComponent") == "vertex",
+              "the flag component was not written before the undo could be tested")
 
         cmds.undo()
         check(cmds.getAttr(flag_set + ".a3obFlagValue") == 8,
               "Ctrl+Z did not restore the previous flag value; got %r"
               % cmds.getAttr(flag_set + ".a3obFlagValue"))
+        check(cmds.getAttr(flag_set + ".a3obFlagComponent") == "face",
+              "Ctrl+Z did not restore the component; got %r"
+              % cmds.getAttr(flag_set + ".a3obFlagComponent"))
+    finally:
+        _release_active_dock(dock)
+        cmds.undoInfo(state=previous_undo_state)
+
+
+def build_lod_with_a_proxy(path="p\\weapon.p3d", index=1):
+    cmds.file(new=True, force=True)
+    transform = cmds.polyCube(name="body", ch=False)[0]
+    for attribute, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
+                            ("a3obResolution", "long")):
+        cmds.addAttr(transform, longName=attribute, attributeType=kind)
+    cmds.setAttr(transform + ".a3obIsLOD", True)
+    cmds.setAttr(transform + ".a3obResolution", 1)
+    cmds.select(transform + ".f[0:1]", replace=True)
+    cmds.a3obProxy(path=path, index=index, fromSelection=True, update=True)
+    proxy_set = [node for node in cmds.ls(type="objectSet") or []
+                 if cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True)][0]
+    return transform, proxy_set
+
+
+@contextlib.contextmanager
+def _texture_root_containing(relative_path):
+    """Set MayaObjectBuilder_texture_root to a temp dir holding a real file at
+    relative_path, then restore whatever the optionVar held before.
+
+    update_proxy_from_ui validates its path exactly like create_proxy_from_ui does
+    (_validate_proxy_path in a3ob.ui.actions.metadata): a RELATIVE path is rejected
+    outright unless it resolves to a real file under a configured texture root. The
+    update tests below type a relative "p\\other.p3d" into the editor, so a real file
+    has to exist there or Update warns and writes nothing — this is not a new
+    restriction Task 5 introduces, it is the same rule create_proxy_from_ui already
+    enforces, exercised for the first time by the update path."""
+    had_root = cmds.optionVar(exists="MayaObjectBuilder_texture_root")
+    previous_root = cmds.optionVar(query="MayaObjectBuilder_texture_root") if had_root else None
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, relative_path)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        open(target, "wb").close()
+        cmds.optionVar(stringValue=("MayaObjectBuilder_texture_root", tmpdir))
+        try:
+            yield
+        finally:
+            if had_root:
+                cmds.optionVar(stringValue=("MayaObjectBuilder_texture_root", previous_root))
+            else:
+                cmds.optionVar(remove="MayaObjectBuilder_texture_root")
+
+
+def test_fields_report_a_proxy_path_and_index():
+    _lod, proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=3)
+    fields = selection_set_editable_fields(proxy_set)
+    check(fields["kind"] == "Proxy", "kind is %r" % fields["kind"])
+    check(fields["proxy_path"] == "p\\weapon.p3d", "path is %r" % fields["proxy_path"])
+    check(fields["proxy_index"] == 3, "index is %r" % fields["proxy_index"])
+
+
+def test_the_proxy_editor_page_follows_the_highlighted_row():
+    lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=3)
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        check(proxy_rows, "the proxy set is not listed at all")
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        check(dock.selection_editor_stack.currentIndex() == 2,
+              "the proxy editor page is not showing; index is %d"
+              % dock.selection_editor_stack.currentIndex())
+        path, index = dock.proxy_edit_values()
+        check(path == "p\\weapon.p3d", "editor shows path %r" % path)
+        check(index == 3, "editor shows index %r" % index)
+    finally:
+        _release_active_dock(dock)
+
+
+def test_update_writes_the_new_path_to_both_halves():
+    from a3ob.ui.actions.metadata import update_proxy_from_ui
+    lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=1)
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        before = len(cmds.ls(type="objectSet") or [])
+        dock.proxy_edit_path_field._line_edit.setText("p\\other.p3d")
+        dock.proxy_edit_index_field.setValue(7)
+        with _texture_root_containing("p\\other.p3d"):
+            update_proxy_from_ui()
+
+        placeholder = None
+        for child in cmds.listRelatives(lod, children=True, type="transform",
+                                        fullPath=True) or []:
+            if cmds.attributeQuery("a3obIsProxy", node=child, exists=True):
+                placeholder = child
+        check(placeholder is not None, "the placeholder vanished")
+        check(cmds.getAttr(placeholder + ".a3obProxyPath") == "p\\other.p3d",
+              "the placeholder still points at %r"
+              % cmds.getAttr(placeholder + ".a3obProxyPath"))
+        check(cmds.getAttr(placeholder + ".a3obProxyIndex") == 7,
+              "the placeholder index is %r" % cmds.getAttr(placeholder + ".a3obProxyIndex"))
+
+        proxy_sets = [node for node in cmds.ls(type="objectSet") or []
+                      if cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True)]
+        check(len(proxy_sets) == 1, "expected one proxy set, got %r" % proxy_sets)
+        check(cmds.getAttr(proxy_sets[0] + ".a3obSelectionName") == "proxy:p\\other.p3d.7",
+              "the set names %r" % cmds.getAttr(proxy_sets[0] + ".a3obSelectionName"))
+        check(before == len(cmds.ls(type="objectSet") or []),
+              "the update left an orphan set behind")
+    finally:
+        _release_active_dock(dock)
+
+
+def test_update_restores_the_previous_selection():
+    """a3obUpdateProxy acts on the SELECTION, so the action must select the set and put the
+    user's selection back — otherwise clicking Update silently changes what is selected."""
+    from a3ob.ui.actions.metadata import update_proxy_from_ui
+    lod, _proxy_set = build_lod_with_a_proxy()
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        cmds.select(lod, replace=True)
+        before = cmds.ls(selection=True, long=True) or []
+        dock.proxy_edit_path_field._line_edit.setText("p\\other.p3d")
+        dock.proxy_edit_index_field.setValue(2)
+        with _texture_root_containing("p\\other.p3d"):
+            update_proxy_from_ui()
+        after = cmds.ls(selection=True, long=True) or []
+        check(before == after,
+              "the selection changed from %r to %r across an Update" % (before, after))
+    finally:
+        _release_active_dock(dock)
+
+
+def test_undo_after_update_resurrects_no_orphan_set():
+    """The spec's sharpest test. a3obProxy and a3obUpdateProxy are non-undoable precisely
+    because MFnSet.create() never enters the undo queue: when they WERE undoable, Ctrl+Z
+    rolled back the DAG side while the sets stayed, leaving orphan a3ob_proxy_* behind.
+    Update runs through the same commands, so it inherits the same hazard."""
+    from a3ob.ui.actions.metadata import update_proxy_from_ui
+    lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=1)
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        before = len(cmds.ls(type="objectSet") or [])
+        dock.proxy_edit_path_field._line_edit.setText("p\\other.p3d")
+        dock.proxy_edit_index_field.setValue(7)
+        with _texture_root_containing("p\\other.p3d"):
+            update_proxy_from_ui()
+        cmds.undo()
+
+        after = len(cmds.ls(type="objectSet") or [])
+        check(before == after,
+              "Ctrl+Z after Update changed the set count from %d to %d — an orphan was "
+              "resurrected" % (before, after))
+        proxy_sets = [node for node in cmds.ls(type="objectSet") or []
+                      if cmds.attributeQuery("a3obIsProxySelection", node=node, exists=True)]
+        check(len(proxy_sets) == 1,
+              "after undo there are %d proxy sets, expected 1: %r"
+              % (len(proxy_sets), proxy_sets))
     finally:
         _release_active_dock(dock)
 
@@ -267,8 +440,12 @@ def main():
                  test_an_ordinary_selection_shows_no_editor,
                  test_applying_a_flag_edit_writes_through_and_creates_no_set,
                  test_a_zero_flag_value_warns_and_writes_nothing,
-                 test_a_proxy_row_shows_the_blank_page,
-                 test_a_flag_edit_undoes):
+                 test_a_flag_edit_undoes,
+                 test_fields_report_a_proxy_path_and_index,
+                 test_the_proxy_editor_page_follows_the_highlighted_row,
+                 test_update_writes_the_new_path_to_both_halves,
+                 test_update_restores_the_previous_selection,
+                 test_undo_after_update_resurrects_no_orphan_set):
         test()
         print("ok:", test.__name__, flush=True)
     print("SELECTION DETAIL EDITORS: PASS", flush=True)

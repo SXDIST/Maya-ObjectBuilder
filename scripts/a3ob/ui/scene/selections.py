@@ -132,7 +132,26 @@ def selection_set_editable_fields(set_node):
     fields["kind"] = _set_kind(is_proxy, flag_component)
     fields["flag_component"] = flag_component
     fields["flag_value"] = int(_safe_get_attr(set_node, "a3obFlagValue", 0) or 0)
+    if fields["kind"] == "Proxy":
+        selection_name = _safe_get_attr(set_node, "a3obSelectionName", "") or ""
+        fields["proxy_path"], fields["proxy_index"] = _proxy_path_and_index(selection_name)
     return fields
+
+
+def _proxy_path_and_index(selection_name):
+    """(path, index) of the placeholder matching a proxy selection name, or ("", 0).
+
+    The set holds only the proxy:PATH.INDEX key; the path and index themselves live on the
+    placeholder transform. Parsing them back out of the key would be simpler and wrong — a
+    DayZ path may itself contain dots, so the last dot is not reliably the index separator.
+    Read the placeholder's own attributes instead."""
+    if not selection_name:
+        return "", 0
+    for node in cmds.ls("*.a3obProxySelection", objectsOnly=True, long=True) or []:
+        if _safe_get_attr(node, "a3obProxySelection", "") == selection_name:
+            return (_safe_get_attr(node, "a3obProxyPath", "") or "",
+                    int(_safe_get_attr(node, "a3obProxyIndex", 0) or 0))
+    return "", 0
 
 
 def _canonical_selection_components(selection=None):
@@ -178,6 +197,7 @@ __all__ = [
     "_set_member_count",
     "_selection_set_details",
     "selection_set_editable_fields",
+    "_proxy_path_and_index",
     "_canonical_selection_components",
     "_mesh_shapes_for_item",
 ]
