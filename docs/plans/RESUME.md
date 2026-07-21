@@ -16,12 +16,12 @@ conversation that produced it.
 | 3a — one LOD panel | **done**, 4 tasks, all reviewed |
 | 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
 | 3c — Skinning slims to four buttons | **done**, 4 tasks, all reviewed |
-| 3d — Materials → Attribute Editor; Preferences window | **done**, 5 tasks, all reviewed |
+| 3d — Materials → Attribute Editor; Preferences window | **done**, 5 tasks + a 2-task rebuild after live check |
 | 4 — reference assets ship with the plugin | **done**, 3 tasks, all reviewed |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Suite **65/65**. Dock is **5 panels**, down from 11. The byte gate has not moved once across the
+Suite **66/66**. Dock is **5 panels**, down from 11. The byte gate has not moved once across the
 whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
 Phase 4 fixed **two release-breaking defects that predate this branch**, neither in its own spec.
@@ -39,7 +39,7 @@ Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
 `2026-07-20-phase1-weights.md`, `2026-07-20-phase2-export-pipeline.md`,
 `2026-07-20-phase3a-lod-panel.md`, `2026-07-20-phase3b-selections.md`,
 `2026-07-20-phase3c-skinning.md`, `2026-07-20-phase3d-materials.md`,
-`2026-07-21-phase4-references.md`.
+`2026-07-21-phase4-references.md`, `2026-07-21-phase3d-fix-ae-section.md`.
 
 Phase 3b fixed **two proxy-command defects that predate this branch**, both from the same root
 cause: `proxy_selection_name` is `"proxy:%s.%d" % (path, index)` and encodes **no LOD identity**,
@@ -109,8 +109,23 @@ launched Maya); it matters whenever a task deletes a module.
   under mayapy in batch. Measured: `cmds.callbacks(addCallback=…)` and `listCallbacks` work;
   the Python `callbacks` command has **no flag for the node name** (`nodeName=` raises "Invalid
   flag"), so drive it with `mel.eval('callbacks -executeCallbacks -hook "…" "<node>";')` exactly
-  as Maya does; and `cmds.editorTemplate(…)` no-ops rather than raising. Only *rendering* is
-  untestable.
+  as Maya does; and `cmds.editorTemplate(…)` no-ops rather than raising.
+- **"Only *rendering* is untestable" was written here, and it was WRONG — it cost the whole of
+  Phase 3d.** Because `editorTemplate` no-ops in batch, what is untestable is not the section's
+  appearance but **whether it exists at all**. The shipped section rendered an empty frame on
+  every shading engine and every test was green. Measured in a live session:
+  `editorTemplate -callCustom` **never invokes its procs from inside the
+  `AETemplateCustomContent` hook**, while `beginLayout`/`endLayout` do take effect — hence a
+  frame with nothing in it. `-addControl` works, takes a `-label` override, and its change
+  command fires with the NODE name; Maya then re-points those native controls itself. When a
+  headless test can only observe that your code *ran*, and not what Maya *did with it*, treat
+  the feature as unverified until a live session says otherwise.
+- **The Attribute Editor builds a node type's template ONCE per tab**, then only re-points it.
+  Any experiment that changes template code and re-selects the same node type measures nothing —
+  a probe recorded ZERO hook calls across a whole round of "comparisons" that were duly written
+  down as findings. The AE's **Copy Tab** button forces a genuine rebuild and is what made the
+  diagnosis repeatable. Do not delete `workspaceControl("AttributeEditor")` to force one: it
+  takes `AEmenuBarLayout` with it and Maya cannot recreate the panel — that costs a restart.
 - **The menu is invisible to every headless test.** `entry.show_plugin_ui` returns immediately
   under `cmds.about(batch=True)`, so menu callbacks must stay one-line wrappers over functions
   that *are* testable. `cmds.confirmDialog` returns `None` under mayapy rather than blocking,
@@ -147,27 +162,32 @@ launched Maya); it matters whenever a task deletes a module.
    - The **DayZ Material section in the Attribute Editor** added in Phase 3d. This one has the
      longest list, because the AE caches a template per node TYPE and the headless suite can
      drive the state layer but never the rendering:
-     1. The section appears below the stock **Shading Group Attributes**, and that stock
-        section is still intact — Maya 2027 ships its own `AEshadingEngineTemplate.mel` and
-        ours would shadow it, so this is the check that we did not.
-     2. **Order independence.** Fresh session, open a PLAIN shading engine first, then an
-        `a3ob` one. The section must appear. Before the fix it never would, all session.
-     3. Hiding is visually clean. `_manage_layout` toggles the columnLayout we created, not
-        the `editorTemplate -beginLayout` frame — there is no handle for that frame — so an
-        empty "DayZ Material" header rendering on a plain shading engine is the LIKELY
-        outcome, not merely a risk.
-     4. On a plain shading engine, nothing adds `a3obTexture`/`a3obMaterial`. Check
-        `initialShadingGroup` specifically: pre-fix, one keystroke wrote to three nodes.
-     5. **Two AE tabs.** Tear off or duplicate a tab, type in the OLDER one, confirm it
-        lands on that tab's node. This is the only heuristic in the file
-        (`_resolve_section`) and the only way to exercise it. A mis-resolve cannot write to
-        an unmarked node, but it CAN write to the other tab's marked one.
-     6. Closing a tab prunes its entry (`len(a3ob.ui.ae_template._SECTIONS)`).
-        `_forget_dead_sections` has zero coverage — `_layout_exists` returns `True`
-        unconditionally in batch, so pruning is a no-op headlessly.
-     7. The controls themselves: browse dialog, recent-paths menu, clear button, Select Faces
-        and its `inViewMessage`.
-     8. Type `P:/data/x.paa` and confirm the field redraws as `data\x.paa`.
+     **This list was rewritten after the first live check found the section did not work at
+     all.** It rendered an empty frame on every shading engine, because
+     `editorTemplate -callCustom` never fires from inside the `AETemplateCustomContent` hook
+     — `beginLayout` does. The section was rebuilt on `-addControl`
+     (`docs/plans/2026-07-21-phase3d-fix-ae-section.md`), which deleted `_SECTIONS`,
+     `_resolve_section`, `_manage_layout` and the proc pair. Do not look for those.
+     1. The section appears for a marked shading engine, and the stock **Shading Group
+        Attributes** is still intact — Maya 2027 ships its own `AEshadingEngineTemplate.mel`
+        and ours would shadow it, so this is the check that we did not.
+     2. Both fields render, populated from the node, labelled **Texture** and **Material** —
+        not Maya's auto-prettified "A 3ob Texture". That is the `-label` override.
+     3. A plain shading engine shows **no DayZ Material section at all** — not an empty
+        frame, which is what the broken version did.
+     4. **Re-pointing.** Select a different marked shading engine in the same AE tab; the
+        fields must follow it. This is the highest-value item: Maya owning re-pointing is the
+        entire reason the per-tab bookkeeping could be deleted, and no headless test reaches it.
+     5. Editing a field writes it, normalised to the backslash form, and re-textures. Type
+        `P:/data/x.paa` and confirm it comes back as `data\x.paa`.
+     6. Nothing writes `a3obTexture`/`a3obMaterial` onto a node the plugin never marked.
+        Check `initialShadingGroup` specifically: the pre-fix version reached three nodes
+        from one keystroke.
+     7. A shading engine carrying only ONE of the two attributes — does the missing one show
+        as an empty field, or does the section break? `should_show_section` returns true on
+        either, and both controls are declared unconditionally. Untestable headlessly.
+     8. **Select Faces by Material** in the menu selects the right faces, both with a shading
+        engine selected and with just the material selected.
      9. The Script Editor stays silent while clicking around a busy scene with the AE open.
    - The **Preferences window** added in Phase 3d, reached from the menu where
      `Set Texture Root (.paa)…` used to be:
