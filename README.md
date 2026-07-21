@@ -45,7 +45,7 @@ The plugin is written in **pure Python** (Maya Python API 2.0, with a tiny API-1
 | 🎚️ **LOD tools** | Central LOD list, assign LOD type/resolution, create empty LODs |
 | 🏷️ **Metadata editing** | Named selections & properties, materials, mass, flags, proxies |
 | 🎨 **PBR textures** | Decode DayZ `.paa` textures (+ `.rvmat`) on import and wire base colour, normal & specular onto materials (`aiStandardSurface` / `blinn`) |
-| ⚡ **Auto LOD** | Generate resolution / geometry / memory / fire / view LODs from a mesh |
+| ⚡ **Auto LOD** | Generate resolution / geometry / memory / fire / view LODs at export, from the P3D options |
 | 🦴 **model.cfg** | Skeleton import/export workflow |
 | ✅ **Validation** | Pre-export checks for the whole scene or the selection |
 | 📥 **Installer** | Copies runtime files, writes a Maya module, loads + autoloads the plugin |
@@ -112,13 +112,11 @@ The dock is a vertical stack of **collapsible panels** — each remembers its ex
 
 | Panel | Purpose |
 |-------|---------|
-| ⚡ **Quick Actions** | Import/Export P3D · Auto LOD · Validate |
-| 📋 **LODs** | Central list of every LOD in the scene — select, frame, rename, duplicate, delete, add new LODs |
-| 🎚️ **LOD Properties** | Assign P3D LOD type & resolution to the selection |
-| 🤖 **Auto LOD** | Generate resolution/geometry/memory/fire/view LODs from a mesh |
-| 🏷️ **Named Properties** | Key/value properties stored on the selected LOD |
+| ⚡ **Quick Actions** | Import/Export P3D · Validate |
+| 📋 **LODs** | Central list of every LOD — select, frame, rename, duplicate, delete, mark new LODs, and edit the highlighted LOD's type, resolution, mass and named properties in the detail area below |
 | 🎨 **Materials** | Texture (`.paa`) and `.rvmat` paths per material, the texture root, and the alpha→transparency toggle |
 | 🗂️ **Selections** | Filter, create and edit selections, proxies, and flag sets — creation is on the Create button's menu, editing is in the details area below the list |
+| 🦴 **Skinning** | Weight transfer, influence inspection and skin-weight checks |
 | 📍 **Memory Points** | Named locators for the Memory LOD |
 | ✅ **Validation** | Check LODs before export (whole scene or selection) |
 
