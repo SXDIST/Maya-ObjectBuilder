@@ -3,26 +3,30 @@
 State of the UI-simplification work, written so a fresh session can pick it up without the
 conversation that produced it.
 
-**Branch:** `claude/ui-simplification-improvements-b45ece` · **PR:** #2 (draft, do not merge
-per phase — one merge at the end, by the author's decision)
+**Branch:** `claude/ui-simplification-improvements-b45ece` · **PR:** #2 (draft)
+**Do not merge per phase** — one merge at the end, by the author's decision.
 
 ## Where things stand
 
 | Phase | State |
 |-------|-------|
 | 0 — dev module points at this worktree | done |
-| 1 — weights: the `skinCluster` is the only store | **done**, 10 tasks, all reviewed, merged into the branch |
-| 2 — export pipeline | **planned**, not started — `docs/plans/2026-07-20-phase2-export-pipeline.md` |
-| 3 — panels (11 → 5) | specced, not planned |
-| 4 — reference assets ship | specced, not planned |
+| 1 — weights: the `skinCluster` is the only store | **done**, 10 tasks, all reviewed |
+| 2 — export pipeline: Auto LOD, textures, validation | **done**, 10 tasks, all reviewed |
+| 3a — one LOD panel | **done**, 4 tasks, all reviewed |
+| 3b — Selections absorbs Proxies and Flags | specced, **not planned** |
+| 3c — Skinning slims; Materials → Attribute Editor; Preferences window | specced, **not planned** |
+| 4 — reference assets ship with the plugin | specced, not planned |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Eleven specs in `docs/specs/2026-07-20-*.md`. The sequencing document is
-`docs/plans/2026-07-20-ui-simplification-index.md`.
+Suite **51/51**. Dock is **8 panels**, down from 11. The byte gate has not moved once across
+the whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
-Suite is 41/41. The byte gate has not moved once: `5e66ed46ac09f396` / 6145116 and
-`0ba984eb4fdb5d5e` / 60229.
+Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
+`docs/plans/2026-07-20-ui-simplification-index.md`. Completed plans:
+`2026-07-20-phase1-weights.md`, `2026-07-20-phase2-export-pipeline.md`,
+`2026-07-20-phase3a-lod-panel.md`.
 
 ## Before running anything
 
@@ -40,64 +44,59 @@ cmd //c mklink //J "build\golden" "C:\Users\targaryen\orca\Maya-ObjectBuilder\bu
 ```
 Expected: real per-fixture lines, not `SKIP`.
 
-**Maya must be loading this worktree, not the main repo.**
-
-```python
-import maya.cmds as cmds, a3ob, os
-print(cmds.pluginInfo("MayaObjectBuilder.py", query=True, path=True))
-print(os.path.dirname(a3ob.__file__))
-```
-Both must contain `.claude/worktrees/ui-simplification-improvements-b45ece`. If not, run
-`tools/dev_install.py` **from this worktree** and restart Maya — the `.mod` is read at
-startup, and a registered `MPxCommand` keeps the session's first version of its class
-regardless of plugin reloads.
-
-Also check the main repo is not still on `sys.path` (it was, inherited from whatever
-launched Maya). Harmless normally; it matters whenever a task deletes a module, because the
-deleted module keeps importing from the main copy and the deletion looks like it worked.
+**Maya must be loading this worktree, not the main repo.** Run `tools/dev_install.py` from
+*this worktree* and restart Maya if not — the `.mod` is read at startup, and a registered
+`MPxCommand` keeps the session's first version of its class regardless of plugin reloads.
+Also check the main repo is not still on `sys.path` (it was once, inherited from whatever
+launched Maya); it matters whenever a task deletes a module.
 
 ## Operational lessons, paid for
 
-- **Implementer agents must run everything in the FOREGROUND.** Two stalled in Phase 1 by
-  launching the mayapy suite in the background and waiting for a notification. The suite
-  takes several minutes; that is normal. Say so in every dispatch.
-- **Push after every completed task**, in the same step as the ledger entry. A PR tracks the
-  branch — there is no separate push target — so an unpushed commit is invisible to the
-  reviewer. Three finished, reviewed tasks once sat unpushed.
-- **Reviews earn their cost.** Eleven reviews in Phase 1 found eight real defects and no
-  false positives. Five were tests that passed vacuously — one reported `PASS` through the
-  suite runner while checking nothing. Two were gaps in the plan rather than the code.
-- **Grep before deleting, across the whole repo.** The plan's file list missed
-  `export/exporter.py`, which read `A.BAKED_WEIGHTS` and would have raised `AttributeError`
-  on every export of a scene containing a joint. Phase 2's Task 1 and Phase 1's Task 9 both
-  now open with a sweep for this reason.
+- **Implementer agents must run everything in the FOREGROUND, and must never be asked to run
+  `python tests/run_all.py`.** That full-suite run stalled three agents; the controller runs
+  it instead. Removing it from dispatches stopped the stalling completely.
+- **Push after every completed task.** A PR tracks the branch — there is no separate push
+  target — so an unpushed commit is invisible. Three finished, reviewed tasks once sat
+  unpushed.
+- **Reviews earn their cost, repeatedly.** Across ~24 reviews they found real defects and
+  no false positives. Seven were tests that passed vacuously; several were gaps in the plan
+  rather than the code; one was a Critical the implementer had misdiagnosed.
+- **Grep the whole repo before deleting.** A plan's file list missed `export/exporter.py`,
+  which read a schema constant and would have raised `AttributeError` on every export of a
+  scene containing a joint.
 - **A test whose failure you have not witnessed is not evidence.** Ask implementers to break
-  the thing deliberately and show the red.
+  the thing deliberately and show the red. This caught more than anything else.
+- **A real `QWidget` under mayapy segfaults** unless a `QApplication` is created **before**
+  `maya.standalone.initialize()`. `lod_panel_*.py` are the only tests with a real dock;
+  follow their header order.
 
 ## Decisions already made — do not relitigate
 
-- **The skeleton always stays in the scene.** This is the premise the whole weights design
-  rests on. If it ever changes, the storage decision must be revisited, not patched.
-- **The lost-rig warning fires only when a sibling LOD of the same model is still skinned.**
-  Deleting an entire skeleton is therefore not caught; that is accepted and recorded in
-  `docs/specs/2026-07-20-weights-live-skincluster-design.md`.
-- **The second warning trigger the spec originally called for was dropped**, because import
-  turns every Selection TAGG into a plain objectSet — `Pelvis` and `camo_jacket` are
-  indistinguishable once the joints are gone.
-- **The 23 unwired option-box keys stay.** They are stubs for planned features, not dead code.
-- **`autolod` moves to `mayabridge` in Phase 2 Task 1**, because export must not import from
-  `a3ob.ui`.
+- **The skeleton always stays in the scene.** The whole weights design rests on it.
+- The lost-rig warning fires only when a sibling LOD of the same model is still skinned;
+  whole-skeleton deletion is knowingly uncaught, recorded in the weights spec.
+- **`damage` severity means "the scene shows one thing and the file silently contains
+  another".** Exactly two situations qualify today: a posed rig, and an Object Builder set
+  with no live members. The lost-skinCluster report deliberately stays a `warning`.
+- **Relevance drives prominence, never availability.** Mass collapses where unusual, never
+  hides or disables; the property combo suggests but accepts anything.
+- The 23 unwired option-box keys stay — stubs for planned features, not dead code.
+- `autolod` lives in `mayabridge`, not `ui`: export must not import from `a3ob.ui`.
 
-## Carried findings for a later review
+## Open items the author must handle
 
-- `_model_has_skinned_sibling` assumes one folder holds a model's LODs; hand-built scenes
-  with per-resolution subfolders may group differently.
-- Five tests call bare `main()` instead of `sys.exit(_harness.run(main))`, losing the
-  `FAIL <test>: <error>` attribution line.
-- `import_writes_no_bake.py` prints SKIP and exits 0 when the reference clone is absent, and
-  the runner reports that as PASS.
-- The spec's headline 2.73 MB is **not** reclaimed yet: existing scenes keep the attributes
-  and re-saving preserves them. The cleanup action needs Phase 3's Preferences window.
+1. **The P3D option box has never been opened in a live Maya session.** Headless mayapy
+   creates no UI at all — `cmds.about(batch=True)` is true and every UI command returns
+   `False`. It now has an Auto LOD frame, an Import Textures checkbox, and three fewer
+   validation checkboxes. One visual check would close this.
+2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
+   hidden invalid LOD can block an `Export All` that would have succeeded and never
+   contained that node. A reviewer called it a fast-follow, not a merge blocker.
+3. **"Apply to all selected LODs" is exercised by no test**, before or after this work.
+4. `translator.do_read` still checks the removed `validateMeshes` key — a dead gate, one-line
+   cleanup.
+5. Two of the LOD panel's buttons refresh twice per click, because `_active_qt_dock()` does
+   not register a test-built dock. Cheap, but it is production paying for testability.
 
 ## Phase 6, when everything is done
 
@@ -107,6 +106,6 @@ plugin.
 
 ## The local ledger
 
-`.superpowers/sdd/progress.md` holds the per-task detail — commit ranges, review outcomes,
-fix rounds. It is gitignored working scratch and will not survive `git clean -fdx`. Nothing
-above depends on it; it is a convenience, and `git log` is the real record.
+`.superpowers/sdd/progress.md` holds per-task detail — commit ranges, review outcomes, fix
+rounds, and the reasoning behind each judgment call. It is gitignored scratch and will not
+survive `git clean -fdx`. Nothing above depends on it; `git log` is the real record.
