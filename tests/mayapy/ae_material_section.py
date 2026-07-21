@@ -251,6 +251,99 @@ def test_the_section_is_not_offered_for_a_mesh_or_a_material_node():
         ae_template.uninstall()
 
 
+def test_begin_section_declares_addcontrol_not_callcustom():
+    """Pins the ONE thing `offered_for()` cannot see: what `_begin_section`'s body itself
+    calls. Every other test in this file patches `_begin_section` out with `Recorder` before
+    firing the hook, so its real body never runs anywhere else here — and reverting it to the
+    old `cmds.editorTemplate(callCustom=(NEW_PROC, REPLACE_PROC, "message"))` form leaves
+    every other test green. This is the false-pass shape the addControl rewrite exists to
+    correct, and this test is the one that would have caught it.
+
+    Monkeypatches `cmds.editorTemplate` itself (not `_begin_section`) to record the call
+    sequence, then asserts it is beginLayout -> two addControl calls carrying SG_TEXTURE and
+    SG_MATERIAL, the CHANGE_PROC name, and the label overrides -> endLayout, with `callCustom`
+    appearing nowhere. It does NOT prove the section renders — `cmds.editorTemplate` no-ops
+    in batch either way — only that the call shape is the addControl one and not the
+    callCustom one.
+    """
+    calls = []
+
+    def recorder(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    original = cmds.editorTemplate
+    cmds.editorTemplate = recorder
+    try:
+        ae_template._begin_section("someSG")
+    finally:
+        cmds.editorTemplate = original
+
+    _harness.check(len(calls) == 4,
+                   "expected beginLayout, two addControl, endLayout - got %r" % (calls,))
+
+    _, begin_kwargs = calls[0]
+    _harness.check(begin_kwargs.get("beginLayout") == ae_template.SECTION_LABEL,
+                   "the first call must open the section, got %r" % (calls[0],))
+    _harness.check(begin_kwargs.get("collapse") is False,
+                   "the section must open expanded, got %r" % (calls[0],))
+
+    texture_args, texture_kwargs = calls[1]
+    _harness.check(texture_args == (TEXTURE_ATTR, ae_template.CHANGE_PROC),
+                   "the texture control must be addControl'd against a3obTexture with the "
+                   "change proc, got %r" % (calls[1],))
+    _harness.check(texture_kwargs == {"addControl": True, "label": "Texture"},
+                   "got %r" % (calls[1],))
+
+    material_args, material_kwargs = calls[2]
+    _harness.check(material_args == (MATERIAL_ATTR, ae_template.CHANGE_PROC),
+                   "the material control must be addControl'd against a3obMaterial with the "
+                   "change proc, got %r" % (calls[2],))
+    _harness.check(material_kwargs == {"addControl": True, "label": "Material"},
+                   "got %r" % (calls[2],))
+
+    _, end_kwargs = calls[3]
+    _harness.check(end_kwargs.get("endLayout") is True,
+                   "the last call must close the section, got %r" % (calls[3],))
+
+    for _, kwargs in calls:
+        _harness.check("callCustom" not in kwargs,
+                       "callCustom must never appear here - its procs never fire from "
+                       "inside the AETemplateCustomContent hook, got %r" % (kwargs,))
+
+
+def test_the_mel_shim_routes_to_on_attribute_edited():
+    """Pins the MEL string interpolation in `_MEL_PROCS`, which is otherwise only proven not
+    to be a syntax error (by `install()` succeeding elsewhere in this file).
+
+    After `install()`, calls the registered MEL proc directly by name - the same way Maya's
+    native `-addControl` change command calls it - and asserts the Python side actually ran
+    with the node name the MEL call was given. This does NOT prove Maya itself invokes the
+    proc on a real field edit; that stays on the live-Maya list.
+    """
+    cmds.file(new=True, force=True)
+    ae_template.uninstall()
+    ae_template.install()
+    try:
+        seen = []
+
+        def recorder(node_name):
+            seen.append(node_name)
+            return set()
+
+        original = ae_template.on_attribute_edited
+        ae_template.on_attribute_edited = recorder
+        try:
+            mel.eval('%s("someSG")' % ae_template.CHANGE_PROC)
+        finally:
+            ae_template.on_attribute_edited = original
+
+        _harness.check(seen == ["someSG"],
+                       "the MEL shim must call on_attribute_edited with the node name it "
+                       "was passed, got %r" % (seen,))
+    finally:
+        ae_template.uninstall()
+
+
 def test_the_decision_is_silent_and_does_not_dirty_the_scene():
     """It runs for every node the user selects in the Attribute Editor.
 
@@ -402,6 +495,8 @@ def main():
     test_the_section_is_offered_for_an_a3ob_shading_engine()
     test_the_section_is_not_offered_for_a_plain_shading_engine()
     test_the_section_is_not_offered_for_a_mesh_or_a_material_node()
+    test_begin_section_declares_addcontrol_not_callcustom()
+    test_the_mel_shim_routes_to_on_attribute_edited()
     test_the_decision_is_silent_and_does_not_dirty_the_scene()
     test_an_edit_persists_both_paths_normalised()
     test_an_edit_on_a_node_that_lost_its_attributes_writes_nothing_and_does_not_raise()

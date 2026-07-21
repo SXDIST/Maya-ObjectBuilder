@@ -32,7 +32,7 @@ None of that is provable from a headless test: ``cmds.editorTemplate`` no-ops in
 mayapy suite pins is registration, the predicate, and :func:`on_attribute_edited` called
 directly; whether the section RENDERS stays on the author's live-Maya list.
 
-**This module is a leaf.** ``maya.cmds``, ``maya.mel`` and the Maya-free attribute schema only.
+**This module is a leaf.** ``maya.cmds``, ``maya.mel`` and the attribute schema only.
 Every module in ``a3ob.ui.actions`` star-imports ``a3ob.ui.entry``, so importing one at module
 level would close the very cycle ``entry._build_qt_dock``'s lazy import exists to prevent — the
 write helpers are therefore imported INSIDE the functions that call them.
@@ -208,7 +208,8 @@ def on_attribute_edited(node_name):
 
     written = write_material_metadata(node_name, texture, material)
     if not written:
-        cmds.warning("Material metadata target was deleted")
+        cmds.warning("%s: nothing written - it does not resolve to a shading engine or "
+                     "material target" % (node_name,))
         return written
     _reresolve_textures()
     return written
