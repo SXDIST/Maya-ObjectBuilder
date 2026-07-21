@@ -383,6 +383,26 @@ def assert_ui_redesign_helpers_load():
         raise RuntimeError("Select Skin Outliers button should have moved out of Validation")
     if "Select Skin Outliers" not in inspect.getsource(dock_class._build_skinning_tab):
         raise RuntimeError("Select Skin Outliers button should have moved into Skinning")
+    # Phase 3c Task 3: the Skinning panel drops from eleven controls + four paragraphs of
+    # prose down to four buttons and the filtered influence list. Add Skeleton and the two
+    # Save Selection buttons move to a menu submenu (Task 4); the Detached-over field goes
+    # because a3obTransferSkin already applies its own measured DEFAULT_FAR_DISTANCE when
+    # -distance is omitted; Add Male Body is renamed since it imports materials and a
+    # skeleton too.
+    skinning_source = inspect.getsource(dock_class._build_skinning_tab)
+    for gone in ("Add Skeleton", "Save Selection as Body", "Save Selection as Skeleton",
+                 "Detached over", "Add Male Body", "skin_distance_field"):
+        if gone in skinning_source:
+            raise RuntimeError("%r should have been removed from the Skinning panel" % gone)
+    if "Add Male Character" not in skinning_source:
+        raise RuntimeError("Add Male Character button should be in the Skinning panel")
+    # Expanding Skinning must not trigger a scene scan: the panel entry's on_expand callback
+    # (the fourth element of its tuple in dock.py's panels list) stays None. Phase 1 already
+    # removed the old refresh_weights_state callback that used to sit there; this pins it so
+    # a future edit cannot quietly reintroduce a scan.
+    build_ui_source = inspect.getsource(dock_class._build_ui)
+    if '("Skinning", self._build_skinning_tab(), True, None)' not in build_ui_source:
+        raise RuntimeError("Skinning panel should register no on_expand callback")
     # The Flags and Proxies panels were retired (Phase 3b Task 6): creating a proxy or a
     # flag set moved onto the Selections panel's Create button menu, and editing an
     # existing one moved into the Selections details area (Tasks 2-5). This check lives in

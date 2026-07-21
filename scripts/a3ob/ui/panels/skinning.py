@@ -15,50 +15,22 @@ class SkinningPanelMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(UI_SPACING)
 
-        layout.addWidget(_hint("Reference assets are saved once from your scene and dropped "
-                               "into any other with one click."))
-        reference_row = qt_widgets.QHBoxLayout()
-        reference_row.addWidget(_qt_button(
-            "Add Male Body", lambda: _add_reference_asset("male_body"),
-            "Import the saved male body proxy (with its materials and skeleton).", ":/kinJoint.png"))
-        reference_row.addWidget(_qt_button(
-            "Add Skeleton", lambda: _add_reference_asset("skeleton"),
-            "Import the saved DayZ skeleton on its own.", ":/kinJoint.png"))
-        layout.addLayout(reference_row)
-
-        save_row = qt_widgets.QHBoxLayout()
-        save_row.addWidget(_qt_button(
-            "Save Selection as Body", lambda: _save_reference_asset("male_body"),
-            "Store the selected body as the reusable male reference.", ":/save.png"))
-        save_row.addWidget(_qt_button(
-            "Save Selection as Skeleton", lambda: _save_reference_asset("skeleton"),
-            "Store the selected joint hierarchy as the reusable skeleton.", ":/save.png"))
-        layout.addLayout(save_row)
-
-        layout.addWidget(_hint("Select the garment, then transfer. Weights come from the body, "
-                               "so the garment deforms with it; detached shells (pouches, "
-                               "backpacks) are made rigid."))
-        transfer_row = qt_widgets.QHBoxLayout()
-        transfer_row.addWidget(qt_widgets.QLabel("Detached over"))
-        self.skin_distance_field = qt_widgets.QLineEdit("0.06")
-        self.skin_distance_field.setToolTip(
-            "Distance from the body, in scene units, above which a shell counts as a separate "
-            "rigid object. Measured on a DayZ character: fitted garments sit at 0.01-0.03, a "
-            "backpack at 0.10.")
-        self.skin_distance_field.setMaximumWidth(60)
-        transfer_row.addWidget(self.skin_distance_field)
-        transfer_row.addWidget(_qt_button(
+        layout.addWidget(_qt_button(
+            "Add Male Character", lambda: _add_reference_asset("male_body"),
+            "Import the saved male character — mesh, materials and skeleton. "
+            "Reference assets live in the MayaObjectBuilder menu under Reference Assets.",
+            ":/kinJoint.png"))
+        layout.addWidget(_qt_button(
             "Transfer Skin from Body", self.run_transfer_skin,
-            "Bind the selected garment and copy DayZ weights from the reference body.",
+            "Select the garment, then transfer: weights come from the reference body so the "
+            "garment deforms with it, and detached shells (pouches, backpacks) are made rigid. "
+            "Scripted callers can override the detachment threshold with "
+            "a3obTransferSkin -distance.",
             ":/smoothSkin.png"))
-        layout.addLayout(transfer_row)
-
-        layout.addWidget(_hint("Bad weights are invisible in bind pose. Test Pose bends the rig, "
-                               "reports vertices that move unlike their neighbours, and puts "
-                               "the skeleton back."))
         layout.addWidget(_qt_button(
             "Test Pose", self.run_test_pose,
-            "Bend knees/elbows/shoulders, select deformation spikes, restore the pose.",
+            "Bad weights are invisible in bind pose. This bends knees/elbows/shoulders, selects "
+            "vertices that deform unlike their neighbours, and restores the pose.",
             ":/aselect.png"))
 
         layout.addWidget(_qt_button(
@@ -66,11 +38,6 @@ class SkinningPanelMixin:
             "Select vertices whose weights disagree with their neighbours — transfer "
             "artefacts, invisible in bind pose. Fix them with Skin > Smooth Skin Weights.",
             ":/aselect.png"))
-
-        layout.addWidget(_hint("Bones driving the selected mesh. Filter narrows the list; "
-                               "the buttons act on what you highlight in it. Removing a "
-                               "bone moves its weight to the vertex's remaining bones — "
-                               "weight is never deleted, only moved."))
 
         filter_row = qt_widgets.QHBoxLayout()
         filter_row.addWidget(qt_widgets.QLabel("Filter"))
@@ -101,7 +68,8 @@ class SkinningPanelMixin:
             "Select the vertices the highlighted bone actually drives.", ":/aselect.png"))
         influence_row.addWidget(_qt_button(
             "Remove", self.run_remove_influences,
-            "Remove the highlighted bones; their weight moves to each vertex's remaining bones.",
+            "Remove the highlighted bones. Their weight moves to each vertex's remaining bones "
+            "— weight is never deleted, only redistributed.",
             ":/delete.png"))
         layout.addLayout(influence_row)
 
@@ -110,14 +78,17 @@ class SkinningPanelMixin:
         return widget
 
     def run_transfer_skin(self):
-        try:
-            distance = float(self.skin_distance_field.text())
-        except (ValueError, AttributeError):
-            distance = None
-        meshes, rigid = _transfer_skin(distance)
+        meshes, rigid = _transfer_skin()
+        if not meshes:
+            self._set_skinning_summary("Nothing transferred — see the script editor for why.")
+            return
+        # Report zero distinctly from a count: with the distance field gone, this line is the
+        # only signal that a shell was classified as detached, and "0 rigid" has to be
+        # readable as "nothing was treated as detached" rather than as an absent number.
         self._set_skinning_summary(
-            "Transferred onto {0} mesh(es).".format(meshes) if meshes
-            else "Nothing transferred — see the script editor for why.")
+            "Transferred onto {0} mesh(es); {1} shell(s) made rigid.".format(meshes, rigid)
+            if rigid else
+            "Transferred onto {0} mesh(es); none detached.".format(meshes))
 
     def run_test_pose(self):
         spikes = _test_pose()
