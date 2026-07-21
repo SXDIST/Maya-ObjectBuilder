@@ -494,6 +494,12 @@ def show_plugin_ui():
         cmds.setParent("..", menu=True)
         cmds.menuItem(divider=True, parent=menu)
         cmds.menuItem(label="Set Texture Root (.paa)…", parent=menu, command=lambda *_: set_texture_root_from_ui())
+    # The "DayZ Material" section in the Attribute Editor. Function-local import for the same
+    # reason as every other import in this file: `ae_template` is a leaf, but keeping the
+    # import here matches the lazy-import discipline `_build_qt_dock` exists to enforce.
+    # `install()` is idempotent — show_plugin_ui can run more than once in a session.
+    from a3ob.ui import ae_template
+    ae_template.install()
     _remove_legacy_shelf_button()
     return open_dock()
 
@@ -502,6 +508,10 @@ def hide_plugin_ui():
     if cmds.about(batch=True):
         return
     _kill_ui_script_jobs()
+    # Before the dock goes: a callback that outlives what it points at is the exit-time
+    # crash class `_delete_qt_dock` names.
+    from a3ob.ui import ae_template
+    ae_template.uninstall()
     _delete_qt_dock()
     if cmds.workspaceControl(DOCK_NAME, exists=True):
         cmds.deleteUI(DOCK_NAME)
