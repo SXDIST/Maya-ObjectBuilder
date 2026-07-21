@@ -273,9 +273,17 @@ def _resolve_section():
     section, else the most recently built one — is the fallback for the ordinary case of one
     AE tab, which is also the only case reachable in batch.
 
-    Only ``section_replace`` needs to guess: every CONTROL callback captured its own key when
-    it was created, so a mis-resolve here can show the wrong paths but can never route an
-    edit to another tab's node.
+    Only ``section_replace`` needs to guess, and the guess is NOT harmless. Every CONTROL
+    callback captured its own key when it was created, so which FIELDS an edit reads is
+    never in doubt — but the node is not captured, it is state this function's caller
+    writes: ``_repoint`` stores ``section["node"]``. Resolve to tab A while the AE is
+    re-pointing tab B and tab A's stored node becomes B's, so a later keystroke in A writes
+    to B's node. Display and write stay consistent with each other (the fields were
+    repointed too), and ``_repoint`` only ever stores a node that passed
+    ``should_show_section``, so an UNMARKED node still cannot be written to — that is the
+    dangerous class and it stays closed. What is left is a wrong-marked-node write, bounded
+    to two or more AE tabs, and it is unproven either way: this is the one heuristic here,
+    and only a live session can exercise it.
     """
     _forget_dead_sections()
     if not _SECTIONS:

@@ -132,6 +132,31 @@ launched Maya); it matters whenever a task deletes a module.
      controls.
    - The **Reference Assets submenu** added in Phase 3c: that six items and two dividers render,
      and that `Set Texture Root` is not swallowed into the submenu. No test can reach it.
+   - The **DayZ Material section in the Attribute Editor** added in Phase 3d. This one has the
+     longest list, because the AE caches a template per node TYPE and the headless suite can
+     drive the state layer but never the rendering:
+     1. The section appears below the stock **Shading Group Attributes**, and that stock
+        section is still intact — Maya 2027 ships its own `AEshadingEngineTemplate.mel` and
+        ours would shadow it, so this is the check that we did not.
+     2. **Order independence.** Fresh session, open a PLAIN shading engine first, then an
+        `a3ob` one. The section must appear. Before the fix it never would, all session.
+     3. Hiding is visually clean. `_manage_layout` toggles the columnLayout we created, not
+        the `editorTemplate -beginLayout` frame — there is no handle for that frame — so an
+        empty "DayZ Material" header rendering on a plain shading engine is the LIKELY
+        outcome, not merely a risk.
+     4. On a plain shading engine, nothing adds `a3obTexture`/`a3obMaterial`. Check
+        `initialShadingGroup` specifically: pre-fix, one keystroke wrote to three nodes.
+     5. **Two AE tabs.** Tear off or duplicate a tab, type in the OLDER one, confirm it
+        lands on that tab's node. This is the only heuristic in the file
+        (`_resolve_section`) and the only way to exercise it. A mis-resolve cannot write to
+        an unmarked node, but it CAN write to the other tab's marked one.
+     6. Closing a tab prunes its entry (`len(a3ob.ui.ae_template._SECTIONS)`).
+        `_forget_dead_sections` has zero coverage — `_layout_exists` returns `True`
+        unconditionally in batch, so pruning is a no-op headlessly.
+     7. The controls themselves: browse dialog, recent-paths menu, clear button, Select Faces
+        and its `inViewMessage`.
+     8. Type `P:/data/x.paa` and confirm the field redraws as `data\x.paa`.
+     9. The Script Editor stays silent while clicking around a busy scene with the AE open.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.
