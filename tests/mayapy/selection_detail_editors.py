@@ -20,6 +20,10 @@ from PySide6 import QtWidgets
 _qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
 import _harness
+# Shared with Task 5's proxy-editor tests: a real dock plus action functions that reach
+# it through _active_qt_dock(). They live in _harness so the teardown they do stays in
+# ONE place — a second copy would be one dock_teardown fix away from being wrong.
+from _harness import _built_active_dock, _release_active_dock
 
 _harness.bootstrap()
 
@@ -160,34 +164,98 @@ def test_applying_a_flag_edit_writes_through_and_creates_no_set():
         _release_active_dock(dock)
 
 
+def test_a_zero_flag_value_warns_and_writes_nothing():
+    """The zero guard must be a real gate, not just a warning printed before the write.
+
+    A flag set whose value is 0 exports nothing (export/taggs/data.py), so letting a 0
+    through would silently drop the flag from the P3D while the panel still lists it."""
+    from a3ob.ui.actions.metadata import apply_flag_edit_from_ui
+    lod, flag_set = build_lod_with_a_flag(component="face", value=8, name="hidden")
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        flag_rows = [row for row in rows if row.data(_user_role())["kind"] == "Face Flag"]
+        check(flag_rows, "the flag set is not listed at all")
+        dock.selection_list.setCurrentItem(flag_rows[0])
+
+        dock.flag_edit_value_field.setValue(0)
+        apply_flag_edit_from_ui()
+
+        check(cmds.getAttr(flag_set + ".a3obFlagValue") == 8,
+              "a zero flag value was written through: %r"
+              % cmds.getAttr(flag_set + ".a3obFlagValue"))
+    finally:
+        _release_active_dock(dock)
+
+
+def test_a_proxy_row_shows_the_blank_page():
+    """Pinned so Task 5's proxy editor page is a visible change, not a silent one.
+
+    A Proxy row has no editor today: it falls through show_selection_editor's flag
+    branch to page 0, the same blank page an ordinary Selection gets."""
+    cmds.file(new=True, force=True)
+    transform = cmds.polyCube(name="body", ch=False)[0]
+    for attribute, kind in (("a3obIsLOD", "bool"), ("a3obLodType", "long"),
+                            ("a3obResolution", "long")):
+        cmds.addAttr(transform, longName=attribute, attributeType=kind)
+    cmds.setAttr(transform + ".a3obIsLOD", True)
+    cmds.setAttr(transform + ".a3obResolution", 1)
+    cmds.select(transform + ".f[0:1]", replace=True)
+    cmds.a3obProxy(path="p\\weapon.p3d", index=1, fromSelection=True, update=True)
+
+    dock = _built_active_dock()
+    try:
+        cmds.select(transform, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        check(proxy_rows, "the proxy set is not listed at all; rows are %r"
+                          % [row.data(_user_role())["kind"] for row in rows])
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+        check(dock.selection_editor_stack.currentIndex() == 0,
+              "a proxy row showed an editor page (index %d)"
+              % dock.selection_editor_stack.currentIndex())
+    finally:
+        _release_active_dock(dock)
+
+
+def test_a_flag_edit_undoes():
+    """_undo_chunk is the whole safety argument for writing attributes directly.
+
+    The brief chose cmds.setAttr over a new a3ob* command on the grounds that "a plain
+    cmds.setAttr undoes correctly". Nothing tested that claim, so this does."""
+    from a3ob.ui.actions.metadata import apply_flag_edit_from_ui
+    lod, flag_set = build_lod_with_a_flag(component="face", value=8, name="hidden")
+    # mayapy starts with undo disabled; a user session never is. Enable it AFTER the
+    # fixture so the queue holds only the edit under test.
+    cmds.undoInfo(state=True, infinity=True)
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        flag_rows = [row for row in rows if row.data(_user_role())["kind"] == "Face Flag"]
+        check(flag_rows, "the flag set is not listed at all")
+        dock.selection_list.setCurrentItem(flag_rows[0])
+
+        dock.flag_edit_value_field.setValue(64)
+        apply_flag_edit_from_ui()
+        check(cmds.getAttr(flag_set + ".a3obFlagValue") == 64,
+              "the flag value was not written before the undo could be tested")
+
+        cmds.undo()
+        check(cmds.getAttr(flag_set + ".a3obFlagValue") == 8,
+              "Ctrl+Z did not restore the previous flag value; got %r"
+              % cmds.getAttr(flag_set + ".a3obFlagValue"))
+    finally:
+        _release_active_dock(dock)
+
+
 def _user_role():
     from a3ob.ui._qt import qt_core
     return qt_core.Qt.UserRole
-
-
-def _built_active_dock():
-    """Build a real dock and register it as the entry module's active dock.
-
-    ``_active_qt_dock()`` is defined in ``a3ob.ui.entry`` and reads the module-level
-    ``_qt_dock_widget`` global. Every action module star-imports the FUNCTION, but a
-    function's globals stay bound to the module it was defined in — so setting
-    ``entry._qt_dock_widget`` here is visible to ``_active_qt_dock()`` no matter which
-    module calls it. ``_build_qt_dock(control)`` cannot be used outside interactive Maya:
-    it requires a real workspaceControl to parent into, which does not exist under
-    mayapy's batch mode."""
-    from a3ob.ui import entry
-    from a3ob.ui.dock import MayaObjectBuilderDock
-    dock = MayaObjectBuilderDock()
-    dock.show()
-    entry._qt_dock_widget = dock
-    return dock
-
-
-def _release_active_dock(dock):
-    from a3ob.ui import entry
-    entry._qt_dock_widget = None
-    dock.close()
-    dock.deleteLater()
 
 
 def main():
@@ -197,7 +265,10 @@ def main():
                  test_a_deleted_set_reports_an_empty_kind_instead_of_raising,
                  test_the_editor_page_follows_the_highlighted_row,
                  test_an_ordinary_selection_shows_no_editor,
-                 test_applying_a_flag_edit_writes_through_and_creates_no_set):
+                 test_applying_a_flag_edit_writes_through_and_creates_no_set,
+                 test_a_zero_flag_value_warns_and_writes_nothing,
+                 test_a_proxy_row_shows_the_blank_page,
+                 test_a_flag_edit_undoes):
         test()
         print("ok:", test.__name__, flush=True)
     print("SELECTION DETAIL EDITORS: PASS", flush=True)

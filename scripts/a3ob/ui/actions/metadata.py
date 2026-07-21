@@ -57,7 +57,19 @@ def apply_flag_edit_from_ui():
     if not set_node:
         cmds.warning("Select a flag set to edit")
         return
+    # The Apply button only exists on a page shown for a flag row, so a mouse cannot reach
+    # this with anything else highlighted — but the function is public, and without the
+    # guard a Selection or Proxy row makes setAttr RAISE on the missing attribute instead
+    # of warning. Same shape as the zero-value guard below.
+    kind = selection_set_editable_fields(set_node).get("kind", "")
+    if kind not in ("Vertex Flag", "Face Flag"):
+        cmds.warning("Select a flag set to edit — %r is not one"
+                     % (kind or set_node))
+        return
     component, value = dock.flag_edit_values()
+    if not component:
+        cmds.warning("The flag editor is not available")
+        return
     if value == 0:
         cmds.warning("A flag value of 0 is not exported — enter a non-zero value")
         return

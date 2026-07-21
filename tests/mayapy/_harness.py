@@ -85,6 +85,67 @@ def make_lod(name, kind="cube", lod_type=None, resolution=None, subdivisions=20)
     return transform
 
 
+def _built_active_dock():
+    """Build a real dock and register it as the entry module's active dock.
+
+    ``_active_qt_dock()`` is defined in ``a3ob.ui.entry`` and reads the module-level
+    ``_qt_dock_widget`` global. Every action module star-imports the FUNCTION, but a
+    function's globals stay bound to the module it was defined in — so setting
+    ``entry._qt_dock_widget`` here is visible to ``_active_qt_dock()`` no matter which
+    module calls it. ``_build_qt_dock(control)`` cannot be used outside interactive
+    Maya: it requires a real workspaceControl to parent into, which does not exist
+    under mayapy's batch mode.
+
+    Pair every call with :func:`release_active_dock` — a dock left with its Maya
+    callbacks attached is the exit-time crash class ``entry._delete_qt_dock``
+    documents.
+
+    Qt is imported here rather than at module scope on purpose: ``_harness`` is
+    imported by every mayapy test, including ones that must never build a widget.
+    """
+    from PySide6 import QtWidgets
+
+    # A real QWidget needs a full QApplication that existed BEFORE
+    # maya.standalone.initialize() ran — Maya's bring-up otherwise leaves a bare
+    # QGuiApplication behind and constructing a QWidget against it segfaults the
+    # process with no Python traceback at all. bootstrap() deliberately does not
+    # create one (that would drag Qt into every non-widget test), so the calling
+    # test file must, in its header, before `import _harness`. Turn the segfault
+    # into a message.
+    app = QtWidgets.QApplication.instance()
+    if not isinstance(app, QtWidgets.QApplication):
+        raise RuntimeError(
+            "no QtWidgets.QApplication exists (found %r) — a widget test must create "
+            "one in its header BEFORE _harness.bootstrap(), or building the dock "
+            "segfaults with no traceback" % (app,))
+
+    from a3ob.ui import entry
+    from a3ob.ui.dock import MayaObjectBuilderDock
+
+    dock = MayaObjectBuilderDock()
+    dock.show()  # _active_qt_dock() rejects a hidden widget
+    entry._qt_dock_widget = dock
+    return dock
+
+
+def _release_active_dock(dock):
+    """Tear a test dock down the way ``entry._delete_qt_dock`` does.
+
+    ``teardown()`` first, and not optional: it stops the debounce timer and the
+    scene-change watcher. A Maya callback that outlives its widget fires into freed
+    Python objects — and in this suite a segfault produces no traceback at all, so a
+    test that skipped this would keep passing while accumulating the crash state.
+    """
+    from a3ob.ui import entry
+
+    if dock is not None:
+        dock.teardown()
+        dock.setParent(None)
+        dock.close()
+        dock.deleteLater()
+    entry._qt_dock_widget = None
+
+
 def name_of(result):
     """Unwrap an MPxCommand result.
 

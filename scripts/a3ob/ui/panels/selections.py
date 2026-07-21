@@ -29,8 +29,9 @@ class SelectionsPanelMixin:
         layout.addWidget(self.selection_details)
 
         # Page 0 is empty: an ordinary Selection row has nothing to edit, and the summary
-        # label above already says everything about it. Pages 1 and 2 are the flag and proxy
-        # editors — the capability the retired create-only panels never had.
+        # label above already says everything about it. Every page after it is an editor for
+        # one row kind — the capability the retired create-only panels never had. Page 1 is
+        # the flag editor; a Proxy row still falls through to page 0 until it gets its own.
         self.selection_editor_stack = qt_widgets.QStackedWidget()
         self.selection_editor_stack.addWidget(qt_widgets.QWidget())
         self.selection_editor_stack.addWidget(self._build_flag_editor_page())
@@ -98,8 +99,14 @@ class SelectionsPanelMixin:
 
 
     def flag_edit_values(self):
+        """(component, value) from the flag editor, or ("", 0) when it is not built.
+
+        The unbuilt case must NOT report ("face", 0): that is a legitimate-looking edit
+        carrying a zero, so the caller warned "enter a non-zero value" at a user who had
+        no editor in front of them to enter anything into. An empty component says the
+        thing that is actually true, and the caller tells them that instead."""
         if self.flag_edit_component_combo is None or self.flag_edit_value_field is None:
-            return "face", 0
+            return "", 0
         return (self.flag_edit_component_combo.currentText().lower(),
                 self.flag_edit_value_field.value())
 
@@ -114,13 +121,18 @@ class SelectionsPanelMixin:
             return
         kind = fields.get("kind", "")
         if kind in ("Vertex Flag", "Face Flag"):
+            # try/finally, not a straight-line unblock: int() on a non-integer flag value
+            # raises between the two calls and would leave BOTH editors signal-blocked for
+            # the rest of the session — every later user edit silently doing nothing.
             self.flag_edit_component_combo.blockSignals(True)
             self.flag_edit_value_field.blockSignals(True)
-            index = 1 if fields.get("flag_component") == "vertex" else 0
-            self.flag_edit_component_combo.setCurrentIndex(index)
-            self.flag_edit_value_field.setValue(int(fields.get("flag_value", 0)))
-            self.flag_edit_component_combo.blockSignals(False)
-            self.flag_edit_value_field.blockSignals(False)
+            try:
+                index = 1 if fields.get("flag_component") == "vertex" else 0
+                self.flag_edit_component_combo.setCurrentIndex(index)
+                self.flag_edit_value_field.setValue(int(fields.get("flag_value", 0)))
+            finally:
+                self.flag_edit_component_combo.blockSignals(False)
+                self.flag_edit_value_field.blockSignals(False)
             self.selection_editor_stack.setCurrentIndex(1)
             return
         self.selection_editor_stack.setCurrentIndex(0)
