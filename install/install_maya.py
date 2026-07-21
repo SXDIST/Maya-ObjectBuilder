@@ -72,6 +72,43 @@ def _copy_runtime_package(source, target):
         shutil.copytree(source / relative_dir, destination, ignore=ignore)
 
 
+# kind -> (optionVar, file stem). DUPLICATED from a3ob.mayabridge.references.KINDS on purpose:
+# this file is dragged into Maya and run standalone, so it may import only the stdlib and
+# maya.cmds. Change KINDS and you must edit this too.
+REFERENCE_ASSETS = [
+    ("MayaObjectBuilder_ref_male_body", "dayz_male_body"),
+    ("MayaObjectBuilder_ref_female_body", "dayz_female_body"),
+    ("MayaObjectBuilder_ref_skeleton", "dayz_skeleton"),
+]
+
+
+def _seed_reference_assets(source):
+    """Copy shipped reference assets into the user's Maya folder and point the optionVars there.
+
+    Never overwrites: a user who customised their body must not lose it to an upgrade, and a
+    user whose optionVar points somewhere else entirely must keep pointing there. An absent
+    assets/ directory is a normal state (a git clone, or a build with the assets pruned) and
+    must not fail the install."""
+    shipped = source / "assets" / "references"
+    if not shipped.is_dir():
+        return []
+    destination_dir = _maya_documents_dir() / PLUGIN_NAME / "references"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for option_var, stem in REFERENCE_ASSETS:
+        asset = shipped / f"{stem}.ma"
+        if not asset.is_file():
+            continue
+        destination = destination_dir / asset.name
+        if not destination.exists():
+            shutil.copy2(asset, destination)
+            written.append(destination)
+        existing = cmds.optionVar(query=option_var) if cmds.optionVar(exists=option_var) else ""
+        if not existing or not Path(existing).is_file():
+            cmds.optionVar(stringValue=(option_var, destination.as_posix()))
+    return written
+
+
 def _is_legacy_install_root(path):
     return (
         path.is_dir()
@@ -144,6 +181,9 @@ def install():
     target = _install_root()
     _unload_plugin()
     _copy_runtime_package(source, target)
+    seeded = _seed_reference_assets(source)
+    if seeded:
+        print(f"Reference assets installed: {', '.join(p.name for p in seeded)}")
     module_file = _write_module_file(target)
     plugin_path = target / "plug-ins" / PLUGIN_FILE
     _load_plugin(plugin_path)
