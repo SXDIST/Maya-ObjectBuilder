@@ -252,6 +252,15 @@ def export_model_cfg(path=None):
             cmds.a3obExportModelCfg(path=selected_path)
 
 
+def _show_preferences():
+    # Function-local import for the same reason as every other cross-leaf import in this
+    # file: preferences is a leaf like ae_template, and _build_qt_dock's lazy import is what
+    # keeps this module out of the actions/entry/dock cycle.
+    from a3ob.ui import preferences
+
+    preferences.show_preferences()
+
+
 def set_texture_root_from_ui():
     """Prompt for the .paa texture root (P-drive / mod folder), store it, and texture any
     already-imported materials that were waiting for it."""
@@ -493,7 +502,7 @@ def show_plugin_ui():
                       command=lambda *_: _save_reference_asset("skeleton"))
         cmds.setParent("..", menu=True)
         cmds.menuItem(divider=True, parent=menu)
-        cmds.menuItem(label="Set Texture Root (.paa)…", parent=menu, command=lambda *_: set_texture_root_from_ui())
+        cmds.menuItem(label="Preferences…", parent=menu, command=lambda *_: _show_preferences())
     # The "DayZ Material" section in the Attribute Editor. Function-local import for the same
     # reason as every other import in this file: `ae_template` is a leaf, but keeping the
     # import here matches the lazy-import discipline `_build_qt_dock` exists to enforce.
@@ -559,6 +568,7 @@ __all__ = [
     "_save_reference_asset",
     "import_model_cfg",
     "export_model_cfg",
+    "_show_preferences",
     "_prompt",
     "_active_qt_dock",
     "_refresh_context_ui",
