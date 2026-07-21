@@ -14,19 +14,26 @@ conversation that produced it.
 | 1 — weights: the `skinCluster` is the only store | **done**, 10 tasks, all reviewed |
 | 2 — export pipeline: Auto LOD, textures, validation | **done**, 10 tasks, all reviewed |
 | 3a — one LOD panel | **done**, 4 tasks, all reviewed |
-| 3b — Selections absorbs Proxies and Flags | specced, **not planned** |
+| 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
 | 3c — Skinning slims; Materials → Attribute Editor; Preferences window | specced, **not planned** |
 | 4 — reference assets ship with the plugin | specced, not planned |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Suite **51/51**. Dock is **8 panels**, down from 11. The byte gate has not moved once across
+Suite **55/55**. Dock is **6 panels**, down from 11. The byte gate has not moved once across
 the whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
 Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
 `docs/plans/2026-07-20-ui-simplification-index.md`. Completed plans:
 `2026-07-20-phase1-weights.md`, `2026-07-20-phase2-export-pipeline.md`,
-`2026-07-20-phase3a-lod-panel.md`.
+`2026-07-20-phase3a-lod-panel.md`, `2026-07-20-phase3b-selections.md`.
+
+Phase 3b fixed **two proxy-command defects that predate this branch**, both from the same root
+cause: `proxy_selection_name` is `"proxy:%s.%d" % (path, index)` and encodes **no LOD identity**,
+so the same proxy in Resolution 1 and Resolution 2 keys on the identical string. `a3obUpdateProxy`
+updated only whichever half of the pair was selected, and `a3obProxy` gated set creation
+scene-wide and so silently skipped the second LOD's set. Both lookups are now LOD-scoped. If you
+touch proxy code, assume that key is ambiguous until you have scoped it.
 
 ## Before running anything
 
@@ -67,8 +74,16 @@ launched Maya); it matters whenever a task deletes a module.
 - **A test whose failure you have not witnessed is not evidence.** Ask implementers to break
   the thing deliberately and show the red. This caught more than anything else.
 - **A real `QWidget` under mayapy segfaults** unless a `QApplication` is created **before**
-  `maya.standalone.initialize()`. `lod_panel_*.py` are the only tests with a real dock;
-  follow their header order.
+  `maya.standalone.initialize()`. Use `_built_active_dock()` / `_release_active_dock()` from
+  `tests/mayapy/_harness.py` — they build a dock registered so `_active_qt_dock()` finds it and
+  release it through `teardown()`. Their guard is `isinstance(app, QtWidgets.QApplication)`, not
+  `app is None`: Maya's own bring-up leaves a bare `QGuiApplication`, so a `None` check passes
+  and *then* segfaults with no traceback.
+- **A mayapy test that calls an `a3ob*` command needs `_harness.load_plugin()`.** Without it the
+  command does not exist and the test fails with `AttributeError` unconditionally. Three test
+  files in Phase 3b shipped from a plan that forgot it.
+- **`cmds.select(some_set)` selects the set's MEMBERS, not the set node.** Pass `noExpand=True`.
+  This bit twice in Phase 3b, once in production code.
 
 ## Decisions already made — do not relitigate
 
@@ -85,10 +100,17 @@ launched Maya); it matters whenever a task deletes a module.
 
 ## Open items the author must handle
 
-1. **The P3D option box has never been opened in a live Maya session.** Headless mayapy
-   creates no UI at all — `cmds.about(batch=True)` is true and every UI command returns
-   `False`. It now has an Auto LOD frame, an Import Textures checkbox, and three fewer
-   validation checkboxes. One visual check would close this.
+1. **Three things need ONE live Maya session between them.** Headless mayapy creates no UI at
+   all — `cmds.about(batch=True)` is true and every UI command returns `False`.
+   - The **P3D option box** has never been opened. It now has an Auto LOD frame, an Import
+     Textures checkbox, and three fewer validation checkboxes.
+   - The **proxy and flag dialogs** (`ui/dialogs.py`) have no automated coverage and cannot get
+     any: mayapy cannot drive a modal `exec()`. Removing their `scriptJob` rests on an
+     inspection claim — `QDialog.exec()` is application-modal, so `SelectionChanged` cannot fire
+     while one is open. If a later task ever makes a dialog modeless, its mode label silently
+     regains the ability to lie.
+   - The **six-panel dock** as a whole, since Phase 3b removed two panels and moved their
+     controls.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.
