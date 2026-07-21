@@ -23,7 +23,7 @@ REQUIRED_PACKAGE_FILES = [
     Path("scripts") / "a3ob" / "mayabridge" / "export" / "__init__.py",
     Path("scripts") / "a3ob" / "ui" / "constants.py",
     Path("scripts") / "a3ob" / "ui" / "scene" / "__init__.py",
-    Path("scripts") / "a3ob" / "ui" / "autolod" / "__init__.py",
+    Path("scripts") / "a3ob" / "mayabridge" / "autolod" / "__init__.py",
     Path("scripts") / "a3ob" / "ui" / "dock.py",
     Path("install") / "mayaObjectBuilderInstall.py",
     Path("install") / "install_maya.py",

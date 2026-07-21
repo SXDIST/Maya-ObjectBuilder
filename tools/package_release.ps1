@@ -18,6 +18,7 @@ $RequiredFiles = @(
     "scripts/objectBuilderAutoLOD.py",
     "scripts/mayaObjectBuilderP3DOptions.mel",
     "scripts/a3ob/__init__.py",
+    "scripts/a3ob/formats/p3d.py",
     "scripts/a3ob/mayabridge/commands/__init__.py",
     "scripts/a3ob/mayabridge/import_/__init__.py",
     "scripts/a3ob/mayabridge/export/__init__.py",
