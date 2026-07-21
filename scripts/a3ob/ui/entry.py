@@ -117,13 +117,23 @@ def _run_skin_weights():
     return int(result or 0)
 
 
-def _transfer_skin(distance):
-    """Copy DayZ weights from the reference body onto the selected garments."""
+def _transfer_skin(distance=None):
+    """Copy DayZ weights from the reference body onto the selected garments.
+
+    Returns (meshes transferred, shells rigidified). ``distance`` defaults to None and the
+    flag is then NOT passed: the command applies skintransfer.DEFAULT_FAR_DISTANCE, which was
+    measured on a real DayZ character. Passing a copy of that number from the UI would let the
+    two drift apart silently."""
     load_plugin()
-    result = cmds.a3obTransferSkin(distance=distance)
-    if isinstance(result, (list, tuple)):
-        result = result[0] if result else 0
-    return int(result or 0)
+    if distance is None:
+        result = cmds.a3obTransferSkin()
+    else:
+        result = cmds.a3obTransferSkin(distance=distance)
+    if not isinstance(result, (list, tuple)):
+        return int(result or 0), 0
+    meshes = int(result[0]) if len(result) > 0 else 0
+    rigid = int(result[1]) if len(result) > 1 else 0
+    return meshes, rigid
 
 
 def _test_pose():

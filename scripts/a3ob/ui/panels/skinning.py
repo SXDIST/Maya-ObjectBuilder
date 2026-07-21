@@ -107,10 +107,10 @@ class SkinningPanelMixin:
         try:
             distance = float(self.skin_distance_field.text())
         except (ValueError, AttributeError):
-            distance = 0.06
-        done = _transfer_skin(distance)
+            distance = None
+        meshes, rigid = _transfer_skin(distance)
         self._set_skinning_summary(
-            "Transferred onto {0} mesh(es).".format(done) if done
+            "Transferred onto {0} mesh(es).".format(meshes) if meshes
             else "Nothing transferred — see the script editor for why.")
 
     def run_test_pose(self):

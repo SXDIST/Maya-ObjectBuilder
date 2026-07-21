@@ -143,14 +143,14 @@ class TransferSkinCommand(_Base):
         targets = skintransfer.selected_mesh_shapes()
         if not targets:
             om.MGlobal.displayError("a3obTransferSkin: select the garment mesh (or meshes)")
-            self.setResult(0)
+            self.setResult([0, 0])
             return
 
         try:
             reference, imported = skintransfer.ensure_reference(targets, explicit)
         except ValueError as error:
             om.MGlobal.displayError("a3obTransferSkin: %s" % error)
-            self.setResult(0)
+            self.setResult([0, 0])
             return
 
         if imported:
@@ -162,6 +162,7 @@ class TransferSkinCommand(_Base):
 
         reference_key = reference.fullPathName()
         done = 0
+        rigid_total = 0
         # One Ctrl+Z must undo the whole transfer, not each internal cmds call.
         with undo_chunk():
             for target in targets:
@@ -173,13 +174,18 @@ class TransferSkinCommand(_Base):
                     om.MGlobal.displayError("a3obTransferSkin: %s" % error)
                     continue
                 done += 1
+                rigid_total += rigid
                 om.MGlobal.displayInfo(
                     "a3obTransferSkin: %s <- %s (%d verts, %d rigid shell(s))"
                     % (target.partialPathName(), reference.partialPathName(), count, rigid))
 
         if done == 0:
             om.MGlobal.displayError("a3obTransferSkin: nothing was transferred")
-        self.setResult(done)
+        # A two-element result, not a bare int: element 0 stays the mesh count so existing
+        # callers reading result[0] are unaffected, and element 1 carries the rigidified-shell
+        # count the panel now shows. Phase 3c removed the panel's distance field, so this
+        # number is the only remaining signal that a shell was classified as detached.
+        self.setResult([done, rigid_total])
 
 
 class TestPoseCommand(_Base):
