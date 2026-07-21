@@ -10,8 +10,11 @@ skinned, but it cannot bring the weights back — it can only tell you before ex
 
 Dock → **Skinning**:
 
-- **Add Male Body** — brings in the reference body (its skeleton comes with it).
-- **Add Skeleton** — only when you need the rig without the body.
+- **Add Male Character** — brings in the reference body, its materials, and its skeleton.
+
+For a bare skeleton with no body, or the female body, use the **Reference Assets** submenu in
+the MayaObjectBuilder menu instead — that submenu is also where a wrong selection can overwrite
+a saved reference asset, which is why it asks for confirmation before replacing one.
 
 The body must be present and *fitted*: the garment has to sit on it in world space. The
 transfer refuses to run if the two are in different units or do not overlap, because copying
@@ -31,9 +34,12 @@ What happens: it binds to every joint of the body, copies the weights by closest
 detached shells rigid, then enforces the DayZ rules (≤4 influences, normalized, nothing below
 1/254) and drops joints that ended up unused.
 
-**Detached over** (default `0.06`) decides what counts as a separate rigid object. A pouch or
-a backpack should move as one piece rather than smear across three bones. Raise it if a loose
-garment is wrongly treated as detached; lower it if a small pouch is not caught.
+A shell more than `0.06` units from the body surface is treated as a separate rigid object
+rather than smeared across three bones — see the measurements above for where fitted garments
+and a backpack fall relative to that line. The summary line names which happened — "N shell(s)
+made rigid" or "none detached" — so a misclassified bulky garment is still visible even without
+a field to correct it. Script callers can override the threshold with `a3obTransferSkin
+-distance`.
 
 ## 4. Test in pose — do not skip this
 
@@ -49,7 +55,7 @@ run Test Pose again.
 
 ## 5. Check before exporting
 
-**Validation → Select Skin Outliers** finds vertices whose weights disagree with their
+**Skinning → Select Skin Outliers** finds vertices whose weights disagree with their
 surroundings, by a different measure than Test Pose (distribution rather than motion). Fix the
 same way: Smooth Skin Weights.
 

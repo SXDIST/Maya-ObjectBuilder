@@ -193,8 +193,38 @@ def _add_reference_asset(kind):
 
 
 def _save_reference_asset(kind):
+    """Save the selection as a reference asset, asking first if one already exists.
+
+    references.save_reference exports with force=True, so without this a wrong selection plus
+    one click silently replaces a reference the user may have built by hand. The prompt lives
+    here rather than in references.py because mayabridge must never import from a3ob.ui.
+
+    Returns True when it saved, False when the user declined or nothing was selected (the
+    latter reported by a3obReference itself via MGlobal.displayError)."""
     load_plugin()
-    cmds.a3obReference(kind=kind, store="1")
+    import os
+    from a3ob.mayabridge import references
+
+    existing = references.reference_path(kind)
+    if existing:
+        answer = cmds.confirmDialog(
+            title="Replace reference asset?",
+            message="This will replace the saved %s reference:\n\n%s\n\n"
+                    "The current file will be overwritten."
+                    % (references.KINDS[kind][1], os.path.basename(existing)),
+            button=["Replace", "Cancel"], defaultButton="Cancel",
+            cancelButton="Cancel", dismissString="Cancel")
+        if answer != "Replace":
+            return False
+    # store="1" is the ReferenceAssetCommand sentinel for "no explicit path, use the default
+    # directory" (MSyntax needs a string argument even for a boolean-shaped flag). When a
+    # reference is already configured, pass its own path explicitly — otherwise a resave
+    # would silently write a NEW file in the default directory and repoint the optionVar at
+    # it, orphaning whatever path the reference actually lived at (e.g. one pointed at by
+    # hand at a custom .ma). That would also make the confirmation dialog's promise to
+    # replace "this" file false.
+    cmds.a3obReference(kind=kind, store=existing if existing else "1")
+    return True
 
 
 def import_model_cfg(path=None):
@@ -431,6 +461,25 @@ def show_plugin_ui():
         cmds.menuItem(divider=True, parent=menu)
         cmds.menuItem(label="Import model.cfg Skeleton", parent=menu, command=lambda *_: import_model_cfg())
         cmds.menuItem(label="Export model.cfg Skeleton", parent=menu, command=lambda *_: export_model_cfg())
+        cmds.menuItem(divider=True, parent=menu)
+        references_menu = cmds.menuItem(label="Reference Assets", parent=menu, subMenu=True,
+                                        tearOff=True)
+        cmds.menuItem(label="Add Male Character", parent=references_menu,
+                      command=lambda *_: _add_reference_asset("male_body"))
+        cmds.menuItem(label="Add Female Body", parent=references_menu,
+                      command=lambda *_: _add_reference_asset("female_body"))
+        cmds.menuItem(label="Add Skeleton", parent=references_menu,
+                      command=lambda *_: _add_reference_asset("skeleton"))
+        cmds.menuItem(divider=True, parent=references_menu)
+        # Destructive: each replaces a saved asset. Separated from the Add items above by a
+        # divider, and each asks before overwriting (_save_reference_asset).
+        cmds.menuItem(label="Save Selection as Male Character…", parent=references_menu,
+                      command=lambda *_: _save_reference_asset("male_body"))
+        cmds.menuItem(label="Save Selection as Female Body…", parent=references_menu,
+                      command=lambda *_: _save_reference_asset("female_body"))
+        cmds.menuItem(label="Save Selection as Skeleton…", parent=references_menu,
+                      command=lambda *_: _save_reference_asset("skeleton"))
+        cmds.setParent("..", menu=True)
         cmds.menuItem(divider=True, parent=menu)
         cmds.menuItem(label="Set Texture Root (.paa)…", parent=menu, command=lambda *_: set_texture_root_from_ui())
     _remove_legacy_shelf_button()
