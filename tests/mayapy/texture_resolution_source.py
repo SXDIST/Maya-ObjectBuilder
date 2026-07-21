@@ -39,6 +39,35 @@ def make_texture(directory, relative):
     return path
 
 
+_DISCOVERY_MAX_DEPTH = 4       # a handful of directories deep, per the brief
+_DISCOVERY_DIR_LIMIT = 20000   # same bound as resolve.py's own _WALK_DIR_LIMIT
+
+
+def _discover_p_drive_paa():
+    """Find a real ``.paa`` under P:/ at runtime instead of hardcoding one.
+
+    Walks P:/ bounded — a handful of directories deep, with a hard cap on directories
+    scanned (mirroring resolve.py's own ``_WALK_DIR_LIMIT``) — and returns the first
+    ``.paa`` found, as a path relative to P:/ using forward slashes. Returns None if
+    nothing turns up within the bound; never writes anything into P:/.
+    """
+    root = "P:/"
+    scanned = 0
+    for dirpath, dirs, files in os.walk(root):
+        scanned += 1
+        if scanned > _DISCOVERY_DIR_LIMIT:
+            break
+        rel_dir = os.path.relpath(dirpath, root)
+        depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
+        if depth >= _DISCOVERY_MAX_DEPTH:
+            dirs[:] = []  # bounded: do not descend further from here
+        for name in files:
+            if name.lower().endswith(".paa"):
+                full = os.path.join(dirpath, name)
+                return os.path.relpath(full, root).replace(os.sep, "/")
+    return None
+
+
 def test_absolute_path_reports_absolute():
     root = tempfile.mkdtemp()
     path = make_texture(root, "direct_co.paa")
@@ -86,27 +115,66 @@ def test_nothing_found_reports_an_empty_source():
 
 
 def test_a_configured_root_that_does_not_exist_is_not_reported_as_configured():
-    """The exact situation from the measured scene. Whatever resolves it, it is not the
-    configured root, and the caller must be able to tell."""
+    """The exact situation from the measured scene: MayaObjectBuilder_texture_root points at
+    a directory that does not exist, and a texture resolves anyway because P:/ quietly does
+    the work. Whatever resolves it, it must not be reported as 'configured'.
+
+    ``_candidate_roots()`` gates the configured root behind ``os.path.isdir(configured)``, so
+    a nonexistent configured root can never enter the resolution loop — with nothing to
+    resolve, ``source`` is always ``""`` and ``source != "configured"`` would pass trivially
+    even against a broken configured/drive discrimination. So this needs a relative path that
+    REALLY resolves, via the real P:/ (reusing the discovery from
+    ``test_a_real_p_drive_hit_reports_drive``), while the configured root does not exist —
+    the measured scene's exact state. Skips with a printed reason if P:/ is not mounted or
+    nothing suitable turns up there; that is an environment fact, not a defect in this code.
+    """
+    if not os.path.isdir("P:/"):
+        print("skip: test_a_configured_root_that_does_not_exist_is_not_reported_as_configured"
+              " - P:/ is not mounted on this machine", flush=True)
+        return
+    relative = _discover_p_drive_paa()
+    if relative is None:
+        print("skip: test_a_configured_root_that_does_not_exist_is_not_reported_as_configured"
+              " - no .paa found under P:/ within the bounded walk (dir depth<=%d,"
+              " dirs scanned<=%d); P:/ mounted but empty/out-of-reach is a real environment"
+              " state, not a defect" % (_DISCOVERY_MAX_DEPTH, _DISCOVERY_DIR_LIMIT), flush=True)
+        return
     settings.set_texture_root(os.path.join(tempfile.mkdtemp(), "gone"))
-    _resolved, source = resolve_paa_path_with_source("mod\\data\\absent_co.paa")
+    resolved, source = resolve_paa_path_with_source(relative)
+    check(resolved is not None,
+          "the discovered P:/ file %r did not resolve with a nonexistent configured root"
+          % relative)
     check(source != "configured",
-          "a nonexistent configured root was reported as the resolving source")
+          "a nonexistent configured root was reported as the resolving source (got %r)"
+          % source)
 
 
 def test_a_real_p_drive_hit_reports_drive():
     """This machine has a real P:/ — the brief requires this case be exercised rather than
-    left untested when a drive is actually present. Keyed on a real file (P:/Core/black_co.paa)
-    rather than writing into P:/, with the configured root pointed at an empty temp directory
-    so the SAME relative path is absent there and only P:/ can be the source of the hit."""
+    left untested when a drive is actually present. The relative path is DISCOVERED at
+    runtime (the first ``.paa`` found by a bounded walk of P:/, via ``_discover_p_drive_paa``)
+    rather than hardcoded, so this test does not depend on any specific asset existing on a
+    given machine's P:/ — only on P:/ containing at least one ``.paa`` within the bounded
+    walk. The configured root is pointed at an empty temp directory so the SAME relative path
+    is absent there and only P:/ can be the source of the hit. Never writes into P:/.
+
+    If the bounded walk finds nothing, that is skipped with a printed reason rather than
+    failed — a P:/ that is mounted but empty (or has nothing within the bound) is a real
+    environment state, not a defect in this code.
+    """
     check(os.path.isdir("P:/"), "P:/ is expected to exist on this machine")
-    check(os.path.isfile("P:/Core/black_co.paa"),
-          "P:/Core/black_co.paa is expected to exist on this machine as a fixed reference point")
-    root = tempfile.mkdtemp()  # empty: the relative path must NOT resolve here
+    relative = _discover_p_drive_paa()
+    if relative is None:
+        print("skip: test_a_real_p_drive_hit_reports_drive - no .paa found under P:/ within"
+              " the bounded walk (dir depth<=%d, dirs scanned<=%d); P:/ mounted but"
+              " empty/out-of-reach is a real environment state, not a defect"
+              % (_DISCOVERY_MAX_DEPTH, _DISCOVERY_DIR_LIMIT), flush=True)
+        return
+    root = tempfile.mkdtemp()  # empty: the discovered relative path must NOT resolve here
     settings.set_texture_root(root)
-    resolved, source = resolve_paa_path_with_source("Core/black_co.paa")
-    check(resolved is not None, "the real P:/ file did not resolve")
-    check(source == "drive", "source is %r, expected 'drive'" % source)
+    resolved, source = resolve_paa_path_with_source(relative)
+    check(resolved is not None, "the discovered P:/ file %r did not resolve" % relative)
+    check(source == "drive", "source is %r, expected 'drive' for %r" % (source, relative))
 
 
 def test_the_old_entry_point_is_unchanged():
