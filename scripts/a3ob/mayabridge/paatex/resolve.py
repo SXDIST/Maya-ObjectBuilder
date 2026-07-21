@@ -21,21 +21,26 @@ def _candidate_roots():
     return roots
 
 
-def resolve_paa_path(texture_path):
-    """Resolve a P3D texture path to a real file: absolute hit, then ``<root>/relative`` for
-    each candidate root, then a bounded basename search under the configured root."""
+def resolve_paa_path_with_source(texture_path):
+    """Resolve a P3D texture path, and report WHICH strategy found it.
+
+    Returns (path or None, source) where source is "absolute", "configured", "drive",
+    "search" or "" — the Preferences window states this, because a configured root that does
+    not exist otherwise fails silently while P:/ quietly does the work."""
     if not texture_path:
-        return None
+        return None, ""
     if os.path.isfile(texture_path):
-        return texture_path
+        return texture_path, "absolute"
     relative = texture_path.replace("\\", "/").lstrip("/")
+    configured = texture_root()
     for root in _candidate_roots():
         candidate = os.path.join(root, relative)
         if os.path.isfile(candidate):
-            return candidate
+            same = configured and os.path.normcase(os.path.abspath(root)) == os.path.normcase(
+                os.path.abspath(configured))
+            return candidate, "configured" if same else "drive"
     # Last resort: search by file name, but only under the (bounded) configured root —
     # never under P:\\, which could be an enormous tree.
-    configured = texture_root()
     if configured and os.path.isdir(configured):
         base = os.path.basename(relative).lower()
         scanned = 0
@@ -45,5 +50,11 @@ def resolve_paa_path(texture_path):
                 break
             for name in files:
                 if name.lower() == base:
-                    return os.path.join(dirpath, name)
-    return None
+                    return os.path.join(dirpath, name), "search"
+    return None, ""
+
+
+def resolve_paa_path(texture_path):
+    """Resolve a P3D texture path to a real file, or None. The import pipeline's entry point;
+    signature and answer unchanged — see resolve_paa_path_with_source for the reasoning."""
+    return resolve_paa_path_with_source(texture_path)[0]
