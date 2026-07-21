@@ -33,6 +33,15 @@ def _mesh_shapes_from_selection():
     return shapes
 
 
+def _material_feeding_shading_group(shading_group):
+    """The material (shader) node feeding ``shading_group``'s surfaceShader, if any."""
+    if not _node_exists(shading_group):
+        return ""
+    materials = _valid_nodes(cmds.ls(
+        cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or [])
+    return materials[0] if materials else ""
+
+
 def _material_nodes_for_selection():
     nodes = []
     seen = set()
@@ -42,8 +51,7 @@ def _material_nodes_for_selection():
             if shading_group in {"initialShadingGroup", "initialParticleSE"} or shading_group in seen:
                 continue
             seen.add(shading_group)
-            materials = _valid_nodes(cmds.ls(cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or [])
-            material_node = materials[0] if materials else ""
+            material_node = _material_feeding_shading_group(shading_group)
             texture = ""
             material = ""
             for candidate in _valid_nodes([shading_group, material_node]):
@@ -128,6 +136,7 @@ def _set_material_metadata_on_node(node, texture, material):
 
 __all__ = [
     "_mesh_shapes_from_selection",
+    "_material_feeding_shading_group",
     "_material_nodes_for_selection",
     "_material_metadata_label",
     "faces_with_material",

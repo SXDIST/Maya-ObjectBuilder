@@ -145,6 +145,34 @@ def test_selecting_faces_on_an_unassigned_material_selects_nothing_and_warns():
     _harness.check(count == 0, "an unused material must select nothing, got %r" % (count,))
 
 
+def test_a_node_that_is_neither_a_shading_engine_nor_a_material_writes_nothing():
+    """The Attribute Editor callback this seam exists for fires for EVERY node kind the
+    user selects — a mesh transform, a locator, anything. Neither branch of the
+    shadingEngine dispatch may be trusted blind: the "else" side must confirm the node
+    is actually a material (``cmds.ls(node, materials=True)``) before writing to it."""
+    cmds.file(new=True, force=True)
+    mesh = cmds.polyCube(name="helmet", ch=False)[0]
+    locator = cmds.spaceLocator(name="not_a_shader")[0]
+
+    written = write_material_metadata(mesh, r"P:\data\helmet_co.paa", r"P:\data\helmet.rvmat")
+    _harness.check(written == set(),
+                    "a mesh transform is neither a shading engine nor a material and must "
+                    "not be written to, got %r" % (written,))
+    _harness.check(not cmds.attributeQuery("a3obTexture", node=mesh, exists=True),
+                    "the mesh transform must not gain a3obTexture")
+    _harness.check(not cmds.attributeQuery("a3obMaterial", node=mesh, exists=True),
+                    "the mesh transform must not gain a3obMaterial")
+
+    written = write_material_metadata(locator, r"P:\data\helmet_co.paa", r"P:\data\helmet.rvmat")
+    _harness.check(written == set(),
+                    "a locator is neither a shading engine nor a material and must not be "
+                    "written to, got %r" % (written,))
+    _harness.check(not cmds.attributeQuery("a3obTexture", node=locator, exists=True),
+                    "the locator must not gain a3obTexture")
+    _harness.check(not cmds.attributeQuery("a3obMaterial", node=locator, exists=True),
+                    "the locator must not gain a3obMaterial")
+
+
 def main():
     test_writing_sets_both_attributes_on_the_shading_group()
     test_paths_are_normalised_on_the_way_in()
@@ -152,6 +180,7 @@ def main():
     test_a_deleted_target_reports_nothing_written_rather_than_raising()
     test_selecting_faces_returns_the_count_and_selects_them()
     test_selecting_faces_on_an_unassigned_material_selects_nothing_and_warns()
+    test_a_node_that_is_neither_a_shading_engine_nor_a_material_writes_nothing()
     print("material metadata write: OK")
 
 

@@ -16,12 +16,13 @@ def _selected_material_metadata_item():
 
 
 def _connected_material(shading_group):
-    """The material (shader) node feeding ``shading_group``'s surfaceShader, if any."""
-    if not _node_exists(shading_group):
-        return ""
-    materials = _valid_nodes(cmds.ls(
-        cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or [])
-    return materials[0] if materials else ""
+    """The material (shader) node feeding ``shading_group``'s surfaceShader, if any.
+
+    Thin wrapper over the scene-layer helper of the same shape (`_material_nodes_for_
+    selection` in `a3ob.ui.scene.materials` needs the identical lookup) — kept as its own
+    name here since callers in this module already refer to it that way.
+    """
+    return _material_feeding_shading_group(shading_group)
 
 
 def write_material_metadata(node, texture, material):
@@ -43,11 +44,15 @@ def write_material_metadata(node, texture, material):
     material = _normalize_dayz_path(material)
     all_targets = set()
     if _node_exists(node):
-        all_targets.add(node)
         if cmds.objectType(node, isType="shadingEngine"):
+            all_targets.add(node)
             material_node = _connected_material(node)
-        else:
+        elif cmds.ls(node, materials=True):
+            all_targets.add(node)
             material_node = node
+        else:
+            cmds.warning("%s is neither a shading engine nor a material" % (node,))
+            material_node = None
         if _node_exists(material_node):
             all_targets.add(material_node)
             for sg in _valid_nodes(cmds.listConnections(material_node, type="shadingEngine") or []):
