@@ -21,8 +21,8 @@ conversation that produced it.
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Dock is **5 panels**, down from 11. The byte gate has not moved once across the whole branch:
-`5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
+Suite **62/62**. Dock is **5 panels**, down from 11. The byte gate has not moved once across the
+whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
 Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
 `docs/plans/2026-07-20-ui-simplification-index.md`. Completed plans:
