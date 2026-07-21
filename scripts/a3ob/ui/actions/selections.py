@@ -23,13 +23,16 @@ def _selected_selection_set():
 
 def _update_selection_details():
     set_node = _selected_selection_set()
+    dock = _active_qt_dock()
     if not set_node:
         _clear_selection_manager_state()
+        if dock is not None:
+            dock.show_selection_editor({"kind": ""})
         return
     details = _selection_set_details(set_node)
-    dock = _active_qt_dock()
     if dock is not None:
         dock.set_selection_details(details)
+        dock.show_selection_editor(selection_set_editable_fields(set_node))
 
 
 def _refresh_selection_manager(rebuild_lods=True):

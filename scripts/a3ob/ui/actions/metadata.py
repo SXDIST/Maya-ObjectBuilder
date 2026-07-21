@@ -43,6 +43,30 @@ def apply_flag_from_ui():
     _refresh_context_ui()
 
 
+def apply_flag_edit_from_ui():
+    """Write the details-area flag editor onto the highlighted set.
+
+    There is no a3obUpdateFlag command — a3obSetFlag only creates — so this writes the two
+    attributes directly. That is safe where the proxy commands are not: this creates no
+    objectSet, so it carries none of the orphan-set risk that makes a3obProxy and
+    a3obUpdateProxy deliberately non-undoable. A plain cmds.setAttr undoes correctly."""
+    dock = _active_qt_dock()
+    if dock is None:
+        return
+    set_node = dock.selected_selection_set_node()
+    if not set_node:
+        cmds.warning("Select a flag set to edit")
+        return
+    component, value = dock.flag_edit_values()
+    if value == 0:
+        cmds.warning("A flag value of 0 is not exported — enter a non-zero value")
+        return
+    with _undo_chunk("Edit Flag"):
+        cmds.setAttr(set_node + ".a3obFlagComponent", component, type="string")
+        cmds.setAttr(set_node + ".a3obFlagValue", value)
+    _refresh_context_ui()
+
+
 def _validate_proxy_path(path):
     """Return (ok, warning_message) for a proxy path string.
 
@@ -170,6 +194,7 @@ __all__ = [
     "apply_mass_from_ui",
     "clear_mass_from_ui",
     "apply_flag_from_ui",
+    "apply_flag_edit_from_ui",
     "_validate_proxy_path",
     "create_proxy_from_ui",
     "distribute_mass_evenly",

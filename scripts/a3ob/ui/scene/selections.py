@@ -112,6 +112,29 @@ def _selection_set_details(set_node):
     return f"LOD: {_set_lod_label(set_node)}    Type: {_set_kind(is_proxy, flag_component)}    OB name: {name}    Members: {count}\nMaya set: {set_node}"
 
 
+def selection_set_editable_fields(set_node):
+    """What the details area should show for one set — a SILENT read.
+
+    Called on every list highlight change, so it must not warn and must not write:
+    _selection_sets() normalising on read once dirtied the scene badly enough that Maya asked
+    "Save changes?" after a read-only session.
+
+    A set can be deleted between the list being built and a row being highlighted, so a
+    missing node reports an empty kind rather than raising. The proxy keys are filled in for
+    Proxy rows only; every other kind reports "" and 0."""
+    empty = {"kind": "", "flag_component": "", "flag_value": 0,
+             "proxy_path": "", "proxy_index": 0}
+    if not _node_exists(set_node):
+        return empty
+    is_proxy = bool(_safe_get_attr(set_node, "a3obIsProxySelection", False))
+    flag_component = _safe_get_attr(set_node, "a3obFlagComponent", "") or ""
+    fields = dict(empty)
+    fields["kind"] = _set_kind(is_proxy, flag_component)
+    fields["flag_component"] = flag_component
+    fields["flag_value"] = int(_safe_get_attr(set_node, "a3obFlagValue", 0) or 0)
+    return fields
+
+
 def _canonical_selection_components(selection=None):
     selection = selection or (cmds.ls(selection=True, flatten=True, long=True) or [])
     components = []
@@ -154,6 +177,7 @@ __all__ = [
     "_live_set_members",
     "_set_member_count",
     "_selection_set_details",
+    "selection_set_editable_fields",
     "_canonical_selection_components",
     "_mesh_shapes_for_item",
 ]

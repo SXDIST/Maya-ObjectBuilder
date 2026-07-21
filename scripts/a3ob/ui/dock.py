@@ -84,6 +84,9 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self.selection_details = None
         self.selection_mesh_context = None
         self.selection_create_menu = None
+        self.selection_editor_stack = None
+        self.flag_edit_component_combo = None
+        self.flag_edit_value_field = None
         self._live_sections = {}   # panel title -> _CollapsibleSection (for auto-refresh)
         self._poll_snaps = {}      # panel title -> last scene snapshot
         self._poll_lod = None      # selected LOD, resolved once per refresh

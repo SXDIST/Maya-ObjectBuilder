@@ -28,6 +28,14 @@ class SelectionsPanelMixin:
         self.selection_details.setWordWrap(True)
         layout.addWidget(self.selection_details)
 
+        # Page 0 is empty: an ordinary Selection row has nothing to edit, and the summary
+        # label above already says everything about it. Pages 1 and 2 are the flag and proxy
+        # editors — the capability the retired create-only panels never had.
+        self.selection_editor_stack = qt_widgets.QStackedWidget()
+        self.selection_editor_stack.addWidget(qt_widgets.QWidget())
+        self.selection_editor_stack.addWidget(self._build_flag_editor_page())
+        layout.addWidget(self.selection_editor_stack)
+
         first_row = qt_widgets.QHBoxLayout()
         for label, callback, tip, icon in (
             ("Select", _select_set_members, "Select the live members of the highlighted set", ":/aselect.png"),
@@ -71,6 +79,51 @@ class SelectionsPanelMixin:
 
         self.refresh_selection_manager(True)
         return widget
+
+
+    def _build_flag_editor_page(self):
+        page = qt_widgets.QWidget()
+        form = qt_widgets.QFormLayout(page)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.flag_edit_component_combo = qt_widgets.QComboBox()
+        self.flag_edit_component_combo.addItems(["Face", "Vertex"])
+        self.flag_edit_value_field = qt_widgets.QSpinBox()
+        self.flag_edit_value_field.setRange(-2147483648, 2147483647)
+        form.addRow("Component", self.flag_edit_component_combo)
+        form.addRow("Value", self.flag_edit_value_field)
+        form.addRow(_qt_button("Apply", apply_flag_edit_from_ui,
+                               "Write the component type and value onto the highlighted flag set",
+                               ":/confirm.png"))
+        return page
+
+
+    def flag_edit_values(self):
+        if self.flag_edit_component_combo is None or self.flag_edit_value_field is None:
+            return "face", 0
+        return (self.flag_edit_component_combo.currentText().lower(),
+                self.flag_edit_value_field.value())
+
+
+    def show_selection_editor(self, fields):
+        """Switch the details area to the page matching the highlighted row's kind.
+
+        Values are loaded with signals blocked: the editors are plain inputs with no
+        change handler today, but a future one must not fire on a programmatic load and
+        write back the value the user is only looking at."""
+        if self.selection_editor_stack is None:
+            return
+        kind = fields.get("kind", "")
+        if kind in ("Vertex Flag", "Face Flag"):
+            self.flag_edit_component_combo.blockSignals(True)
+            self.flag_edit_value_field.blockSignals(True)
+            index = 1 if fields.get("flag_component") == "vertex" else 0
+            self.flag_edit_component_combo.setCurrentIndex(index)
+            self.flag_edit_value_field.setValue(int(fields.get("flag_value", 0)))
+            self.flag_edit_component_combo.blockSignals(False)
+            self.flag_edit_value_field.blockSignals(False)
+            self.selection_editor_stack.setCurrentIndex(1)
+            return
+        self.selection_editor_stack.setCurrentIndex(0)
 
 
     def selected_selection_set_node(self):
