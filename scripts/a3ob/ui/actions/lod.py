@@ -4,12 +4,9 @@ import maya.cmds as cmds
 
 from a3ob.ui.scene import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
+from a3ob.ui.constants import _lod_definition_for_type  # noqa: F401
 from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.actions._common import _undo_chunk  # noqa: F401
-
-
-def _lod_definition_for_type(lod_type):
-    return next((d for d in LOD_DEFINITIONS if d["type"] == lod_type), LOD_DEFINITIONS[0])
 
 
 def _lod_assignment_label(definition, resolution):
@@ -116,7 +113,6 @@ def create_lod_type(lod_type, resolution=0):
 
 
 __all__ = [
-    "_lod_definition_for_type",
     "_lod_assignment_label",
     "_lod_node_name",
     "_mark_selection_as_lod",

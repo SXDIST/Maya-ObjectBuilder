@@ -4,17 +4,11 @@ import maya.cmds as cmds
 
 from a3ob.ui._qt import *  # noqa: F401,F403
 from a3ob.ui.constants import *  # noqa: F401,F403
+from a3ob.ui.constants import _lod_definition_for_type  # noqa: F401
 from a3ob.ui.widgets import *  # noqa: F401,F403
 from a3ob.ui.scene import *  # noqa: F401,F403
 from a3ob.ui.actions import *  # noqa: F401,F403
 from a3ob.ui.entry import *  # noqa: F401,F403
-
-
-def _lod_definition_for_type(lod_type):
-    for definition in LOD_DEFINITIONS:
-        if definition["type"] == lod_type:
-            return definition
-    return LOD_DEFINITIONS[0]
 
 
 # Sentinel for _mass_collapse_node: distinct from any real node path (including None),

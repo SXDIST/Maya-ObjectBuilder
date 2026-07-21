@@ -64,10 +64,38 @@ def test_a_new_empty_lod_is_still_named_after_its_lod():
     _harness.check(leaf == "Resolution_2", "a fresh empty LOD carries the LOD name, got %r" % (leaf,))
 
 
+def test_assign_lod_to_selection_defaults_to_resolution_lod_type_1():
+    """assign_lod_to_selection() with no arguments must default to Resolution LOD type 1.
+
+    The "Mark Selection as LOD" button calls assign_lod_to_selection() with no
+    arguments, so the defaults decide what every unparameterised mark produces.
+    A silent change to either the type or resolution would pass all other tests and
+    only this one can catch it.
+    """
+    from a3ob.ui.actions.lod import assign_lod_to_selection  # noqa: E402
+
+    cmds.file(new=True, force=True)
+    cmds.loadPlugin("MayaObjectBuilder.py", quiet=True)
+    mesh = cmds.polyCube(name="testmesh", ch=False)[0]
+    cmds.select(mesh, replace=True)
+
+    assign_lod_to_selection()  # No arguments — uses the defaults
+
+    _harness.check(cmds.objExists("testmesh.a3obIsLOD"),
+                   "the mesh must have been marked as a LOD")
+    lod_type = cmds.getAttr("testmesh.a3obLodType")
+    _harness.check(lod_type == 0,
+                   "default LOD type must be 0 (Resolution), got %r" % (lod_type,))
+    resolution = cmds.getAttr("testmesh.a3obResolution")
+    _harness.check(resolution == 1,
+                   "default resolution must be 1, got %r" % (resolution,))
+
+
 def main():
     test_marking_a_mesh_keeps_its_name()
     test_two_meshes_of_one_type_keep_their_own_names()
     test_a_new_empty_lod_is_still_named_after_its_lod()
+    test_assign_lod_to_selection_defaults_to_resolution_lod_type_1()
     print("lod naming: OK")
 
 

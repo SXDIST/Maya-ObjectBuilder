@@ -175,6 +175,11 @@ MEMORY_LOD_TYPE = 9      # Memory LOD: holds named locator points
 GEOMETRY_FAMILY_LOD_TYPES = (6, 7, 8, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24)
 
 
+def _lod_definition_for_type(lod_type):
+    """Look up the LOD definition by type, defaulting to the first (Resolution)."""
+    return next((d for d in LOD_DEFINITIONS if d["type"] == lod_type), LOD_DEFINITIONS[0])
+
+
 def lod_type_icon(lod_type):
     """Maya resource icon for a LOD type, grouped by family (combo + LOD list rows)."""
     if lod_type == 0:
