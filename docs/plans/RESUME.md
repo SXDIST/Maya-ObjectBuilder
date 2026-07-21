@@ -16,18 +16,19 @@ conversation that produced it.
 | 3a — one LOD panel | **done**, 4 tasks, all reviewed |
 | 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
 | 3c — Skinning slims to four buttons | **done**, 4 tasks, all reviewed |
-| 3d — Materials → Attribute Editor; Preferences window | **planned**, not started |
+| 3d — Materials → Attribute Editor; Preferences window | **done**, 5 tasks, all reviewed |
 | 4 — reference assets ship with the plugin | specced, not planned |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Suite **58/58**. Dock is **6 panels**, down from 11. The byte gate has not moved once across
-the whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
+Dock is **5 panels**, down from 11. The byte gate has not moved once across the whole branch:
+`5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
 Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
 `docs/plans/2026-07-20-ui-simplification-index.md`. Completed plans:
 `2026-07-20-phase1-weights.md`, `2026-07-20-phase2-export-pipeline.md`,
-`2026-07-20-phase3a-lod-panel.md`, `2026-07-20-phase3b-selections.md`.
+`2026-07-20-phase3a-lod-panel.md`, `2026-07-20-phase3b-selections.md`,
+`2026-07-20-phase3c-skinning.md`, `2026-07-20-phase3d-materials.md`.
 
 Phase 3b fixed **two proxy-command defects that predate this branch**, both from the same root
 cause: `proxy_selection_name` is `"proxy:%s.%d" % (path, index)` and encodes **no LOD identity**,
@@ -128,8 +129,8 @@ launched Maya); it matters whenever a task deletes a module.
      inspection claim — `QDialog.exec()` is application-modal, so `SelectionChanged` cannot fire
      while one is open. If a later task ever makes a dialog modeless, its mode label silently
      regains the ability to lie.
-   - The **six-panel dock** as a whole, since Phase 3b removed two panels and moved their
-     controls.
+   - The **five-panel dock** as a whole, since Phase 3b removed two panels and Phase 3d Task 5
+     retired a third (Materials, moved to the Attribute Editor and Preferences window).
    - The **Reference Assets submenu** added in Phase 3c: that six items and two dividers render,
      and that `Set Texture Root` is not swallowed into the submenu. No test can reach it.
    - The **DayZ Material section in the Attribute Editor** added in Phase 3d. This one has the
@@ -172,8 +173,9 @@ launched Maya); it matters whenever a task deletes a module.
      5. Changing the root re-textures already-imported materials; toggling alpha changes
         viewport transparency on materials already in the scene. Both act on what is already
         there, not only on the next import — that is what makes them feel real.
-     6. Until Phase 3d Task 5 lands, the Materials panel's own alpha checkbox and the
-        Preferences one must stay in sync: same optionVar, two doors.
+     6. Phase 3d Task 5 retired the Materials panel's own alpha checkbox and texture-root
+        field entirely, so the Preferences window is now the only door to either setting —
+        the two-doors-must-stay-in-sync concern this bullet used to name no longer applies.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.

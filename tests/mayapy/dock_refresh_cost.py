@@ -28,7 +28,29 @@ class FakeDock:
 
     refresh_lod_list = _count
     refresh_named_properties = _count
-    refresh_material_metadata = _count
+    refresh_selection_manager = _count
+    refresh_mass_summary = _count
+    refresh_influences = _count
+
+
+class FakeDockWithoutMaterials:
+    """Like FakeDock, but deliberately has no `refresh_material_metadata` at all.
+
+    The Materials panel was retired in Phase 3d Task 5, and with it the branch that walked
+    every material node of the selection on EVERY scene change (`_materials_snapshot` in
+    dock.py) -- exactly the per-objectSet-scan cost this file exists to bound. Retiring the
+    panel must remove the call outright, not merely make it cheap. A dock lacking the method
+    is the positive control: while `entry._refresh_context_ui` still called
+    `dock.refresh_material_metadata()` unconditionally, selecting a LOD against this fixture
+    raised AttributeError."""
+
+    def __init__(self):
+        self.rebuilds = 0
+
+    def _count(self, *_args, **_kwargs):
+        self.rebuilds += 1
+
+    refresh_lod_list = _count
     refresh_selection_manager = _count
     refresh_mass_summary = _count
     refresh_influences = _count
@@ -68,6 +90,7 @@ def main():
 
     print("OK dock refresh: component picking costs 0 rebuilds, LOD switch still refreshes")
     test_sibling_mesh_switch_refreshes(dock)
+    test_refresh_context_ui_never_calls_the_retired_materials_refresh()
 
 
 def test_sibling_mesh_switch_refreshes(dock):
@@ -103,6 +126,27 @@ def test_sibling_mesh_switch_refreshes(dock):
           % (dock.rebuilds - settled))
 
     print("OK sibling mesh switch refreshes, its components still cost nothing")
+
+
+def test_refresh_context_ui_never_calls_the_retired_materials_refresh():
+    """entry._refresh_context_ui must not reach for `refresh_material_metadata` at all.
+
+    Not just "cheap" -- gone. The Materials branch used to walk every material node of the
+    selection on every scene change; retiring the panel (Phase 3d Task 5) must remove that
+    call site entirely rather than leave it debounced alongside the others."""
+    lod = _harness.make_lod("lodMaterialsRetired", kind="sphere")
+    dock = FakeDockWithoutMaterials()
+    entry._active_qt_dock = lambda: dock
+    entry._last_context_key = None
+
+    cmds.select(lod, replace=True)
+    # Would raise AttributeError here if entry.py still called
+    # dock.refresh_material_metadata() -- FakeDockWithoutMaterials has no such method.
+    entry._refresh_context_ui(False)
+    entry._refresh_context_ui()  # the forced path too
+    _harness.check(dock.rebuilds > 0, "the dock must still rebuild from the remaining panels")
+
+    print("OK entry._refresh_context_ui no longer reaches for the retired Materials refresh")
 
 
 if __name__ == "__main__":

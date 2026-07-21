@@ -8,13 +8,6 @@ from a3ob.ui.entry import *  # noqa: F401,F403
 from a3ob.ui.actions._common import _undo_chunk  # noqa: F401
 
 
-def _selected_material_metadata_item():
-    dock = _active_qt_dock()
-    if dock is not None:
-        return dock.selected_material_metadata_item()
-    return None
-
-
 def _connected_material(shading_group):
     """The material (shader) node feeding ``shading_group``'s surfaceShader, if any.
 
@@ -34,9 +27,9 @@ def write_material_metadata(node, texture, material):
     ``surfaceShader``, and Maya's connections are traversed both ways by ``listConnections``,
     so starting from either one reaches the identical fan-out: the node itself, the material
     it resolves to (or that it already is), and every other shading engine sharing that same
-    material. This reproduces `_persist_selected_material_metadata`'s old target set exactly
-    when it is still a valid target set — see the module docstring notes on this in the task
-    report for the one case where a future item shape could narrow it.
+    material. This reproduces the retired dock panel's old target set exactly when it is
+    still a valid target set (see `_persist_selected_material_metadata`, removed in Phase 3d
+    Task 5, for the one case where a future item shape could narrow it).
 
     Returns the set of node names actually written to, empty when every target was deleted.
     """
@@ -68,23 +61,6 @@ def write_material_metadata(node, texture, material):
     return written
 
 
-def _persist_selected_material_metadata():
-    item = _selected_material_metadata_item()
-    if not item:
-        return None
-    dock = _active_qt_dock()
-    if dock is None:
-        return None
-    node = item["material_node"] or (item["shading_groups"] or [None])[0]
-    written = write_material_metadata(node, dock.material_texture_path(), dock.material_rvmat_path())
-    if not written:
-        cmds.warning("Material metadata target was deleted")
-        return None
-    item["texture"] = _normalize_dayz_path(dock.material_texture_path())
-    item["material"] = _normalize_dayz_path(dock.material_rvmat_path())
-    return item
-
-
 def select_faces_for_shading_group(shading_group):
     """Select the faces ``shading_group`` is assigned to, on the currently selected mesh(es).
     Returns how many.
@@ -102,21 +78,8 @@ def select_faces_for_shading_group(shading_group):
     return len(cmds.ls(faces, flatten=True) or [])
 
 
-def select_faces_with_material():
-    """Select the faces the highlighted material is assigned to. Returns how many."""
-    item = _selected_material_metadata_item()
-    if not item:
-        cmds.warning("Pick a material in the list first")
-        return 0
-    shading_group = (item["shading_groups"] or [None])[0]
-    return select_faces_for_shading_group(shading_group)
-
-
 __all__ = [
-    "_selected_material_metadata_item",
     "_connected_material",
     "write_material_metadata",
-    "_persist_selected_material_metadata",
     "select_faces_for_shading_group",
-    "select_faces_with_material",
 ]

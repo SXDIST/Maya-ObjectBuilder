@@ -366,8 +366,8 @@ def assert_ui_redesign_helpers_load():
     # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
     for name in ("_build_ui", "_build_quick_actions",
                  "_build_memory_points_section",
-                 "_build_materials_tab", "_build_selections_tab",
-                 "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
+                 "_build_selections_tab",
+                 "_build_validation_tab", "refresh_named_properties",
                  "refresh_selection_manager", "selected_selection_set_node", "set_selection_details",
                  "run_skin_weights"):
         if not hasattr(dock_class, name):
@@ -403,6 +403,16 @@ def assert_ui_redesign_helpers_load():
     build_ui_source = inspect.getsource(dock_class._build_ui)
     if '("Skinning", self._build_skinning_tab(), True, None)' not in build_ui_source:
         raise RuntimeError("Skinning panel should register no on_expand callback")
+    # The Materials panel was retired (Phase 3d Task 5): per-material editing moved to the
+    # "DayZ Material" section in the Attribute Editor (ae_template.py), and the two global
+    # preferences moved to their own Preferences window. Nothing was left in the dock.
+    for gone in ("_build_materials_tab", "refresh_material_metadata", "_materials_snapshot",
+                 "_material_fields_focused"):
+        if hasattr(dock_class, gone):
+            raise RuntimeError("%s survived the Materials panel removal" % gone)
+    panel_count = build_ui_source.count('\n            ("')
+    if panel_count != 5:
+        raise RuntimeError(f"Expected 5 panels in the dock's panels list, found {panel_count}")
     # The Flags and Proxies panels were retired (Phase 3b Task 6): creating a proxy or a
     # flag set moved onto the Selections panel's Create button menu, and editing an
     # existing one moved into the Selections details area (Tasks 2-5). This check lives in

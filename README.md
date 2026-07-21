@@ -114,14 +114,17 @@ The dock is a vertical stack of **collapsible panels** — each remembers its ex
 |-------|---------|
 | ⚡ **Quick Actions** | Import/Export P3D · Validate |
 | 📋 **LODs** | Central list of every LOD — select, frame, rename, duplicate, delete, mark new LODs, and edit the highlighted LOD's type, resolution, mass and named properties in the detail area below |
-| 🎨 **Materials** | Texture (`.paa`) and `.rvmat` paths per material, the texture root, and the alpha→transparency toggle |
 | 🗂️ **Selections** | Filter, create and edit selections, proxies, and flag sets — creation is on the Create button's menu, editing is in the details area below the list |
 | 🦴 **Skinning** | Weight transfer, influence inspection and skin-weight checks |
 | 📍 **Memory Points** | Named locators for the Memory LOD |
 | ✅ **Validation** | Check LODs before export (whole scene or selection) |
 
+Per-material texture (`.paa`) / `.rvmat` editing lives in Maya's own **Attribute Editor** (select
+a shading engine — the **DayZ Material** section appears below the stock Shading Group
+Attributes), not in the dock.
+
 > [!TIP]
-> **Textures on import** — Maya can't read `.paa` directly, so the plugin decodes each texture to a cached PNG and wires it onto the material (base colour + reconstructed normal from `_nohq` + specular from `_smdi`/`.rvmat`). For the mod-relative paths in a P3D to resolve, set the **texture root** in the **Materials** panel (or the *Set Texture Root* menu item) to your unpacked mod / `P:` drive. Skeleton (`model.cfg`) import/export lives in the **MayaObjectBuilder menu**, not a dock panel.
+> **Textures on import** — Maya can't read `.paa` directly, so the plugin decodes each texture to a cached PNG and wires it onto the material (base colour + reconstructed normal from `_nohq` + specular from `_smdi`/`.rvmat`). For the mod-relative paths in a P3D to resolve, set the **texture root** in the **Preferences window** (**MayaObjectBuilder menu > Preferences…**) to your unpacked mod / `P:` drive. Skeleton (`model.cfg`) import/export lives in the **MayaObjectBuilder menu**, not a dock panel.
 
 ### 📍 Memory LOD workflow
 

@@ -4,12 +4,12 @@ A leaf, like dialogs.py: Qt and maya.cmds only, no import from a3ob.ui.actions �
 there star-imports a3ob.ui.entry, and importing back into it would close the actions/entry/dock
 cycle that entry._build_qt_dock's lazy import exists to prevent.
 
-The panel (scripts/a3ob/ui/panels/materials.py) bundled per-material editing together with two
-settings that are scene-global, not per-material: the texture root and alpha->transparency.
-Per-material editing has moved to the DayZ Material section in the Attribute Editor
-(ui/ae_template.py); these two get their own window instead, reached from the MayaObjectBuilder
-menu independently of whether the dock is open. The panel's own copies of both controls are left
-in place — panels/materials.py is not this task's file, and a later task retires it wholesale.
+The now-retired Materials panel (`scripts/a3ob/ui/panels/materials.py`, removed in Phase 3d Task
+5) bundled per-material editing together with two settings that are scene-global, not
+per-material: the texture root and alpha->transparency. Per-material editing has moved to the
+DayZ Material section in the Attribute Editor (ui/ae_template.py); these two get their own
+window instead, reached from the MayaObjectBuilder menu independently of whether the dock is
+open.
 
 texture_root_status(), resolution_source_label() and scene_texture_source_report() are the
 testable seams — see tests/mayapy/preferences_texture_root.py. show_preferences() builds a real

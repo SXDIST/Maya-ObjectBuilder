@@ -328,7 +328,6 @@ def _refresh_context_ui(force=True):
         return
     _last_context_key = key
     dock.refresh_lod_list()  # also refreshes named properties/mass/memory visibility
-    dock.refresh_material_metadata()
     dock.refresh_selection_manager(True)
     dock.refresh_mass_summary()
     dock.refresh_influences()

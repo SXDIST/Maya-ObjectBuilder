@@ -13,7 +13,6 @@ from a3ob.ui.watch import SceneWatcher, ALL_PANELS
 
 from a3ob.ui.panels.lod_list import LodListPanelMixin, _MASS_COLLAPSE_UNSET
 from a3ob.ui.panels.lod import LodPanelMixin
-from a3ob.ui.panels.materials import MaterialsPanelMixin
 from a3ob.ui.panels.selections import SelectionsPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
 from a3ob.ui.panels.skinning import SkinningPanelMixin
@@ -41,7 +40,7 @@ def _warn_panel_once(title: str, exc: Exception) -> None:
     )
 
 
-class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
@@ -67,12 +66,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixi
         self.named_name_combo = None
         self.named_value_combo = None
         self.named_items = {}
-        self.material_list = None
-        self.texture_root_field = None
-        self.paa_alpha_check = None
-        self.material_texture = None
-        self.material_rvmat = None
-        self.material_items = {}
         self.selection_list = None
         self.selection_details = None
         self.selection_mesh_context = None
@@ -116,11 +109,10 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixi
         body_layout.setSpacing(0)
 
         # on_expand re-queries the scene when a panel is opened, so live-scene panels
-        # (materials, selections) stay fresh even after changes that do not fire a
-        # SelectionChanged event (e.g. reassigning a material).
+        # (selections) stay fresh even after changes that do not fire a SelectionChanged
+        # event (e.g. reassigning a selection).
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
-            ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
             ("Memory Points", self._build_memory_points_section(), True, None),
             ("Skinning", self._build_skinning_tab(), True, None),
@@ -157,22 +149,12 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixi
         self._poll_snaps[title] = snap
         refresh_fn()
 
-    def _material_fields_focused(self):
-        for field in (_picker_field(self.material_texture), _picker_field(self.material_rvmat)):
-            if field is not None and field.hasFocus():
-                return True
-        return False
-
     def _lods_snapshot(self):
         lod = self._poll_lod
         active = _lod_name_from_transform(lod) if lod else None
         # Geometry fingerprint instead of lod_overview(): the latter re-triangulates every
         # LOD mesh (19 ms) merely to decide whether anything changed. See lod_geometry_key().
         return (active, lod_geometry_key())
-
-    def _materials_snapshot(self):
-        return tuple((i["shading_groups"][0], i["material_node"], i["texture"], i["material"])
-                     for i in _material_nodes_for_selection())
 
     def _selections_snapshot(self):
         lod = self._poll_lod
@@ -230,12 +212,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixi
                 self._poll_panel("LODs", self._lods_snapshot, self.refresh_lod_list)
             except Exception as exc:  # noqa: BLE001 - transient scene state; warn once
                 _warn_panel_once("LODs", exc)
-        if "Materials" in panels:
-            try:
-                self._poll_panel("Materials", self._materials_snapshot, self.refresh_material_metadata,
-                                 defer=self._material_fields_focused())
-            except Exception as exc:  # noqa: BLE001
-                _warn_panel_once("Materials", exc)
         if "Selections" in panels:
             try:
                 self._poll_panel("Selections", self._selections_snapshot, self.refresh_selection_manager)

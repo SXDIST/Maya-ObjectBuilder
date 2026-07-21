@@ -58,13 +58,14 @@ def main():
 
         # Regression: refresh_lod_list() now calls refresh_named_properties() at its own
         # end, and the "LODs" branch of dock._refresh_dirty_panels feeds it with no
-        # defer= (unlike Materials, which passes defer=self._material_fields_focused()).
-        # That means a SceneWatcher callback on the displayed LOD can rebuild the named
-        # properties list while the user is mid-edit in one of the combos. It is safe
-        # today only because refresh_named_properties() writes the combos solely when no
-        # LOD resolves, and clearing/repopulating named_list does not re-fire
-        # currentItemChanged with a valid item. Pin that as a test, not as folklore that
-        # the next "auto-sync the combos" change could silently break.
+        # defer= (the Materials panel used to pass defer=self._material_fields_focused()
+        # for the same reason, before it was retired in Phase 3d Task 5). That means a
+        # SceneWatcher callback on the displayed LOD can rebuild the named properties list
+        # while the user is mid-edit in one of the combos. It is safe today only because
+        # refresh_named_properties() writes the combos solely when no LOD resolves, and
+        # clearing/repopulating named_list does not re-fire currentItemChanged with a
+        # valid item. Pin that as a test, not as folklore that the next "auto-sync the
+        # combos" change could silently break.
         cmds.select(alpha, replace=True)
         dock.refresh_lod_list()
         dock.named_name_combo.lineEdit().setText("midEditName")

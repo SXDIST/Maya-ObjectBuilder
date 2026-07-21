@@ -123,21 +123,17 @@ def test_the_skinclusters_orig_shape_is_not_selected():
           "the intermediate shape must not be selected, got %r" % (faces,))
 
 
-class FakeDock:
-    """Stands in for the Qt dock: hands the action the highlighted material."""
-
-    def __init__(self, item):
-        self.item = item
-
-    def selected_material_metadata_item(self):
-        return self.item
-
-
 def test_the_action_scopes_to_what_was_selected_when_it_ran():
     """The action replaces the selection, so it must read the scope BEFORE selecting.
 
     Reading it afterwards would scope the result to the action's own output — which looks
-    correct on the first click and silently narrows on every repeat."""
+    correct on the first click and silently narrows on every repeat.
+
+    Drives `select_faces_for_shading_group` directly rather than through a dock — the
+    dock-reading wrapper that used to resolve the highlighted material
+    (`select_faces_with_material`) was retired in Phase 3d Task 5 along with the Materials
+    panel; the surviving function already takes the shading group as an argument, so there
+    is no dock lookup left to fake."""
     cmds.file(new=True, force=True)
     helmet = cmds.polyCube(name="helmet", ch=False)[0]
     body = cmds.polyCube(name="body", ch=False)[0]
@@ -145,20 +141,16 @@ def test_the_action_scopes_to_what_was_selected_when_it_ran():
     cmds.sets("%s.f[0:1]" % helmet, edit=True, forceElement=plate)
     cmds.sets("%s.f[0:3]" % body, edit=True, forceElement=plate)
 
-    # Patch the module that CALLS it: `_active_qt_dock` is star-imported, so a3ob.ui.entry
-    # holds a different binding than the one the action actually resolves.
-    from a3ob.ui.actions import materials as action
-    action._active_qt_dock = lambda: FakeDock(
-        {"shading_groups": [plate], "material_node": "plate"})
+    from a3ob.ui.actions.materials import select_faces_for_shading_group
 
     cmds.select(helmet, replace=True)
-    first = action.select_faces_with_material()
+    first = select_faces_for_shading_group(plate)
     _harness.check(first == 2, "the helmet's two assigned faces, got %r" % (first,))
     _harness.check(all("body" not in item for item in cmds.ls(selection=True, long=True) or []),
           "the body shares the material but was never in scope")
 
     # Repeat on the action's own output: still the same two faces, not a shrinking subset.
-    second = action.select_faces_with_material()
+    second = select_faces_for_shading_group(plate)
     _harness.check(second == 2, "clicking again must be stable, got %r" % (second,))
 
 
