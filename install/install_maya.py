@@ -58,12 +58,18 @@ def _modules_dir():
 
 
 def _copy_runtime_package(source, target):
-    if target.exists():
-        shutil.rmtree(target)
+    # Remove only the directories this package OWNS. `target` is
+    # <userAppDir>/MayaObjectBuilder, which also holds references/ (the user's saved reference
+    # assets) and whatever else they keep there — an rmtree of the whole root deleted those on
+    # every upgrade. The per-directory removal keeps the reason the rmtree existed: a file a
+    # previous version shipped and this one dropped must not survive as an orphan.
     target.mkdir(parents=True, exist_ok=True)
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
     for relative_dir in RUNTIME_PACKAGE_DIRS:
-        shutil.copytree(source / relative_dir, target / relative_dir, ignore=ignore)
+        destination = target / relative_dir
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source / relative_dir, destination, ignore=ignore)
 
 
 def _is_legacy_install_root(path):
