@@ -261,22 +261,6 @@ def _show_preferences():
     preferences.show_preferences()
 
 
-def set_texture_root_from_ui():
-    """Prompt for the .paa texture root (P-drive / mod folder), store it, and texture any
-    already-imported materials that were waiting for it."""
-    from a3ob.mayabridge import paatex
-    current = paatex.texture_root()
-    kwargs = {"fileMode": 3, "caption": "Select the .paa texture root (P-drive / mod folder)"}
-    if current:
-        kwargs["startingDirectory"] = current
-    selected = cmds.fileDialog2(**kwargs)
-    if not selected:
-        return
-    paatex.set_texture_root(selected[0])
-    count = paatex.assign_pending_textures()
-    mel.eval('print "MayaObjectBuilder: texture root set — textured %d material(s)\\n"' % count)
-
-
 def _prompt(title, message, default=""):
     result = cmds.promptDialog(title=title, message=message, text=str(default), button=["OK", "Cancel"], defaultButton="OK", cancelButton="Cancel", dismissString="Cancel")
     if result != "OK":

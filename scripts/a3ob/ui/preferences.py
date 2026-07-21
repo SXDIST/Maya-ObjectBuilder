@@ -11,10 +11,10 @@ Per-material editing has moved to the DayZ Material section in the Attribute Edi
 menu independently of whether the dock is open. The panel's own copies of both controls are left
 in place — panels/materials.py is not this task's file, and a later task retires it wholesale.
 
-texture_root_status() and resolution_source_label() are the testable seams — see
-tests/mayapy/preferences_texture_root.py. show_preferences() builds a real QDialog and is NOT
-covered there: a QWidget under mayapy segfaults with no traceback unless a QApplication existed
-before maya.standalone.initialize() ran.
+texture_root_status(), resolution_source_label() and scene_texture_source_report() are the
+testable seams — see tests/mayapy/preferences_texture_root.py. show_preferences() builds a real
+QDialog and is NOT covered there: a QWidget under mayapy segfaults with no traceback unless a
+QApplication existed before maya.standalone.initialize() ran.
 
 No dock to borrow _path_picker (dock.py) from here: this window must open whether or not the
 dock is up (it is reached from the menu, which exists independently of the dock), and
@@ -22,6 +22,16 @@ dock._path_picker is a bound method on the dock instance, not a free function. T
 row is therefore built directly, deliberately without the dock's recent-paths dropdown — that
 mechanism (dock._show_recent_paths_menu) is likewise a dock method, and duplicating it for a
 window that holds exactly one path field was judged not worth it.
+
+The window originally also had a free-text "Check a texture path" box wired to
+resolution_source_label(). That is gone: this window is scoped to exactly the two GLOBAL
+settings above, and a debug text box was never one of them. What that box was FOR — saying
+which source is actually resolving textures, so a stale/unused root cannot fail silently — is
+still required, so it is now automatic: scene_texture_source_report() walks the scene's real
+a3obTexture values (no user input) and the window displays its message, refreshed on open and
+via an explicit Refresh button only. It exists specifically because texture_root_status() can
+only say a configured root is present on disk — which is not evidence it is the one actually
+resolving anything (the measured failure: an existing root, with P:/ quietly doing the work).
 """
 
 import os
@@ -79,6 +89,89 @@ def resolution_source_label(texture_path):
     if resolved is None:
         return "Not found — checked the configured texture root, P:/, and a filename search."
     return "Found via %s: %s" % (_SOURCE_LABELS.get(source, source or "unknown"), resolved)
+
+
+_SCENE_MATERIAL_LIMIT = 500  # bound: a scene can hold a great many shading engines — sample only
+                             # this many rather than scanning unbounded. Same precedent as
+                             # resolve.py's _WALK_DIR_LIMIT (a mutable module attribute so a
+                             # test can shrink it rather than creating hundreds of real nodes).
+
+
+def scene_texture_source_report():
+    """{"sampled": int, "sources": {source: count}, "unresolved": int, "truncated": bool,
+    "message": str} — which source(s) are ACTUALLY resolving the scene's textures right now.
+
+    texture_root_status() can only say a configured root exists on disk; existing is not the
+    same as being used. The measured scene had a root that existed while P:/ quietly did the
+    work, and nothing said so. This walks the scene's real a3obTexture values — the same
+    attribute and enumeration paatex/materials.py's assign_pending_textures and
+    apply_alpha_transparency_setting already read (cmds.ls(materials=True), the a3obTexture
+    string on the material node) — through resolve_paa_path_with_source and reports what
+    actually resolved each one, so a directory merely existing is never mistaken for evidence
+    it is in use.
+
+    A scene with no textured materials says so plainly rather than implying a verdict either
+    way. A scene whose textures resolve from several different sources names all of them
+    rather than collapsing to one.
+
+    Silent read only: no cmds.warning, no scene writes. Meant to be called when the window
+    opens or on an explicit refresh — never on a timer or on every selection event.
+
+    Bounded like resolve.py's _WALK_DIR_LIMIT: samples at most _SCENE_MATERIAL_LIMIT materials
+    rather than scanning every one, so a scene with a great many shading engines cannot hang
+    the window on open.
+    """
+    from a3ob.mayabridge.paatex.resolve import resolve_paa_path_with_source
+
+    materials = cmds.ls(materials=True) or []
+    truncated = len(materials) > _SCENE_MATERIAL_LIMIT
+    materials = materials[:_SCENE_MATERIAL_LIMIT]
+
+    sources = {}
+    unresolved = 0
+    sampled = 0
+    for shader in materials:
+        if not cmds.attributeQuery("a3obTexture", node=shader, exists=True):
+            continue
+        texture = cmds.getAttr(shader + ".a3obTexture") or ""
+        if not texture:
+            continue
+        sampled += 1
+        resolved, source = resolve_paa_path_with_source(texture)
+        if resolved is None:
+            unresolved += 1
+        else:
+            sources[source] = sources.get(source, 0) + 1
+
+    if sampled == 0:
+        message = "No textured materials found in this scene — nothing to report."
+    elif not sources:
+        message = ("Sampled %d textured material(s); none resolved from any source "
+                   "(configured root, P:/, or a filename search)." % sampled)
+    elif len(sources) == 1:
+        (only_source,) = sources
+        message = "All resolved textures (%d of %d sampled) are coming from %s." % (
+            sources[only_source], sampled,
+            _SOURCE_LABELS.get(only_source, only_source or "unknown"))
+    else:
+        parts = "; ".join(
+            "%s: %d" % (_SOURCE_LABELS.get(source, source or "unknown"), count)
+            for source, count in sorted(sources.items(), key=lambda item: -item[1]))
+        message = ("Resolved textures are coming from MULTIPLE sources (%d sampled) — %s. "
+                   "A configured root existing on disk is not evidence it is the one in use."
+                   % (sampled, parts))
+    if unresolved:
+        message += " %d texture(s) could not be resolved at all." % unresolved
+    if truncated:
+        message += " (sampled the first %d material(s) only)" % _SCENE_MATERIAL_LIMIT
+
+    return {
+        "sampled": sampled,
+        "sources": sources,
+        "unresolved": unresolved,
+        "truncated": truncated,
+        "message": message,
+    }
 
 
 def _section_label(text):
@@ -176,26 +269,28 @@ def show_preferences():
     alpha_check.toggled.connect(_on_alpha_toggled)
     layout.addWidget(alpha_check)
 
-    # --- Check a texture path ---------------------------------------------------------
-    layout.addWidget(_section_label("Check a texture path"))
-    layout.addWidget(_hint(
-        "Names which source would resolve a given P3D-relative texture path: the configured "
-        "root, P:/, or a filename search — the same ambiguity the status line above warns "
-        "about."))
-    check_row = qt_widgets.QHBoxLayout()
-    check_field = qt_widgets.QLineEdit()
-    check_field.setPlaceholderText(r"e.g. mod\data\jacket_co.paa")
-    check_button = qt_widgets.QPushButton("Check")
-    check_row.addWidget(check_field, 1)
-    check_row.addWidget(check_button)
-    layout.addLayout(check_row)
-    check_result = _hint("")
+    # --- Active texture sources -------------------------------------------------------
+    # Automatic, not a free-text checker: the window states which source is ACTUALLY
+    # resolving the scene's textures without the user typing anything. This is the piece
+    # texture_root_status() above cannot say — a configured root existing on disk is not
+    # evidence it is the one in use (the measured scene's exact failure: root existed, P:/
+    # quietly did the work). Computed on open and on explicit Refresh only — never on a
+    # timer, and it never runs while typing.
+    layout.addWidget(_section_label("Active texture sources"))
+    sources_row = qt_widgets.QHBoxLayout()
+    sources_label = _hint(scene_texture_source_report()["message"])
+    sources_refresh = qt_widgets.QPushButton("Refresh")
+    sources_refresh.setToolTip(
+        "Re-scan the scene's textured materials and report which source (configured root, "
+        "P:/, or a filename search) actually resolved each one.")
+    sources_row.addWidget(sources_label, 1)
+    sources_row.addWidget(sources_refresh)
+    layout.addLayout(sources_row)
 
-    def _on_check():
-        check_result.setText(resolution_source_label(check_field.text().strip()))
+    def _refresh_sources():
+        sources_label.setText(scene_texture_source_report()["message"])
 
-    check_button.clicked.connect(_on_check)
-    layout.addWidget(check_result)
+    sources_refresh.clicked.connect(_refresh_sources)
 
     buttons = qt_widgets.QDialogButtonBox(qt_widgets.QDialogButtonBox.Close)
     buttons.rejected.connect(dialog.reject)
@@ -208,5 +303,6 @@ def show_preferences():
 __all__ = [
     "texture_root_status",
     "resolution_source_label",
+    "scene_texture_source_report",
     "show_preferences",
 ]
