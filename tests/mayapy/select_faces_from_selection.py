@@ -19,6 +19,7 @@ import _harness
 _harness.bootstrap()
 
 import maya.cmds as cmds  # noqa: E402
+import maya.OpenMaya as om1  # noqa: E402 - API 1.0 has the command-output callback
 
 from a3ob.ui.actions.materials import select_faces_for_selected_material  # noqa: E402
 
@@ -67,17 +68,41 @@ def test_a_selected_material_resolves_to_its_shading_engine():
 
 def test_a_selection_with_no_material_warns_and_selects_nothing():
     """Selecting a plain mesh - neither a shadingEngine nor a material - must not select
-    anything, and must not raise."""
+    anything, and must warn rather than silently doing nothing.
+
+    The docstring promises "0 and a warning" - asserting only the 0 leaves half the
+    contract unpinned, since deleting the cmds.warning(...) call in
+    select_faces_for_selected_material would still pass a result-only check. Captured
+    the same way dock_panel_sync.py's test_list_influences_is_silent does: an API 1.0
+    command-output callback, with a positive control BEFORE the real assertion so a
+    listener that silently stopped working fails loudly instead of the check passing
+    vacuously."""
     cmds.file(new=True, force=True)
     mesh = cmds.polyCube(name="helmet", ch=False)[0]
     cmds.select(mesh, replace=True)
     before = cmds.ls(selection=True, long=True) or []
 
-    result = select_faces_for_selected_material()
+    said = []
+    callback = om1.MCommandMessage.addCommandOutputCallback(
+        lambda message, message_type, data: said.append(message))
+    try:
+        # Positive control FIRST: prove the callback actually hears cmds.warning before
+        # trusting it to have heard (or not heard) anything from the call under test.
+        cmds.warning("select_faces_from_selection_control_signal")
+        _harness.check(any("select_faces_from_selection_control_signal" in m for m in said),
+              "the output callback hears nothing at all - the warning check below "
+              "would pass vacuously")
+        said[:] = []
+
+        result = select_faces_for_selected_material()
+    finally:
+        om1.MMessage.removeCallback(callback)
 
     _harness.check(result == 0, "no material named, got %r" % (result,))
     after = cmds.ls(selection=True, long=True) or []
     _harness.check(after == before, "the selection must be left alone, got %r" % (after,))
+    _harness.check(said, "select_faces_for_selected_material must warn when the "
+                        "selection names no material, but nothing was said")
 
 
 def test_the_faces_selected_are_the_ones_the_material_is_assigned_to():
