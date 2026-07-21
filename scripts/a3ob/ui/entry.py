@@ -468,12 +468,15 @@ def show_plugin_ui():
         cmds.menuItem(divider=True, parent=menu)
         references_menu = cmds.menuItem(label="Reference Assets", parent=menu, subMenu=True,
                                         tearOff=True)
-        # Labelled "Male Body" / "Female Body" here (not "Male Character") to match each
-        # other, references.KINDS's human name ("male body"/"female body"), and the
-        # confirmation dialog text below — the Skinning panel's own "Add Male Character"
-        # button is a separate, deliberately-named entry point (it also imports the
-        # skeleton and materials) and is untouched by this.
-        cmds.menuItem(label="Add Male Body", parent=references_menu,
+        # "Male Character", matching the Skinning panel's button: this is the SAME action on
+        # the same kind, and one action must not carry two names depending on where it is
+        # clicked. The name is the spec's decision — the male reference imports the body with
+        # its materials AND its skeleton, which "Body" undersells.
+        #
+        # "Female Body" stays "Body" on purpose. The asymmetry is truthful rather than untidy:
+        # nobody has verified that the female reference carries a skeleton too, and calling it
+        # a "Character" would assert that it does. Rename it when someone has looked.
+        cmds.menuItem(label="Add Male Character", parent=references_menu,
                       command=lambda *_: _add_reference_asset("male_body"))
         cmds.menuItem(label="Add Female Body", parent=references_menu,
                       command=lambda *_: _add_reference_asset("female_body"))
@@ -482,7 +485,7 @@ def show_plugin_ui():
         cmds.menuItem(divider=True, parent=references_menu)
         # Destructive: each replaces a saved asset. Separated from the Add items above by a
         # divider, and each asks before overwriting (_save_reference_asset).
-        cmds.menuItem(label="Save Selection as Male Body…", parent=references_menu,
+        cmds.menuItem(label="Save Selection as Male Character…", parent=references_menu,
                       command=lambda *_: _save_reference_asset("male_body"))
         cmds.menuItem(label="Save Selection as Female Body…", parent=references_menu,
                       command=lambda *_: _save_reference_asset("female_body"))
