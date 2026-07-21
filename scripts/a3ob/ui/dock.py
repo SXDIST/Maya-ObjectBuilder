@@ -13,7 +13,6 @@ from a3ob.ui.watch import SceneWatcher, ALL_PANELS
 
 from a3ob.ui.panels.lod_list import LodListPanelMixin, _MASS_COLLAPSE_UNSET
 from a3ob.ui.panels.lod import LodPanelMixin
-from a3ob.ui.panels.metadata import MetadataPanelMixin
 from a3ob.ui.panels.materials import MaterialsPanelMixin
 from a3ob.ui.panels.selections import SelectionsPanelMixin
 from a3ob.ui.panels.validation import ValidationPanelMixin
@@ -42,7 +41,7 @@ def _warn_panel_once(title: str, exc: Exception) -> None:
     )
 
 
-class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
+class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MaterialsPanelMixin, SelectionsPanelMixin, ValidationPanelMixin, SkinningPanelMixin, qt_widgets.QWidget if QT_AVAILABLE else object):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MayaObjectBuilderQtDock")
@@ -63,12 +62,6 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         self._mass_collapse_node = _MASS_COLLAPSE_UNSET
         self.validation_list = None
         self.validation_summary = None
-        self.flag_component_combo = None
-        self.flag_value_field = None
-        self.flag_name_field = None
-        self.proxy_path_field = None
-        self.proxy_index_field = None
-        self.proxy_from_selection_check = None
         self.named_list = None
         self.named_batch_check = None
         self.named_name_combo = None
@@ -127,10 +120,8 @@ class MayaObjectBuilderDock(LodListPanelMixin, LodPanelMixin, MetadataPanelMixin
         # SelectionChanged event (e.g. reassigning a material).
         panels = [
             ("LODs", self._build_lod_list_section(), False, self.refresh_lod_list),
-            ("Flags", self._build_flags_section(), True, None),
             ("Materials", self._build_materials_tab(), True, self.refresh_material_metadata),
             ("Selections", self._build_selections_tab(), True, lambda: self.refresh_selection_manager()),
-            ("Proxies", self._build_proxies_section(), True, None),
             ("Memory Points", self._build_memory_points_section(), True, None),
             ("Skinning", self._build_skinning_tab(), True, None),
             ("Validation", self._build_validation_tab(), True, None),

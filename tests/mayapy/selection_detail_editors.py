@@ -391,6 +391,83 @@ def test_update_restores_the_previous_selection():
         _release_active_dock(dock)
 
 
+def test_update_restores_selection_when_the_command_fails():
+    """The `finally` in update_proxy_from_ui must run even when a3obUpdateProxy itself
+    raises, not only on the happy path that test_update_restores_the_previous_selection
+    covers. Today (before this test) the whole finally block could be deleted and every
+    other test in this file would still pass, because none of them make the command fail.
+
+    cmds.a3obUpdateProxy is swapped for a raising stand-in for the duration of the call:
+    that is the only reliable way to make the real command fail here — a3obUpdateProxy's
+    doIt has no path that raises a Python exception for a validly-selected proxy set (a
+    missing/invalid selection is rejected by update_proxy_from_ui's own guards before the
+    command ever runs, and Maya's own doIt reports its "not a proxy" case via
+    MGlobal.displayError, which does not raise)."""
+    from a3ob.ui.actions import metadata as metadata_actions
+    lod, _proxy_set = build_lod_with_a_proxy(path="p\\weapon.p3d", index=1)
+    dock = _built_active_dock()
+    real_command = cmds.a3obUpdateProxy
+
+    def _raiser(*_args, **_kwargs):
+        raise RuntimeError("simulated a3obUpdateProxy failure")
+
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        check(proxy_rows, "the proxy set is not listed at all")
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        cmds.select(lod, replace=True)
+        before = cmds.ls(selection=True, long=True) or []
+        dock.proxy_edit_path_field._line_edit.setText("p\\other.p3d")
+        dock.proxy_edit_index_field.setValue(2)
+        cmds.a3obUpdateProxy = _raiser
+        raised = False
+        with _texture_root_containing("p\\other.p3d"):
+            try:
+                metadata_actions.update_proxy_from_ui()
+            except RuntimeError:
+                raised = True
+        check(raised, "the simulated command failure did not propagate out of "
+                      "update_proxy_from_ui — the test setup is not exercising the "
+                      "failure path it claims to")
+        after = cmds.ls(selection=True, long=True) or []
+        check(before == after,
+              "a failing Update left the selection at %r instead of restoring %r"
+              % (after, before))
+    finally:
+        cmds.a3obUpdateProxy = real_command
+        _release_active_dock(dock)
+
+
+def test_update_restores_an_empty_selection():
+    """The `else: cmds.select(clear=True)` half of the restore, on its own — the other
+    restore test starts from a non-empty selection and never exercises this branch."""
+    from a3ob.ui.actions.metadata import update_proxy_from_ui
+    lod, _proxy_set = build_lod_with_a_proxy()
+    dock = _built_active_dock()
+    try:
+        cmds.select(lod, replace=True)
+        dock.refresh_selection_manager()
+        rows = [dock.selection_list.item(i) for i in range(dock.selection_list.count())]
+        proxy_rows = [row for row in rows if row.data(_user_role())["kind"] == "Proxy"]
+        check(proxy_rows, "the proxy set is not listed at all")
+        dock.selection_list.setCurrentItem(proxy_rows[0])
+
+        cmds.select(clear=True)
+        check(not cmds.ls(selection=True), "fixture setup left something selected")
+        dock.proxy_edit_path_field._line_edit.setText("p\\other.p3d")
+        dock.proxy_edit_index_field.setValue(2)
+        with _texture_root_containing("p\\other.p3d"):
+            update_proxy_from_ui()
+        after = cmds.ls(selection=True, long=True) or []
+        check(not after, "an empty starting selection did not restore to empty, got %r" % after)
+    finally:
+        _release_active_dock(dock)
+
+
 def test_undo_after_update_resurrects_no_orphan_set():
     """The spec's sharpest test. a3obProxy and a3obUpdateProxy are non-undoable precisely
     because MFnSet.create() never enters the undo queue: when they WERE undoable, Ctrl+Z
@@ -445,6 +522,8 @@ def main():
                  test_the_proxy_editor_page_follows_the_highlighted_row,
                  test_update_writes_the_new_path_to_both_halves,
                  test_update_restores_the_previous_selection,
+                 test_update_restores_selection_when_the_command_fails,
+                 test_update_restores_an_empty_selection,
                  test_undo_after_update_resurrects_no_orphan_set):
         test()
         print("ok:", test.__name__, flush=True)

@@ -172,7 +172,7 @@ def update_proxy_from_ui():
             cmds.a3obUpdateProxy(path=path, index=index)
     finally:
         if previous:
-            cmds.select(previous, replace=True)
+            cmds.select(previous, replace=True, noExpand=True)
         else:
             cmds.select(clear=True)
     from a3ob.ui.recent import remember_path

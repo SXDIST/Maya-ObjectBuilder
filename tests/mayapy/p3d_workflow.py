@@ -364,7 +364,6 @@ def assert_ui_redesign_helpers_load():
     # The dedicated Skeleton panel was removed (model.cfg lives on the menu now), so
     # _build_skeleton_section is intentionally gone; its commands/wrappers still exist.
     for name in ("_build_ui", "_build_quick_actions",
-                 "_build_flags_section", "_build_proxies_section",
                  "_build_memory_points_section",
                  "_build_materials_tab", "_build_selections_tab",
                  "_build_validation_tab", "refresh_named_properties", "refresh_material_metadata",
@@ -373,6 +372,16 @@ def assert_ui_redesign_helpers_load():
             raise RuntimeError(f"Missing Qt dock method: {name}")
     if hasattr(dock_class, "_build_skeleton_section"):
         raise RuntimeError("Skeleton panel should have been removed from the dock")
+    # The Flags and Proxies panels were retired (Phase 3b Task 6): creating a proxy or a
+    # flag set moved onto the Selections panel's Create button menu, and editing an
+    # existing one moved into the Selections details area (Tasks 2-5). This check lives in
+    # THIS function, not a new one, so it cannot pass vacuously if the surrounding
+    # positive-symbol sweep above stops running.
+    for gone in ("_build_flags_section", "_build_proxies_section", "flag_component",
+                 "flag_value", "flag_name", "proxy_path", "proxy_index",
+                 "proxy_from_selection"):
+        if hasattr(dock_class, gone):
+            raise RuntimeError("%s survived the Flags/Proxies panel removal" % gone)
     # The LOD Properties panel was retired (Phase 3a Task 4): type/resolution moved
     # into the LOD list's own rows, and the DayZ LOD checkbox became a button + a
     # row context-menu entry, both driven by assign_lod_to_selection/_remove_lod_from_selection.

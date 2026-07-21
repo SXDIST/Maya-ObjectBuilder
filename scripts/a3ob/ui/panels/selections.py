@@ -129,9 +129,14 @@ class SelectionsPanelMixin:
 
 
     def proxy_edit_values(self):
+        """(path, index) from the proxy editor, or ("", 0) when it is not built.
+
+        Same reasoning as flag_edit_values: the unbuilt case must not report a plausible
+        index like 1, or a caller that only checks the path could still act on a fabricated
+        index for an editor the user never saw."""
         field = _picker_field(self.proxy_edit_path_field)
         path = field.text().strip() if field is not None else ""
-        index = self.proxy_edit_index_field.value() if self.proxy_edit_index_field is not None else 1
+        index = self.proxy_edit_index_field.value() if self.proxy_edit_index_field is not None else 0
         return path, index
 
 
@@ -165,9 +170,15 @@ class SelectionsPanelMixin:
                 field.blockSignals(True)
                 field.setText(fields.get("proxy_path", ""))
                 field.blockSignals(False)
+            # try/finally, not a straight-line unblock: int() on a non-integer proxy index
+            # raises between the two calls and would leave the index editor permanently
+            # signal-blocked for the rest of the session — same shape as the flag branch
+            # above.
             self.proxy_edit_index_field.blockSignals(True)
-            self.proxy_edit_index_field.setValue(int(fields.get("proxy_index", 0)))
-            self.proxy_edit_index_field.blockSignals(False)
+            try:
+                self.proxy_edit_index_field.setValue(int(fields.get("proxy_index", 0)))
+            finally:
+                self.proxy_edit_index_field.blockSignals(False)
             self.selection_editor_stack.setCurrentIndex(2)
             return
         self.selection_editor_stack.setCurrentIndex(0)
