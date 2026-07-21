@@ -15,6 +15,54 @@ def _selected_material_metadata_item():
     return None
 
 
+def _connected_material(shading_group):
+    """The material (shader) node feeding ``shading_group``'s surfaceShader, if any."""
+    if not _node_exists(shading_group):
+        return ""
+    materials = _valid_nodes(cmds.ls(
+        cmds.listConnections(shading_group + ".surfaceShader") or [], materials=True) or [])
+    return materials[0] if materials else ""
+
+
+def write_material_metadata(node, texture, material):
+    """Write the DayZ texture/rvmat paths onto ``node``'s shading network. No dock involved.
+
+    ``node`` is whichever half of the shading network the caller has in hand — a shading
+    engine or the material (shader) node feeding it — not necessarily a shading engine
+    despite the parameter's original working-title name: the two are connected through
+    ``surfaceShader``, and Maya's connections are traversed both ways by ``listConnections``,
+    so starting from either one reaches the identical fan-out: the node itself, the material
+    it resolves to (or that it already is), and every other shading engine sharing that same
+    material. This reproduces `_persist_selected_material_metadata`'s old target set exactly
+    when it is still a valid target set — see the module docstring notes on this in the task
+    report for the one case where a future item shape could narrow it.
+
+    Returns the set of node names actually written to, empty when every target was deleted.
+    """
+    texture = _normalize_dayz_path(texture)
+    material = _normalize_dayz_path(material)
+    all_targets = set()
+    if _node_exists(node):
+        all_targets.add(node)
+        if cmds.objectType(node, isType="shadingEngine"):
+            material_node = _connected_material(node)
+        else:
+            material_node = node
+        if _node_exists(material_node):
+            all_targets.add(material_node)
+            for sg in _valid_nodes(cmds.listConnections(material_node, type="shadingEngine") or []):
+                all_targets.add(sg)
+    written = set()
+    for target in all_targets:
+        if _set_material_metadata_on_node(target, texture, material):
+            written.add(target)
+    if written:
+        from a3ob.ui.recent import remember_path
+        remember_path("texture", texture)
+        remember_path("rvmat", material)
+    return written
+
+
 def _persist_selected_material_metadata():
     item = _selected_material_metadata_item()
     if not item:
@@ -22,49 +70,48 @@ def _persist_selected_material_metadata():
     dock = _active_qt_dock()
     if dock is None:
         return None
-    texture = _normalize_dayz_path(dock.material_texture_path())
-    material = _normalize_dayz_path(dock.material_rvmat_path())
-    changed = False
-    all_targets = set(item["shading_groups"])
-    if _node_exists(item["material_node"]):
-        all_targets.add(item["material_node"])
-        for sg in _valid_nodes(cmds.listConnections(item["material_node"], type="shadingEngine") or []):
-            all_targets.add(sg)
-    for target in all_targets:
-        changed = _set_material_metadata_on_node(target, texture, material) or changed
-    if not changed:
+    node = item["material_node"] or (item["shading_groups"] or [None])[0]
+    written = write_material_metadata(node, dock.material_texture_path(), dock.material_rvmat_path())
+    if not written:
         cmds.warning("Material metadata target was deleted")
         return None
-    item["texture"] = texture
-    item["material"] = material
-    from a3ob.ui.recent import remember_path
-    remember_path("texture", texture)
-    remember_path("rvmat", material)
+    item["texture"] = _normalize_dayz_path(dock.material_texture_path())
+    item["material"] = _normalize_dayz_path(dock.material_rvmat_path())
     return item
 
 
-def select_faces_with_material():
-    """Select the faces the highlighted material is assigned to. Returns how many.
+def select_faces_for_shading_group(shading_group):
+    """Select the faces ``shading_group`` is assigned to, on the currently selected mesh(es).
+    Returns how many.
 
     The scope is read BEFORE selecting: this replaces the selection, and the panel rebuilds
     from whatever is selected, so computing the shapes afterwards would scope the result to
     its own output."""
-    item = _selected_material_metadata_item()
-    if not item:
-        cmds.warning("Pick a material in the list first")
-        return 0
     shapes = _mesh_shapes_from_selection()
-    faces = faces_with_material(item["shading_groups"], shapes)
+    faces = faces_with_material([shading_group], shapes)
     if not faces:
         cmds.warning("%s is not assigned to any face of the selected mesh(es)"
-                     % (item["material_node"] or "This material"))
+                     % (_connected_material(shading_group) or "This material"))
         return 0
     cmds.select(faces, replace=True)
     return len(cmds.ls(faces, flatten=True) or [])
 
 
+def select_faces_with_material():
+    """Select the faces the highlighted material is assigned to. Returns how many."""
+    item = _selected_material_metadata_item()
+    if not item:
+        cmds.warning("Pick a material in the list first")
+        return 0
+    shading_group = (item["shading_groups"] or [None])[0]
+    return select_faces_for_shading_group(shading_group)
+
+
 __all__ = [
     "_selected_material_metadata_item",
+    "_connected_material",
+    "write_material_metadata",
     "_persist_selected_material_metadata",
+    "select_faces_for_shading_group",
     "select_faces_with_material",
 ]
