@@ -42,9 +42,9 @@ class UpdateProxyCommand(_Base):
                 om.MGlobal.displayError("a3obUpdateProxy: select a proxy placeholder or proxy selection set")
                 return
             if attr.get_bool_any(node, A.IS_PROXY, A.IS_PROXY_ALT_SHORT):
-                update_proxy_placeholder(node, path, index)
+                sync_proxy_pair(node, path, index)
                 return
             if attr.get_bool(node, A.IS_PROXY_SELECTION) or node.hasFn(om.MFn.kSet):
-                update_proxy_selection_set(node, path, index)
+                sync_proxy_pair(node, path, index)
                 return
             om.MGlobal.displayError("a3obUpdateProxy: selected node is not a proxy placeholder or proxy selection set")

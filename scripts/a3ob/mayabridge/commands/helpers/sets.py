@@ -268,6 +268,68 @@ def update_proxy_placeholder(proxy, path, index):
     _cmds_set_string_attr(node_name, A.PROXY_SELECTION, selection_name)
 
 
+def sync_proxy_pair(node, path, index):
+    """Update BOTH halves of a proxy from either one of them.
+
+    A proxy is a placeholder transform plus a selection set, keyed by the same
+    ``proxy:PATH.INDEX`` string. ``a3obProxy`` writes them together; the two updaters below
+    each write only one. Updating one alone leaves the pair disagreeing, which
+    ``a3obValidate`` reports as "proxy placeholder has no matching selection set" — so the
+    only correct edit is the pair, and this is the single place that knows that.
+
+    Either half may legitimately be missing: ``a3obProxy -fromSelection 0`` builds a
+    placeholder with no set at all. A missing counterpart is not an error."""
+    old_selection_name = ""
+    if node.hasFn(om.MFn.kSet):
+        old_selection_name = attr.get_string(node, A.SELECTION_NAME)
+    else:
+        old_selection_name = attr.get_string(node, A.PROXY_SELECTION)
+
+    placeholder = NULL
+    set_obj = NULL
+    if node.hasFn(om.MFn.kSet):
+        set_obj = node
+        placeholder = _proxy_placeholder_by_selection(old_selection_name)
+    else:
+        placeholder = node
+        set_obj = _proxy_selection_set_by_name(old_selection_name)
+
+    if not placeholder.isNull():
+        update_proxy_placeholder(placeholder, path, index)
+    if not set_obj.isNull():
+        update_proxy_selection_set(set_obj, path, index)
+
+
+def _proxy_placeholder_by_selection(selection_name):
+    """The proxy placeholder transform whose a3obProxySelection equals selection_name.
+
+    Searched scene-wide rather than under one LOD: the caller holds a selection SET, and a
+    set does not know which LOD it belongs to without walking its members — which is both
+    slower and wrong for a set whose members have been deleted."""
+    if not selection_name:
+        return NULL
+    for node_name in cmds.ls("*." + A.PROXY_SELECTION[0], objectsOnly=True, long=True) or []:
+        if cmds.getAttr(node_name + "." + A.PROXY_SELECTION[0]) == selection_name:
+            found = om.MSelectionList()
+            found.add(node_name)
+            return found.getDependNode(0)
+    return NULL
+
+
+def _proxy_selection_set_by_name(selection_name):
+    """The proxy selection set whose a3obSelectionName equals selection_name."""
+    if not selection_name:
+        return NULL
+    for node_name in cmds.ls("*." + A.SELECTION_NAME[0], objectsOnly=True) or []:
+        if not cmds.objectType(node_name, isType="objectSet"):
+            continue
+        if cmds.getAttr(node_name + "." + A.SELECTION_NAME[0]) == selection_name:
+            found = om.MSelectionList()
+            found.add(node_name)
+            return found.getDependNode(0)
+    return NULL
+
+
 def vertex_source_index_map(transform):
     """Maya vertex index -> P3D source vertex index, or [] when the LOD carries no remap.
 
@@ -365,6 +427,9 @@ __all__ = [
     "_cmds_set_string_attr",
     "update_proxy_selection_set",
     "update_proxy_placeholder",
+    "sync_proxy_pair",
+    "_proxy_placeholder_by_selection",
+    "_proxy_selection_set_by_name",
     "mass_values_for_lod",
     "mass_slot_count",
     "vertex_source_index_map",
