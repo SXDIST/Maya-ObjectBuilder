@@ -15,12 +15,13 @@ conversation that produced it.
 | 2 — export pipeline: Auto LOD, textures, validation | **done**, 10 tasks, all reviewed |
 | 3a — one LOD panel | **done**, 4 tasks, all reviewed |
 | 3b — Selections absorbs Proxies and Flags | **done**, 7 tasks, all reviewed |
-| 3c — Skinning slims; Materials → Attribute Editor; Preferences window | specced, **not planned** |
+| 3c — Skinning slims to four buttons | **done**, 4 tasks, all reviewed |
+| 3d — Materials → Attribute Editor; Preferences window | specced, **not planned** |
 | 4 — reference assets ship with the plugin | specced, not planned |
 | 5 — menu and dock presentation | specced, not planned |
 | 6 — close-out | see below |
 
-Suite **55/55**. Dock is **6 panels**, down from 11. The byte gate has not moved once across
+Suite **58/58**. Dock is **6 panels**, down from 11. The byte gate has not moved once across
 the whole branch: `5e66ed46ac09f396` / 6145116 and `0ba984eb4fdb5d5e` / 60229.
 
 Eleven specs in `docs/specs/2026-07-20-*.md`. Sequencing:
@@ -84,6 +85,15 @@ launched Maya); it matters whenever a task deletes a module.
   files in Phase 3b shipped from a plan that forgot it.
 - **`cmds.select(some_set)` selects the set's MEMBERS, not the set node.** Pass `noExpand=True`.
   This bit twice in Phase 3b, once in production code.
+- **A test that exercises a "use the default location" path writes into the user's real Maya
+  folder unless something stops it.** `reference_overwrite_guard.py` created a junk
+  `dayz_skeleton.ma` in `Documents/maya/MayaObjectBuilder/references` and repointed the
+  optionVar at it. Stub `references.default_directory` to a `mkdtemp`, and restore every
+  optionVar in a `finally` — `skin_transfer.py` has the idiom.
+- **The menu is invisible to every headless test.** `entry.show_plugin_ui` returns immediately
+  under `cmds.about(batch=True)`, so menu callbacks must stay one-line wrappers over functions
+  that *are* testable. `cmds.confirmDialog` returns `None` under mayapy rather than blocking,
+  so a dialog cannot hang a headless run — but it also cannot be exercised by one.
 
 ## Decisions already made — do not relitigate
 
@@ -111,6 +121,8 @@ launched Maya); it matters whenever a task deletes a module.
      regains the ability to lie.
    - The **six-panel dock** as a whole, since Phase 3b removed two panels and moved their
      controls.
+   - The **Reference Assets submenu** added in Phase 3c: that six items and two dividers render,
+     and that `Set Texture Root` is not swallowed into the submenu. No test can reach it.
 2. **Whole-scene validation ignores `visibleOnly`** while the exporter honours it, so a
    hidden invalid LOD can block an `Export All` that would have succeeded and never
    contained that node. A reviewer called it a fast-follow, not a merge blocker.
