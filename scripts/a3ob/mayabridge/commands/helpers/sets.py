@@ -21,6 +21,24 @@ def proxy_placeholder(lod, selection_name):
     return NULL
 
 
+def lod_for_set(set_obj):
+    """The LOD transform owning a set's members, or NULL when it has none left.
+
+    A set records no LOD of its own — membership is the only link back, which is why this
+    walks the members rather than reading an attribute. A set whose members have all been
+    deleted therefore belongs to NO LOD, and that is the honest answer: the proxy key
+    ``proxy:PATH.INDEX`` is not unique scene-wide, so an unowned set must not be used to go
+    hunting for a counterpart it can no longer prove it shares a LOD with."""
+    if set_obj.isNull():
+        return NULL
+    members = om.MFnSet(set_obj).getMembers(True)
+    for dag_path, _component in _iter_selection(members):
+        lod = lod_transform_for_path(dag_path)
+        if not lod.isNull():
+            return lod
+    return NULL
+
+
 def proxy_selection_set_exists(selection_name):
     it = om.MItDependencyNodes(om.MFn.kSet)
     while not it.isDone():
@@ -278,21 +296,24 @@ def sync_proxy_pair(node, path, index):
     only correct edit is the pair, and this is the single place that knows that.
 
     Either half may legitimately be missing: ``a3obProxy -fromSelection 0`` builds a
-    placeholder with no set at all. A missing counterpart is not an error."""
-    old_selection_name = ""
-    if node.hasFn(om.MFn.kSet):
-        old_selection_name = attr.get_string(node, A.SELECTION_NAME)
-    else:
-        old_selection_name = attr.get_string(node, A.PROXY_SELECTION)
+    placeholder with no set at all. A missing counterpart is not an error.
 
-    placeholder = NULL
-    set_obj = NULL
+    The counterpart is always looked up WITHIN ONE LOD. ``proxy_selection_name`` encodes no
+    LOD identity, so a weapon proxy present in Resolution 1, Resolution 2 and View Pilot
+    leaves several placeholders and several sets all carrying the identical
+    ``proxy:PATH.INDEX`` string — the ordinary multi-LOD model, not an edge case. A
+    scene-wide first match would update the selected node and then retag a stranger,
+    corrupting a LOD the user never selected. That is exactly why ``proxy_placeholder``
+    takes a LOD."""
     if node.hasFn(om.MFn.kSet):
         set_obj = node
-        placeholder = _proxy_placeholder_by_selection(old_selection_name)
+        selection_name = attr.get_string(node, A.SELECTION_NAME)
+        lod = lod_for_set(node)
+        placeholder = proxy_placeholder(lod, selection_name) if not lod.isNull() else NULL
     else:
         placeholder = node
-        set_obj = _proxy_selection_set_by_name(old_selection_name)
+        selection_name = attr.get_string(node, A.PROXY_SELECTION)
+        set_obj = _proxy_selection_set_in_lod(_parent_transform(node), selection_name)
 
     if not placeholder.isNull():
         update_proxy_placeholder(placeholder, path, index)
@@ -300,33 +321,41 @@ def sync_proxy_pair(node, path, index):
         update_proxy_selection_set(set_obj, path, index)
 
 
-def _proxy_placeholder_by_selection(selection_name):
-    """The proxy placeholder transform whose a3obProxySelection equals selection_name.
-
-    Searched scene-wide rather than under one LOD: the caller holds a selection SET, and a
-    set does not know which LOD it belongs to without walking its members — which is both
-    slower and wrong for a set whose members have been deleted."""
-    if not selection_name:
+def _parent_transform(node):
+    """A placeholder's LOD: its DAG parent. NULL at the world, or for a non-DAG node."""
+    if node.isNull() or not node.hasFn(om.MFn.kDagNode):
         return NULL
-    for node_name in cmds.ls("*." + A.PROXY_SELECTION[0], objectsOnly=True, long=True) or []:
-        if cmds.getAttr(node_name + "." + A.PROXY_SELECTION[0]) == selection_name:
-            found = om.MSelectionList()
-            found.add(node_name)
-            return found.getDependNode(0)
-    return NULL
-
-
-def _proxy_selection_set_by_name(selection_name):
-    """The proxy selection set whose a3obSelectionName equals selection_name."""
-    if not selection_name:
+    dag = om.MFnDagNode(node)
+    if dag.parentCount() == 0:
         return NULL
-    for node_name in cmds.ls("*." + A.SELECTION_NAME[0], objectsOnly=True) or []:
-        if not cmds.objectType(node_name, isType="objectSet"):
-            continue
-        if cmds.getAttr(node_name + "." + A.SELECTION_NAME[0]) == selection_name:
-            found = om.MSelectionList()
-            found.add(node_name)
-            return found.getDependNode(0)
+    parent = dag.parent(0)
+    if parent.isNull() or parent.hasFn(om.MFn.kWorld):
+        return NULL
+    return parent
+
+
+def _proxy_selection_set_in_lod(lod, selection_name):
+    """The proxy selection set named ``selection_name`` whose members live under ``lod``.
+
+    Scoped to one LOD for the reason spelled out in ``sync_proxy_pair``: the name alone is
+    ambiguous across the LODs of one model. Iterates MItDependencyNodes rather than
+    ``cmds.ls("*.attr")`` because that pattern does not recurse into namespaces — a proxy in
+    a referenced file or imported under a namespace was invisible, and the failure was
+    silent (no set found, pair left disagreeing, no error). ``proxy_selection_set_exists``
+    above uses the same iteration for the same reason.
+
+    The IS_PROXY_SELECTION check matters: a plain named-selection set may legitimately carry
+    any a3obSelectionName, and only a proxy set is this proxy's other half."""
+    if lod.isNull() or not selection_name:
+        return NULL
+    it = om.MItDependencyNodes(om.MFn.kSet)
+    while not it.isDone():
+        node = it.thisNode()
+        if (attr.get_bool(node, A.IS_PROXY_SELECTION)
+                and attr.get_string(node, A.SELECTION_NAME) == selection_name
+                and same_node(lod_for_set(node), lod)):
+            return node
+        it.next()
     return NULL
 
 
@@ -406,6 +435,7 @@ def set_selected_mass_values(lod, value, modifier=None):
 
 __all__ = [
     "proxy_placeholder",
+    "lod_for_set",
     "proxy_selection_set_exists",
     "set_contains_mesh",
     "metadata_set_has_live_members",
@@ -428,8 +458,8 @@ __all__ = [
     "update_proxy_selection_set",
     "update_proxy_placeholder",
     "sync_proxy_pair",
-    "_proxy_placeholder_by_selection",
-    "_proxy_selection_set_by_name",
+    "_parent_transform",
+    "_proxy_selection_set_in_lod",
     "mass_values_for_lod",
     "mass_slot_count",
     "vertex_source_index_map",

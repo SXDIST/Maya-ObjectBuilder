@@ -269,6 +269,17 @@ fixture is wrong, not that the bug is absent.
 Insert after `update_proxy_placeholder` (which ends at line 268). Every write goes through the
 two existing updaters, so the cmds-only rule is preserved by construction:
 
+> **SUPERSEDED — do not re-implement the lookup below.** `proxy_selection_name` encodes no
+> LOD identity, so `proxy:PATH.INDEX` is carried by several placeholders and several sets on
+> any multi-LOD model. The scene-wide first-match helpers sketched here therefore updated the
+> selected node and then retagged a *different* LOD's half. The shipped code scopes the
+> counterpart to ONE LOD (`proxy_placeholder(lod, ...)` / `_proxy_selection_set_in_lod`), and
+> resolves a set's LOD from its members via `lod_for_set` — a set with no surviving members
+> resolves to no LOD and therefore to no counterpart. It also iterates `MItDependencyNodes`
+> instead of `cmds.ls("*.attr")`, which does not recurse into namespaces (measured: a
+> `ref:`-namespaced set is invisible to the pattern and visible to the iterator). See
+> `tests/mayapy/proxy_update_keeps_pair.py`.
+
 ```python
 def sync_proxy_pair(node, path, index):
     """Update BOTH halves of a proxy from either one of them.
