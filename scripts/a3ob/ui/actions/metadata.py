@@ -77,9 +77,11 @@ def create_proxy_from_ui():
     dock = _active_qt_dock()
     if dock is None:
         return
-    path = dock.proxy_path()
-    index = dock.proxy_index()
-    from_selection = dock.proxy_from_selection()
+    from a3ob.ui.dialogs import proxy_dialog, proxy_creation_mode
+    answer = proxy_dialog(dock)
+    if answer is None:
+        return
+    path, index = answer
     if not path:
         cmds.warning("Enter a proxy path")
         return
@@ -87,10 +89,12 @@ def create_proxy_from_ui():
     if not ok:
         cmds.warning(msg)
         return
+    from_selection = proxy_creation_mode() == "components"
     with _undo_chunk("Create Proxy"):
         cmds.a3obProxy(path=path, index=index, fromSelection=from_selection, update=True)
     from a3ob.ui.recent import remember_path
     remember_path("proxy", path)
+    _refresh_context_ui()
 
 
 def _lod_mass_summary():

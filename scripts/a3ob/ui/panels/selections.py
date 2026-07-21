@@ -32,10 +32,28 @@ class SelectionsPanelMixin:
         for label, callback, tip, icon in (
             ("Select", _select_set_members, "Select the live members of the highlighted set", ":/aselect.png"),
             ("Rename", _rename_selection_set, "Rename the highlighted Object Builder selection", ":/quickRename.png"),
-            ("Create", _create_selection_set, "Create a new selection set from the current component selection", ":/create.png"),
-            ("Find", find_components_from_ui, "Find closed mesh components and create Component## selection sets", ":/search.png"),
         ):
             first_row.addWidget(_qt_button(label, callback, tip, icon))
+
+        create_button = qt_widgets.QToolButton()
+        create_button.setText("Create")
+        create_button.setToolTip("Create a selection, proxy or flag set")
+        create_icon = _qt_icon(":/create.png")
+        if create_icon is not None and not create_icon.isNull():
+            create_button.setIcon(create_icon)
+        create_button.setPopupMode(qt_widgets.QToolButton.InstantPopup)
+        create_menu = qt_widgets.QMenu(create_button)
+        create_menu.addAction("Selection from components", _create_selection_set)
+        create_menu.addAction("Proxy...", create_proxy_from_ui)
+        create_button.setMenu(create_menu)
+        # Qt does not own a menu set with setMenu(); without a reference the QMenu is garbage
+        # collected as soon as this method returns and the button opens an empty popup.
+        self.selection_create_menu = create_menu
+        first_row.addWidget(create_button)
+
+        first_row.addWidget(_qt_button("Find", find_components_from_ui,
+                                       "Find closed mesh components and create Component## selection sets",
+                                       ":/search.png"))
         layout.addLayout(first_row)
 
         second_row = qt_widgets.QHBoxLayout()
