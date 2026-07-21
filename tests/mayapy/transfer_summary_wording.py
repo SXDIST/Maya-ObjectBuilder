@@ -57,6 +57,9 @@ def build_body_and_garment(garment_offset=0.0):
     cmds.select(body, root, replace=True)
     cmds.skinCluster(root, body, toSelectedBones=True)
 
+    # At garment_offset=0.5 this box sits entirely outside the body, so the transfer prints
+    # "only 0% ... lies inside ... Transferring anyway" — a correct advisory about this
+    # deliberately detached fixture, not a regression. Expected output, not a bug.
     garment = cmds.polyCube(name="garment", width=1, height=0.05, depth=1, ch=False)[0]
     cmds.move(0, 1.0 + garment_offset, 0, garment, absolute=True)
     return body, garment

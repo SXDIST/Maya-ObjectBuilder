@@ -199,10 +199,12 @@ def _save_reference_asset(kind):
     one click silently replaces a reference the user may have built by hand. The prompt lives
     here rather than in references.py because mayabridge must never import from a3ob.ui.
 
-    Returns True when it saved, False when the user declined or nothing was selected (the
-    latter reported by a3obReference itself via MGlobal.displayError)."""
+    Returns True when it saved, False when the user declined or nothing was selected. The
+    latter is reported by a3obReference itself via MGlobal.displayError, but the command never
+    raises — ReferenceAssetCommand.doIt catches every exception and sets an empty result — so
+    the empty-selection case is detected here by checking what actually came back, the same
+    way _select_influence_vertices unwraps a mayapy 1-element result list."""
     load_plugin()
-    import os
     from a3ob.mayabridge import references
 
     existing = references.reference_path(kind)
@@ -211,7 +213,7 @@ def _save_reference_asset(kind):
             title="Replace reference asset?",
             message="This will replace the saved %s reference:\n\n%s\n\n"
                     "The current file will be overwritten."
-                    % (references.KINDS[kind][1], os.path.basename(existing)),
+                    % (references.KINDS[kind][1], Path(existing).name),
             button=["Replace", "Cancel"], defaultButton="Cancel",
             cancelButton="Cancel", dismissString="Cancel")
         if answer != "Replace":
@@ -223,8 +225,10 @@ def _save_reference_asset(kind):
     # it, orphaning whatever path the reference actually lived at (e.g. one pointed at by
     # hand at a custom .ma). That would also make the confirmation dialog's promise to
     # replace "this" file false.
-    cmds.a3obReference(kind=kind, store=existing if existing else "1")
-    return True
+    result = cmds.a3obReference(kind=kind, store=existing if existing else "1")
+    if isinstance(result, (list, tuple)):
+        result = result[0] if result else ""
+    return bool(result)
 
 
 def import_model_cfg(path=None):
@@ -464,7 +468,12 @@ def show_plugin_ui():
         cmds.menuItem(divider=True, parent=menu)
         references_menu = cmds.menuItem(label="Reference Assets", parent=menu, subMenu=True,
                                         tearOff=True)
-        cmds.menuItem(label="Add Male Character", parent=references_menu,
+        # Labelled "Male Body" / "Female Body" here (not "Male Character") to match each
+        # other, references.KINDS's human name ("male body"/"female body"), and the
+        # confirmation dialog text below — the Skinning panel's own "Add Male Character"
+        # button is a separate, deliberately-named entry point (it also imports the
+        # skeleton and materials) and is untouched by this.
+        cmds.menuItem(label="Add Male Body", parent=references_menu,
                       command=lambda *_: _add_reference_asset("male_body"))
         cmds.menuItem(label="Add Female Body", parent=references_menu,
                       command=lambda *_: _add_reference_asset("female_body"))
@@ -473,7 +482,7 @@ def show_plugin_ui():
         cmds.menuItem(divider=True, parent=references_menu)
         # Destructive: each replaces a saved asset. Separated from the Add items above by a
         # divider, and each asks before overwriting (_save_reference_asset).
-        cmds.menuItem(label="Save Selection as Male Character…", parent=references_menu,
+        cmds.menuItem(label="Save Selection as Male Body…", parent=references_menu,
                       command=lambda *_: _save_reference_asset("male_body"))
         cmds.menuItem(label="Save Selection as Female Body…", parent=references_menu,
                       command=lambda *_: _save_reference_asset("female_body"))

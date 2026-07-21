@@ -91,9 +91,9 @@ def test_the_prompt_names_the_file_it_would_replace():
     finally:
         cmds.confirmDialog = original
 
-    text = " ".join(str(value) for call in answer.calls for value in call.values())
-    check(os.path.basename(path) in text,
-          "the prompt does not name the file it would replace: %r" % text)
+    message = " ".join(str(call["message"]) for call in answer.calls if "message" in call)
+    check(os.path.basename(path) in message,
+          "the prompt's message does not name the file it would replace: %r" % message)
 
 
 def test_accepting_writes_the_file():
@@ -143,10 +143,12 @@ def test_nothing_selected_still_refuses_without_writing():
     original = cmds.confirmDialog
     cmds.confirmDialog = answer
     try:
-        entry._save_reference_asset("skeleton")
+        saved = entry._save_reference_asset("skeleton")
     finally:
         cmds.confirmDialog = original
 
+    check(saved is False,
+          "an empty selection must report that nothing was saved, got %r" % saved)
     with open(path) as handle:
         check(handle.read() == "// original\n",
               "an empty selection overwrote the reference")
